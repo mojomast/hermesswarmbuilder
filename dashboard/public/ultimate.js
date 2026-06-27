@@ -56,6 +56,9 @@ let model = {
   selectedLog: pref('hermes.apb.dashboard.selectedLog'),
   artifactCache: new Map(),
   logCache: new Map(),
+  docCache: new Map(),
+  loadingDocs: new Set(),
+  drawerRenderKey: null,
   drawerOpen: false
 };
 
@@ -546,7 +549,7 @@ function updateAgentCardDOM(el, a) {
   const oldScrolls = [...el.querySelectorAll('div, pre')].map(x => x.scrollTop);
   el.innerHTML = newEl.innerHTML;
   const newScrollables = el.querySelectorAll('div, pre');
-  oldScrollables.forEach((st, idx) => { if (newScrollables[idx] && st) newScrollables[idx].scrollTop = st; });
+  oldScrolls.forEach((st, idx) => { if (newScrollables[idx] && st) newScrollables[idx].scrollTop = st; });
 }
 
 // Tick timers every second
@@ -565,6 +568,7 @@ function openDrawer(tab = 'agent', agentId = null) {
   setPref('hermes.apb.dashboard.selectedAgentId', model.selectedAgentId);
   setPref('hermes.apb.dashboard.inspectorTab', model.inspectorTab);
   model.drawerOpen = true;
+  model.drawerRenderKey = null;
 
   const drawer = $('inspectorDrawer');
   const overlay = $('drawerOverlay');
@@ -594,6 +598,10 @@ function renderInspectorDrawer() {
   const a = agents().find(x => x.id === model.selectedAgentId) || { id: model.selectedAgentId, role: 'subagent', status: 'unknown' };
   if ($('drawerTitle')) $('drawerTitle').textContent = `Inspect: ${a.label || a.id}`;
 
+  const key = drawerRenderKey(a);
+  if (key && key === model.drawerRenderKey) return;
+  model.drawerRenderKey = key;
+
   const savedScroll = content ? content.scrollTop : 0;
 
   if (model.inspectorTab === 'agent') renderAgentTab(content, a);
@@ -604,6 +612,18 @@ function renderInspectorDrawer() {
   else if (model.inspectorTab === 'run') renderRunJsonTab(content);
 
   if (content) content.scrollTop = savedScroll;
+}
+
+function resourceSig(xs) { return (xs || []).map(x => `${x.name}:${x.size}:${x.modifiedAt}`).join('|'); }
+function drawerRenderKey(a) {
+  if (model.inspectorTab === 'agent') return null;
+  const runId = model.selectedRunId || model.state?.currentRunId || '';
+  if (model.inspectorTab === 'spec') return `spec:${runId}:${model.state?.specAdherence?.status || ''}:${resourceSig(model.artifacts)}`;
+  if (model.inspectorTab === 'devplan') return `devplan:${runId}:${model.state?.devplanAdherence?.status || ''}:${resourceSig(model.artifacts)}`;
+  if (model.inspectorTab === 'artifacts') return `artifacts:${runId}:${model.selectedArtifact || ''}:${resourceSig(model.artifacts)}`;
+  if (model.inspectorTab === 'logs') return `logs:${runId}:${model.selectedLog || ''}:${resourceSig(model.logs)}`;
+  if (model.inspectorTab === 'run') return `run:${runId}:${model.state?.updatedAt || ''}`;
+  return `${model.inspectorTab}:${a?.id || ''}:${runId}`;
 }
 
 function renderAgentTab(content, a) {
@@ -643,9 +663,23 @@ function renderAgentTab(content, a) {
 }
 
 async function renderDocTab(content, file, label, adh) {
-  content.innerHTML = `<div class="empty-state">Loading ${label} candidate…</div>`;
   const runId = model.selectedRunId || model.state?.currentRunId;
   if (!runId) { content.innerHTML = `<div class="empty-state">No active run selected.</div>`; return; }
+  const key = `${runId}:${file}`;
+  const cached = model.docCache.get(key);
+  if (cached) {
+    content.innerHTML = `
+      <div class="task-description-box">
+        <span class="box-label">${label} Adherence Status</span>
+        <span class="task-text">${esc(adh?.status || 'Active')} (${adh?.completed || 0}/${adh?.total || 0} tasks verified)</span>
+      </div>
+      <pre class="raw-box">${esc(cached.text)}</pre>
+    `;
+    return;
+  }
+  content.innerHTML = `<div class="empty-state">Loading ${label} candidate…</div>`;
+  if (model.loadingDocs.has(key)) return;
+  model.loadingDocs.add(key);
 
   const candidates = file === 'spec.md' 
     ? ['spec.md', 'SPEC.approved-candidate-v2.md', 'SPEC.approved-candidate.md', 'SPEC.md']
@@ -654,6 +688,11 @@ async function renderDocTab(content, file, label, adh) {
   for (const name of candidates) {
     try {
       const txt = await getText(`/api/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`);
+      model.docCache.set(key, { name, text: txt });
+      if ((model.selectedRunId || model.state?.currentRunId) !== runId || model.inspectorTab !== (file === 'spec.md' ? 'spec' : 'devplan')) {
+        model.loadingDocs.delete(key);
+        return;
+      }
       content.innerHTML = `
         <div class="task-description-box">
           <span class="box-label">${label} Adherence Status</span>
@@ -661,10 +700,12 @@ async function renderDocTab(content, file, label, adh) {
         </div>
         <pre class="raw-box">${esc(txt)}</pre>
       `;
+      model.loadingDocs.delete(key);
       return;
     } catch {}
   }
-  content.innerHTML = `<div class="empty-state">Document ${label} not found for run ${esc(runId)}.</div>`;
+  model.loadingDocs.delete(key);
+  if ((model.selectedRunId || model.state?.currentRunId) === runId) content.innerHTML = `<div class="empty-state">Document ${label} not found for run ${esc(runId)}.</div>`;
 }
 
 function renderArtifactsTab(content) {
@@ -816,6 +857,7 @@ function initGlobalEvents() {
     if (drawerTab && $('inspectorDrawer')?.contains(drawerTab)) {
       model.inspectorTab = drawerTab.dataset.inspector;
       setPref('hermes.apb.dashboard.inspectorTab', model.inspectorTab);
+      model.drawerRenderKey = null;
       renderInspectorDrawer();
       return;
     }

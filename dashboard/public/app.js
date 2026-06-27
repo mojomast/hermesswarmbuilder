@@ -5,7 +5,7 @@ const terminalStates=new Set(["idle","done","error","blocked","complete","comple
 const $=id=>document.getElementById(id); const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const pref=(k,d=null)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}}; const setPref=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 
-let model={state:null,events:[],runs:[],artifacts:[],logs:[],raw:[],toolCalls:new Map(),selectedRunId:pref('hermes.apb.dashboard.selectedRunId'),selectedAgentId:pref('hermes.apb.dashboard.selectedAgentId','orchestrator'),inspector:pref('hermes.apb.dashboard.inspectorTab','agent'),console:pref('hermes.apb.dashboard.consoleTab','events'),expanded:new Set(pref('hermes.apb.dashboard.expandedAgents',['main-orchestrator'])),expandedTools:new Set(),expandedEvents:new Set(pref('hermes.apb.dashboard.expandedEvents',[])),paused:pref('hermes.apb.dashboard.pauseRealtime',false),followConsole:pref('hermes.apb.dashboard.followConsole',true),bottomConsoleHeight:pref('hermes.apb.dashboard.bottomConsoleHeight','32vh'),filter:'all',query:'',selectedArtifact:pref('hermes.apb.dashboard.selectedArtifact'),selectedLog:pref('hermes.apb.dashboard.selectedLog'),artifactCache:new Map(),logCache:new Map(),loadingPreview:new Set()};
+let model={state:null,events:[],runs:[],artifacts:[],logs:[],raw:[],toolCalls:new Map(),selectedRunId:pref('hermes.apb.dashboard.selectedRunId'),selectedAgentId:pref('hermes.apb.dashboard.selectedAgentId','orchestrator'),inspector:pref('hermes.apb.dashboard.inspectorTab','agent'),console:pref('hermes.apb.dashboard.consoleTab','events'),expanded:new Set(pref('hermes.apb.dashboard.expandedAgents',['main-orchestrator'])),expandedTools:new Set(),expandedEvents:new Set(pref('hermes.apb.dashboard.expandedEvents',[])),paused:pref('hermes.apb.dashboard.pauseRealtime',false),followConsole:pref('hermes.apb.dashboard.followConsole',true),bottomConsoleHeight:pref('hermes.apb.dashboard.bottomConsoleHeight','32vh'),filter:'all',query:'',selectedArtifact:pref('hermes.apb.dashboard.selectedArtifact'),selectedLog:pref('hermes.apb.dashboard.selectedLog'),artifactCache:new Map(),logCache:new Map(),docCache:new Map(),loadingPreview:new Set(),loadingDocs:new Set(),lastInspectorKey:null};
 
 function isNearBottom(el,px=36){return !el||el.scrollHeight-el.scrollTop-el.clientHeight<=px}
 function scrollBottom(el){if(el)requestAnimationFrame(()=>{el.scrollTop=el.scrollHeight})}
@@ -400,12 +400,25 @@ function renderInspector(){
   document.querySelectorAll('[data-inspector]').forEach(b=>b.classList.toggle('active',b.dataset.inspector===model.inspector));
   const c=$('inspectorContent');
   if(!c) return;
+  const key=inspectorRenderKey();
+  if(key&&key===model.lastInspectorKey)return;
+  model.lastInspectorKey=key;
   if(model.inspector==='agent')return renderAgentInspector(c);
   if(model.inspector==='spec')return renderDoc(c,'spec.md','SPEC',model.state?.specAdherence);
   if(model.inspector==='devplan')return renderDoc(c,'devplan.md','DEVPLAN',model.state?.devplanAdherence);
   if(model.inspector==='artifacts')return renderArtifacts(c);
   if(model.inspector==='logs')return renderLogs(c);
   if(model.inspector==='run')return renderRunJson(c);
+}
+function resourceSig(xs){return (xs||[]).map(x=>`${x.name}:${x.size}:${x.modifiedAt}`).join('|')}
+function inspectorRenderKey(){
+  if(model.inspector==='agent')return null;
+  if(model.inspector==='spec')return `spec:${model.selectedRunId||''}:${adherenceLabel(model.state?.specAdherence)}:${resourceSig(model.artifacts)}`;
+  if(model.inspector==='devplan')return `devplan:${model.selectedRunId||''}:${adherenceLabel(model.state?.devplanAdherence)}:${resourceSig(model.artifacts)}`;
+  if(model.inspector==='artifacts')return `artifacts:${model.selectedRunId||''}:${model.selectedArtifact||''}:${resourceSig(model.artifacts)}`;
+  if(model.inspector==='logs')return `logs:${model.selectedRunId||''}:${model.selectedLog||''}:${resourceSig(model.logs)}`;
+  if(model.inspector==='run')return `run:${model.selectedRunId||''}:${model.state?.updatedAt||''}`;
+  return `${model.inspector}:${model.selectedRunId||''}`;
 }
 
 function renderAgentInspector(c){
@@ -417,24 +430,33 @@ function renderAgentInspector(c){
 
 async function renderDoc(c,file,label,adh){
   const status=adherenceLabel(adh);
+  const runId=model.selectedRunId;
+  const key=`${runId||'no-run'}:${file}`;
   const candidates=file==='spec.md'?['spec.md','SPEC.approved-candidate-v2.md','SPEC.approved-candidate.md','SPEC.md']:file==='devplan.md'?['devplan.md','DEVPLAN.approved-candidate-v2.md','DEVPLAN.reconciled.md','DEVPLAN.md']:[file];
-  c.innerHTML=`<div class="inspector-section"><div class="mini-toolbar"><b>${label}</b><span>${esc(status)} · ${adh?.completed||0}/${adh?.total||0}</span></div><article class="markdown raw-box">Loading ${label}…</article></div>`;
-  if(!model.selectedRunId){c.querySelector('article').textContent=`${label} has not been generated yet.`;return}
+  const cached=model.docCache.get(key);
+  if(cached){c.dataset.docKey=key;c.innerHTML=`<div class="inspector-section"><div class="mini-toolbar"><b>${label}</b><span>${esc(status)} · ${adh?.completed||0}/${adh?.total||0}</span></div><article class="markdown raw-box"><p class="muted">Showing <code>${esc(cached.name)}</code></p>${md(cached.text)}</article></div>`;return}
+  if(c.dataset.docKey!==key||!c.querySelector('article')){c.dataset.docKey=key;c.innerHTML=`<div class="inspector-section"><div class="mini-toolbar"><b>${label}</b><span>${esc(status)} · ${adh?.completed||0}/${adh?.total||0}</span></div><article class="markdown raw-box">Loading ${label}…</article></div>`;}
+  if(!runId){c.querySelector('article').textContent=`${label} has not been generated yet.`;return}
+  if(model.loadingDocs.has(key))return;
+  model.loadingDocs.add(key);
   for(const candidate of candidates){
     try{
-      const txt=await getText(`/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts/${candidate}`);
-      c.querySelector('article').innerHTML=`<p class="muted">Showing <code>${esc(candidate)}</code></p>`+md(txt);
+      const txt=await getText(`/api/runs/${encodeURIComponent(runId)}/artifacts/${candidate}`);
+      model.docCache.set(key,{name:candidate,text:txt});
+      if(model.selectedRunId===runId&&model.inspector===(file==='spec.md'?'spec':'devplan'))c.querySelector('article').innerHTML=`<p class="muted">Showing <code>${esc(candidate)}</code></p>`+md(txt);
+      model.loadingDocs.delete(key);
       return;
     }catch{}
   }
-  c.querySelector('article').textContent=`No final ${label} artifact found. Tried: ${candidates.join(', ')}. Dashboard state reports adherence: ${status}.`;
+  model.loadingDocs.delete(key);
+  if(model.selectedRunId===runId)c.querySelector('article').textContent=`No final ${label} artifact found. Tried: ${candidates.join(', ')}. Dashboard state reports adherence: ${status}.`;
 }
 
 function md(src){return esc(src).replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>').replace(/^- \[x\] (.*)$/gim,'<p>✅ $1</p>').replace(/^- \[ \] (.*)$/gim,'<p>⬜ $1</p>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\n\n/g,'<br><br>')}
 function previewKey(kind,name){return `${model.selectedRunId||'no-run'}:${kind}:${name||''}`}
 async function loadPreview(kind,name){if(!name||!model.selectedRunId)return; const key=previewKey(kind,name), cache=kind==='artifact'?model.artifactCache:model.logCache; if(cache.has(key)||model.loadingPreview.has(key))return; model.loadingPreview.add(key); try{const url=kind==='artifact'?`/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts/${encodeURIComponent(name)}`:`/api/runs/${encodeURIComponent(model.selectedRunId)}/logs/${encodeURIComponent(name)}?tail=1000`; const txt=await getText(url); cache.set(key,txt); const p=$(kind==='artifact'?'artifactPreview':'logPreview'); if(p&&((kind==='artifact'&&model.selectedArtifact===name)||(kind==='log'&&model.selectedLog===name)))p.textContent=txt}finally{model.loadingPreview.delete(key)}}
-async function openArtifact(name){model.selectedArtifact=name;setPref('hermes.apb.dashboard.selectedArtifact',name);model.inspector='artifacts';setPref('hermes.apb.dashboard.inspectorTab','artifacts');renderInspector(); loadPreview('artifact',name)}
-async function openLog(name){model.selectedLog=name;setPref('hermes.apb.dashboard.selectedLog',name);model.inspector='logs';setPref('hermes.apb.dashboard.inspectorTab','logs');renderInspector(); loadPreview('log',name)}
+async function openArtifact(name){model.selectedArtifact=name;setPref('hermes.apb.dashboard.selectedArtifact',name);model.inspector='artifacts';setPref('hermes.apb.dashboard.inspectorTab','artifacts');model.lastInspectorKey=null;renderInspector(); loadPreview('artifact',name)}
+async function openLog(name){model.selectedLog=name;setPref('hermes.apb.dashboard.selectedLog',name);model.inspector='logs';setPref('hermes.apb.dashboard.inspectorTab','logs');model.lastInspectorKey=null;renderInspector(); loadPreview('log',name)}
 
 function renderArtifacts(c){
   const key=previewKey('artifact',model.selectedArtifact), cached=model.artifactCache.get(key);

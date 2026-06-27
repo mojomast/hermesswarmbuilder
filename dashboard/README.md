@@ -17,3 +17,8 @@ The dashboard features an integrated real-time **Dashboard View Switcher** in th
 
 The dashboard does not start builds. The midnight runner owns scheduled execution and writes state/events for this UI.
 
+## Rendering Stability
+
+Live views receive state, event, and heartbeat updates over SSE. Inspector and drawer panes should preserve their current DOM whenever the selected run, tab, artifact/log selection, and resource metadata have not changed. SPEC/DEVPLAN content is cached per run after loading so heartbeat refreshes do not flash the pane back to a loading state.
+
+When updating dashboard renderers, prefer keyed reconciliation or render keys over wholesale `innerHTML` replacement for panels with scroll state, previews, expanded rows, or async document loads.

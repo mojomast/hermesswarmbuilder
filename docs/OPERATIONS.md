@@ -41,7 +41,8 @@ bun ~/.hermes/scripts/autonomous-project-midnight-runner.ts \
 ```bash
 python3 - <<'PY'
 import json
-s=json.load(open('/home/mojo/.hermes/autonomous-projects/state.json'))
+from pathlib import Path
+s=json.load(open(Path.home()/'.hermes/autonomous-projects/state.json'))
 print(json.dumps({k:s.get(k) for k in ['currentRunId','status','phase','task','lastAction','updatedAt']}, indent=2))
 PY
 ```

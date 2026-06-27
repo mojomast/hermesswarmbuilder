@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(os.environ.get("AUTONOMOUS_PROJECT_STATE_ROOT", "/home/mojo/.hermes/autonomous-projects"))
+ROOT = Path(os.environ.get("AUTONOMOUS_PROJECT_STATE_ROOT", str(Path.home() / ".hermes" / "autonomous-projects")))
 STATE = Path(os.environ.get("AUTONOMOUS_PROJECT_STATE", ROOT / "state.json"))
 EVENTS = Path(os.environ.get("AUTONOMOUS_PROJECT_EVENTS", ROOT / "events.jsonl"))
 LOCK = ROOT / "telemetry.lock"

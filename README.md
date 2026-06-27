@@ -1,6 +1,6 @@
 # Hermes Swarm Builder
 
-Hermes Swarm Builder packages the local autonomous-project workflow that was built on Kimi: a midnight runner, governed runner prompt, telemetry helper, read-only live dashboard, systemd/cron install scaffolding, and operational docs.
+Hermes Swarm Builder packages a local autonomous-project workflow for a Hermes host: a midnight runner, governed runner prompt, telemetry helper, read-only live dashboard, systemd/cron install scaffolding, and operational docs.
 
 The system lets a Hermes agent run a complete local build cycle later on a schedule:
 
@@ -49,10 +49,10 @@ Commands you may use:
   ./scripts/add-webhub-card.sh   # only if ~/.hermes/web-hub/index.html exists
 ```
 
-Expected final link on Kimi-like hosts:
+Expected dashboard link on the Hermes host:
 
 ```text
-http://kimi.tailec998.ts.net:9200/
+http://<hermes-hostname-or-ip>:9200/
 ```
 
 Local fallback:
@@ -115,10 +115,10 @@ HERMES_HOME=/path/to/hermes-home ./scripts/install.sh
 INSTALL_CRON=0 ./scripts/install.sh
 INSTALL_SERVICE=0 ./scripts/install.sh
 BUN_BIN=/home/me/.bun/bin/bun ./scripts/install.sh
-PUBLIC_HOST=kimi.tailec998.ts.net ./scripts/install.sh
+PUBLIC_HOST=<hermes-hostname-or-ip> ./scripts/install.sh
 ```
 
-Add a card to an existing static Kimi web hub if present:
+Add a card to an existing static local web hub if present:
 
 ```bash
 ./scripts/add-webhub-card.sh
@@ -138,7 +138,7 @@ Open:
 http://127.0.0.1:9200/
 ```
 
-or on a Tailscale/DNS host:
+or on any reachable LAN/VPN/DNS host:
 
 ```text
 http://<host>:9200/
@@ -238,7 +238,7 @@ You can edit `~/.hermes/autonomous-projects/runner-prompt.md` after install to s
 
 ## How this was made
 
-This repository was extracted from an active Kimi/Hermes build session. The workflow evolved in stages:
+This repository was extracted from an active Hermes build session. The workflow evolved in stages:
 
 1. A dashboard scaffold was created under `~/.hermes/autonomous-projects-dashboard` to visualize autonomous runs without exposing an arbitrary browser shell.
 2. A midnight runner was created under `~/.hermes/scripts/autonomous-project-midnight-runner.ts` to start real autonomous-project work later via cron rather than immediately.

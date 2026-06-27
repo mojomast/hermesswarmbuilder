@@ -155,6 +155,19 @@ Do not merely describe subagents in prose; every subagent must have a stable das
 - Never push unless the remote is intentionally configured for the selected project and tests/docs/safety are satisfied.
 - Never use destructive git commands.
 
+## Project Selection and Idea Ingestion
+
+When the workflow transitions to the `selecting` phase, the `selector` subagent must determine the project candidate for this run.
+
+1. **User-Provided Idea Sources (High Priority)**:
+   Check if the user has provided custom project ideas in any of the following locations:
+   - `$STATE_ROOT/ideas.md` or `$STATE_ROOT/ideas.json`
+   - `$STATE_ROOT/idea.txt` or `$RUN_ROOT/idea.txt`
+   If any of these files exist and contain non-empty idea descriptions, the `selector` subagent MUST choose one of the user-provided ideas as the target project candidate.
+
+2. **Autonomous Inventory Selection (Fallback)**:
+   If no user-provided idea file is present, the `selector` subagent scans local inventory (`$HOME/.hermes/skills`, local repos, and tools) and evaluates candidates according to the current steering directive below.
+
 ## Current steering directive
 
 For the next autonomous project selection, choose one of the local Hermes game projects/skills as the foundation and build a richer game-facing system on top of it. The selected foundation must come from local game inventory such as `$HOME/.hermes/skills/gaming`, `$HOME/.hermes/game_weave`, `pokemon-agent`, MiniHack, Doom, TextWorld, GridWorld, Arena, RuleShift/rule-puzzle, Logistics, or another locally present game-related project discovered during inventory scan.

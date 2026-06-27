@@ -64,7 +64,7 @@ http://127.0.0.1:9200/
 ## What is included
 
 ```text
-dashboard/       Bun read-only live operations dashboard
+dashboard/       Bun read-only live operations dashboard (5 dynamic views)
 runner/          Midnight runner that invokes `hermes chat` with telemetry env vars
 telemetry/       Canonical Python telemetry writer for state/events/run mirrors
 prompts/         Governed autonomous-builder runner prompt
@@ -72,6 +72,36 @@ systemd/         User service template
 scripts/         Installer, one-shot runner wrapper, web-hub card helper
 docs/            Architecture and operations notes
 ```
+
+## 🐝 The Builder Swarm: From Idea to Working Product
+
+Hermes Swarm Builder coordinates an autonomous multi-agent swarm to engineer complete software products from start to finish. The system provides flexible idea ingestion alongside a structured subagent pipeline.
+
+### 💡 1. Flexible Idea Selection & Ingestion
+
+Users can either provide their own target project ideas or let the swarm pick autonomously:
+
+* **Custom User-Provided Ideas (Direct Input)**:
+  Place your software ideas in `~/.hermes/autonomous-projects/ideas.md` (or `ideas.json` / `idea.txt`). During the selection phase, the `selector` subagent prioritizes your explicit ideas list and picks your target prompt to build.
+* **Autonomous Inventory Selection (Autonomous Mode)**:
+  If no custom idea file is found, the `selector` subagent scans local skills, repositories, and frameworks (e.g., local game engines or tools under `~/.hermes/skills`), picking an optimal project candidate based on current steering directives.
+
+### ⚙️ 2. The Multi-Agent Swarm Lifecycle
+
+Once an idea is selected, specialized subagents collaborate through strict quality-gated phases:
+
+1. **Selection & Discovery (`selector`)**: Analyzes candidate ideas or local inventory to establish the architecture foundation.
+2. **Exhaustive Specification (`spec-author`, `research-reviewer`, `safety-reviewer`, `spec-auditor`)**:
+   `spec-author` drafts a comprehensive 3,000+ word technical specification (`SPEC.md`). Reviewer subagents perform safety checks, novelty analysis, and architecture validation before approval.
+3. **Competing DevPlans & Reconciliation (`devplan-writer-a`, `devplan-writer-b`, `devplan-reconciler`)**:
+   Two writer subagents propose competing step-by-step development plans. The reconciler subagent synthesizes the best approaches into a unified `DEVPLAN.md`.
+4. **Parallel Implementation Swarm (`build-orchestrator`, `worker-core`, `worker-cli`, `worker-risk`, `testing-subagent`, `docs-subagent`)**:
+   The build orchestrator delegates modules across specialized worker subagents who write code, construct test suites, implement CLI/web interfaces, and author documentation in parallel.
+5. **Autonomous Deblocking & Self-Correction (`deblocker`)**:
+   If test failures or execution blockers arise during implementation, the `deblocker` subagent diagnoses errors, applies code patches, and validates fixes in real time.
+6. **Final Audit & Verification (`final-auditor`)**:
+   Validates test suite execution, security constraints, and artifact completion before finalizing the build product.
+
 
 ## Installed runtime layout
 

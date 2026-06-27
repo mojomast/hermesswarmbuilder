@@ -217,69 +217,281 @@ function renderPulseStats() {
   $('statPhase').textContent = (s.phase || ws).toUpperCase();
 }
 
+// DOM Reconciliation & Helper Functions
+function reconcileContainer(container, items, getKey, keyAttr, renderHTML, updateDOM, setupListeners, emptyMessage) {
+  if (!container) return;
+
+  if (items.length === 0) {
+    const emptyEl = container.querySelector('.empty-state');
+    if (!emptyEl || container.children.length > 1) {
+      container.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    }
+    return;
+  }
+
+  const emptyEl = container.querySelector('.empty-state');
+  if (emptyEl) {
+    emptyEl.remove();
+  }
+
+  const existingMap = new Map();
+  for (const child of Array.from(container.children)) {
+    const key = child.getAttribute(keyAttr);
+    if (key) {
+      existingMap.set(key, child);
+    }
+  }
+
+  const targetKeys = new Set(items.map(getKey));
+
+  for (const [key, child] of existingMap.entries()) {
+    if (!targetKeys.has(key)) {
+      child.remove();
+      existingMap.delete(key);
+    }
+  }
+
+  items.forEach((item, index) => {
+    const key = getKey(item);
+    let el = existingMap.get(key);
+
+    if (el) {
+      updateDOM(el, item);
+    } else {
+      const temp = document.createElement('div');
+      temp.innerHTML = renderHTML(item);
+      el = temp.firstElementChild;
+      setupListeners(el, item);
+      existingMap.set(key, el);
+    }
+
+    const childAtIndex = container.children[index];
+    if (childAtIndex !== el) {
+      container.insertBefore(el, childAtIndex || null);
+    }
+  });
+
+  while (container.children.length > items.length) {
+    container.lastElementChild.remove();
+  }
+}
+
+function createNodeCardHTML(node) {
+  const isSelected = node.id === model.selectedAgentId;
+  const tools = [...model.toolCalls.values()].filter(t => (t.agentId || inferAgent(t.source)) === node.id);
+  const activeTool = tools.find(t => t.status === 'running') || tools[tools.length - 1];
+
+  return `
+    <div class="node-card ${isSelected ? 'active-selected' : ''} ${node.status === 'blocked' ? 'status-blocked' : ''}" data-node-id="${esc(node.id)}">
+      <div class="node-header">
+        <div class="node-title-group">
+          <span class="dot ${theme[node.status] || node.status}"></span>
+          <span class="node-name" title="${esc(node.label || node.id)}">${esc(node.label || node.id)}</span>
+        </div>
+        <span class="node-role-badge">${esc(node.role)}</span>
+      </div>
+      <div class="node-task" title="${esc(node.currentTask || 'Idle')}">${esc(node.currentTask || 'Idle / Monitoring')}</div>
+      <div class="node-footer">
+        <span class="node-phase">PHASE: ${esc(node.currentPhase || '—')}</span>
+        ${activeTool ? `<span class="node-tool-tag interactive-tool-tag" data-tool-id="${esc(activeTool.id)}" title="Hover to preview tool execution">⚙ ${esc(activeTool.toolName)}</span>` : '<span class="node-tool-tag">ready</span>'}
+      </div>
+    </div>
+  `;
+}
+
+function updateNodeCardDOM(el, node) {
+  const isSelected = node.id === model.selectedAgentId;
+  const tools = [...model.toolCalls.values()].filter(t => (t.agentId || inferAgent(t.source)) === node.id);
+  const activeTool = tools.find(t => t.status === 'running') || tools[tools.length - 1];
+
+  el.classList.toggle('active-selected', isSelected);
+  el.classList.toggle('status-blocked', node.status === 'blocked');
+
+  const dot = el.querySelector('.dot');
+  if (dot) {
+    const dotClass = `dot ${theme[node.status] || node.status}`;
+    if (dot.className !== dotClass) dot.className = dotClass;
+  }
+
+  const nameEl = el.querySelector('.node-name');
+  if (nameEl) {
+    const label = node.label || node.id;
+    if (nameEl.textContent !== label) nameEl.textContent = label;
+    if (nameEl.title !== label) nameEl.title = label;
+  }
+
+  const roleEl = el.querySelector('.node-role-badge');
+  if (roleEl && roleEl.textContent !== node.role) {
+    roleEl.textContent = node.role;
+  }
+
+  const taskEl = el.querySelector('.node-task');
+  if (taskEl) {
+    const taskText = node.currentTask || 'Idle / Monitoring';
+    const taskTitle = node.currentTask || 'Idle';
+    if (taskEl.textContent !== taskText) taskEl.textContent = taskText;
+    if (taskEl.title !== taskTitle) taskEl.title = taskTitle;
+  }
+
+  const phaseEl = el.querySelector('.node-phase');
+  if (phaseEl) {
+    const phaseText = `PHASE: ${node.currentPhase || '—'}`;
+    if (phaseEl.textContent !== phaseText) phaseEl.textContent = phaseText;
+  }
+
+  const footerEl = el.querySelector('.node-footer');
+  if (footerEl) {
+    let toolTag = footerEl.querySelector('.node-tool-tag');
+    if (activeTool) {
+      if (!toolTag || !toolTag.classList.contains('interactive-tool-tag') || toolTag.dataset.toolId !== activeTool.id) {
+        const temp = document.createElement('div');
+        temp.innerHTML = `<span class="node-tool-tag interactive-tool-tag" data-tool-id="${esc(activeTool.id)}" title="Hover to preview tool execution">⚙ ${esc(activeTool.toolName)}</span>`;
+        const newTag = temp.firstElementChild;
+        newTag.onmouseenter = (e) => { e.stopPropagation(); showToolPopover(activeTool.id, newTag); };
+        newTag.onmouseleave = () => hideToolPopover();
+        if (toolTag) toolTag.replaceWith(newTag);
+        else footerEl.appendChild(newTag);
+      } else {
+        const text = `⚙ ${activeTool.toolName}`;
+        if (toolTag.textContent !== text) toolTag.textContent = text;
+      }
+    } else {
+      if (!toolTag || toolTag.classList.contains('interactive-tool-tag')) {
+        const temp = document.createElement('div');
+        temp.innerHTML = `<span class="node-tool-tag">ready</span>`;
+        const newTag = temp.firstElementChild;
+        if (toolTag) toolTag.replaceWith(newTag);
+        else footerEl.appendChild(newTag);
+      }
+    }
+  }
+
+  setupNodeCardListeners(el, node);
+}
+
+function setupNodeCardListeners(el, node) {
+  el.onclick = (e) => {
+    if (e.target.closest('.interactive-tool-tag')) return;
+    selectAgent(node.id);
+    openInspectorDrawer();
+  };
+  const toolTag = el.querySelector('.interactive-tool-tag');
+  if (toolTag) {
+    toolTag.onmouseenter = (e) => {
+      e.stopPropagation();
+      showToolPopover(toolTag.dataset.toolId, toolTag);
+    };
+    toolTag.onmouseleave = () => hideToolPopover();
+  }
+}
+
 function renderSwarmGrid() {
   const container = $('swarmGrid');
+  if (!container) return;
   let nodes = agents();
   if (model.onlyActiveNodes) {
     nodes = nodes.filter(a => !terminalStates.has(a.status) || a.status === 'blocked');
   }
 
-  if (nodes.length === 0) {
-    container.innerHTML = '<div class="empty-state">No matching nodes in current matrix state.</div>';
-    return;
-  }
-
-  container.innerHTML = nodes.map(node => {
-    const isSelected = node.id === model.selectedAgentId;
-    const tools = [...model.toolCalls.values()].filter(t => (t.agentId || inferAgent(t.source)) === node.id);
-    const activeTool = tools.find(t => t.status === 'running') || tools[tools.length - 1];
-    
-    return `
-      <div class="node-card ${isSelected ? 'active-selected' : ''} ${node.status === 'blocked' ? 'status-blocked' : ''}" data-node-id="${esc(node.id)}">
-        <div class="node-header">
-          <div class="node-title-group">
-            <span class="dot ${theme[node.status] || node.status}"></span>
-            <span class="node-name" title="${esc(node.label || node.id)}">${esc(node.label || node.id)}</span>
-          </div>
-          <span class="node-role-badge">${esc(node.role)}</span>
-        </div>
-        <div class="node-task" title="${esc(node.currentTask || 'Idle')}">${esc(node.currentTask || 'Idle / Monitoring')}</div>
-        <div class="node-footer">
-          <span class="node-phase">PHASE: ${esc(node.currentPhase || '—')}</span>
-          ${activeTool ? `<span class="node-tool-tag interactive-tool-tag" data-tool-id="${esc(activeTool.id)}" title="Hover to preview tool execution">⚙ ${esc(activeTool.toolName)}</span>` : '<span class="node-tool-tag">ready</span>'}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  container.querySelectorAll('[data-node-id]').forEach(el => {
-    el.onclick = (e) => {
-      if (e.target.closest('.interactive-tool-tag')) return;
-      selectAgent(el.dataset.nodeId);
-      openInspectorDrawer();
-    };
-  });
-
-  container.querySelectorAll('.interactive-tool-tag').forEach(el => {
-    el.onmouseenter = (e) => {
-      e.stopPropagation();
-      showToolPopover(el.dataset.toolId, el);
-    };
-    el.onmouseleave = () => {
-      hideToolPopover();
-    };
-  });
+  reconcileContainer(
+    container,
+    nodes,
+    node => node.id,
+    'data-node-id',
+    createNodeCardHTML,
+    updateNodeCardDOM,
+    setupNodeCardListeners,
+    'No matching nodes in current matrix state.'
+  );
 }
 
 function selectAgent(id) {
   model.selectedAgentId = id;
   setPref('hermes.apb.dashboard.selectedAgentId', id);
   renderSwarmGrid();
-  renderInspector();
+  renderInspector(true);
+}
+
+function createTelemetryRowHTML(e) {
+  const tool = extractTool(e);
+  const lvlClass = tool ? 'tool' : e.level;
+  const lvlText = tool ? 'TOOL' : e.level.toUpperCase();
+
+  return `
+    <div class="t-row" data-event-id="${esc(e.id)}" ${tool ? `data-tool-id="${esc(tool.id)}"` : ''}>
+      <div class="t-cell t-time">${fmt(e.ts)}</div>
+      <div class="t-cell t-level ${lvlClass}">${lvlText}</div>
+      <div class="t-cell t-source" title="${esc(e.source)}">${esc(e.source)}</div>
+      <div class="t-cell t-type" title="${esc(tool ? tool.toolName : e.type)}">${esc(tool ? tool.toolName : e.type)}</div>
+      <div class="t-cell t-msg" title="${esc(e.message)}">${esc(e.message)}</div>
+    </div>
+  `;
+}
+
+function updateTelemetryRowDOM(el, e) {
+  const tool = extractTool(e);
+  const lvlClass = tool ? 'tool' : e.level;
+  const lvlText = tool ? 'TOOL' : e.level.toUpperCase();
+
+  if (tool) {
+    el.dataset.toolId = tool.id;
+  } else {
+    delete el.dataset.toolId;
+  }
+
+  const timeEl = el.querySelector('.t-time');
+  if (timeEl) {
+    const timeStr = fmt(e.ts);
+    if (timeEl.textContent !== timeStr) timeEl.textContent = timeStr;
+  }
+
+  const lvlEl = el.querySelector('.t-level');
+  if (lvlEl) {
+    const className = `t-cell t-level ${lvlClass}`;
+    if (lvlEl.className !== className) lvlEl.className = className;
+    if (lvlEl.textContent !== lvlText) lvlEl.textContent = lvlText;
+  }
+
+  const sourceEl = el.querySelector('.t-source');
+  if (sourceEl) {
+    if (sourceEl.textContent !== e.source) sourceEl.textContent = e.source;
+    if (sourceEl.title !== e.source) sourceEl.title = e.source;
+  }
+
+  const typeEl = el.querySelector('.t-type');
+  if (typeEl) {
+    const typeStr = tool ? tool.toolName : e.type;
+    if (typeEl.textContent !== typeStr) typeEl.textContent = typeStr;
+    if (typeEl.title !== typeStr) typeEl.title = typeStr;
+  }
+
+  const msgEl = el.querySelector('.t-msg');
+  if (msgEl) {
+    if (msgEl.textContent !== e.message) msgEl.textContent = e.message;
+    if (msgEl.title !== e.message) msgEl.title = e.message;
+  }
+
+  setupTelemetryRowListeners(el, e);
+}
+
+function setupTelemetryRowListeners(el, e) {
+  const tool = extractTool(e);
+  el.onclick = () => {
+    selectAgent(e.agentId || inferAgent(e.source));
+    openInspectorDrawer();
+  };
+  if (tool) {
+    el.onmouseenter = () => showToolPopover(tool.id, el);
+    el.onmouseleave = () => hideToolPopover();
+  } else {
+    el.onmouseenter = null;
+    el.onmouseleave = null;
+  }
 }
 
 function renderTelemetry() {
-  const container = $('telemetryRows');
+  const container = $('telemetryRows') || $('telemetryStream');
+  if (!container) return;
   let list = model.events;
 
   // Filter query
@@ -299,58 +511,38 @@ function renderTelemetry() {
 
   const slice = list.slice(-150).reverse();
 
-  if (slice.length === 0) {
-    container.innerHTML = '<div class="empty-state">No telemetry records matching filter criteria.</div>';
-    return;
-  }
-
-  container.innerHTML = slice.map(e => {
-    const tool = extractTool(e);
-    const lvlClass = tool ? 'tool' : e.level;
-    const lvlText = tool ? 'TOOL' : e.level.toUpperCase();
-
-    return `
-      <div class="t-row" data-event-id="${esc(e.id)}" ${tool ? `data-tool-id="${esc(tool.id)}"` : ''}>
-        <div class="t-cell t-time">${fmt(e.ts)}</div>
-        <div class="t-cell t-level ${lvlClass}">${lvlText}</div>
-        <div class="t-cell t-source" title="${esc(e.source)}">${esc(e.source)}</div>
-        <div class="t-cell t-type" title="${esc(tool ? tool.toolName : e.type)}">${esc(tool ? tool.toolName : e.type)}</div>
-        <div class="t-cell t-msg" title="${esc(e.message)}">${esc(e.message)}</div>
-      </div>
-    `;
-  }).join('');
-
-  container.querySelectorAll('[data-event-id]').forEach(el => {
-    el.onclick = () => {
-      const e = model.events.find(x => x.id === el.dataset.eventId);
-      if (e) {
-        selectAgent(e.agentId || inferAgent(e.source));
-        openInspectorDrawer();
-      }
-    };
-    if (el.dataset.toolId) {
-      el.onmouseenter = (evt) => {
-        showToolPopover(el.dataset.toolId, el);
-      };
-      el.onmouseleave = () => {
-        hideToolPopover();
-      };
-    }
-  });
+  reconcileContainer(
+    container,
+    slice,
+    e => e.id,
+    'data-event-id',
+    createTelemetryRowHTML,
+    updateTelemetryRowDOM,
+    setupTelemetryRowListeners,
+    'No telemetry records matching filter criteria.'
+  );
 }
 
 // Quick Inspector Drawer Logic
 function openInspectorDrawer() {
   $('inspectorDrawer').hidden = false;
-  renderInspector();
+  renderInspector(true);
 }
 
-function renderInspector() {
+let lastInspectorKey = null;
+
+function renderInspector(force = false) {
   document.querySelectorAll('#inspectorTabs .drawer-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.inspector === model.inspector);
   });
   const c = $('inspectorContent');
   if (!c) return;
+
+  const currentKey = `${model.inspector}:${model.selectedRunId}:${model.selectedAgentId}`;
+  if (!force && model.inspector !== 'agent' && lastInspectorKey === currentKey) {
+    return;
+  }
+  lastInspectorKey = currentKey;
 
   if (model.inspector === 'agent') return renderAgentInspector(c);
   if (model.inspector === 'spec') return renderDoc(c, 'spec.md', 'SPEC', model.state?.specAdherence);
@@ -360,150 +552,43 @@ function renderInspector() {
   if (model.inspector === 'run') return renderRunJson(c);
 }
 
-function renderAgentInspector(c) {
-  const a = agents().find(x => x.id === model.selectedAgentId) || agents()[0];
-  if (!a) { c.innerHTML = '<div class="empty-state">No agent node selected.</div>'; return; }
-  
-  $('drawerTitle').textContent = `INSPECTOR // NODE: ${a.label || a.id}`;
-  const ev = model.events.filter(e => e.agentId === a.id).slice(-30);
-  const tools = [...model.toolCalls.values()].filter(t => (t.agentId || inferAgent(t.source)) === a.id);
+function preserveScroll(fn) {
+  const scrollables = [
+    document.documentElement,
+    document.body,
+    $('swarmGrid'),
+    $('telemetryContent'),
+    $('telemetryRows'),
+    $('telemetryStream'),
+    $('inspectorContent')
+  ].filter(Boolean);
 
-  c.innerHTML = `
-    <div style="display:grid; gap:12px;">
-      <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px; background:color-mix(in oklch, var(--bg-dark) 80%, transparent); padding:10px; border-radius:8px; border:1px solid var(--panel-border);">
-        <div><span style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">ROLE:</span> <b>${esc(a.role)}</b></div>
-        <div><span style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">STATUS:</span> <b>${esc(a.status)}</b></div>
-        <div><span style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">PHASE:</span> <b>${esc(a.currentPhase || '—')}</b></div>
-        <div><span style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">TOOLS EXECUTED:</span> <b>${tools.length}</b></div>
-      </div>
-      
-      <div>
-        <h4 style="font-family:var(--font-mono); font-size:11px; color:var(--matrix-cyan); margin:0 0 6px 0;">RECENT ACTIVITY TAIL</h4>
-        <pre class="raw-box">${esc(a.lastMessage || 'No recorded output messages.')}</pre>
-      </div>
+  const positions = scrollables.map(el => ({
+    el,
+    top: el === document.documentElement || el === document.body ? window.scrollY : el.scrollTop,
+    left: el === document.documentElement || el === document.body ? window.scrollX : el.scrollLeft
+  }));
 
-      <div>
-        <h4 style="font-family:var(--font-mono); font-size:11px; color:var(--matrix-cyan); margin:0 0 6px 0;">TOOL TELEMETRY (${tools.length})</h4>
-        ${tools.length > 0 ? tools.map(t => `
-          <div style="background:color-mix(in oklch, var(--panel-bg) 80%, transparent); border:1px solid var(--panel-border); border-radius:6px; padding:10px; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; font-weight:700; color:var(--matrix-cyan); font-size:11px; margin-bottom:4px; font-family:var(--font-mono);">
-              <span>⚙ ${esc(t.toolName)}</span>
-              <span>${esc(t.status)} ${t.durationMs ? `(${t.durationMs}ms)` : ''}</span>
-            </div>
-            <div style="font-size:11px; color:var(--text-muted);">${esc(t.action)}</div>
-          </div>
-        `).join('') : '<div class="empty-state">No tool calls for this node.</div>'}
-      </div>
-    </div>
-  `;
-}
+  fn();
 
-async function renderDoc(c, file, label, adh) {
-  $('drawerTitle').textContent = `INSPECTOR // ${label}`;
-  const candidates = file === 'spec.md' ? ['spec.md', 'SPEC.approved-candidate-v2.md', 'SPEC.approved-candidate.md', 'SPEC.md'] : ['devplan.md', 'DEVPLAN.approved-candidate-v2.md', 'DEVPLAN.reconciled.md', 'DEVPLAN.md'];
-  c.innerHTML = `<div class="empty-state">Loading ${label}...</div>`;
-  if (!model.selectedRunId) { c.innerHTML = `<div class="empty-state">${label} requires an active run ID.</div>`; return; }
-  for (const candidate of candidates) {
-    try {
-      const txt = await getText(`/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts/${candidate}`);
-      c.innerHTML = `<div class="markdown-body"><p style="color:var(--text-muted); font-size:11px;">Viewing <code>${esc(candidate)}</code></p>${md(txt)}</div>`;
-      return;
-    } catch { }
-  }
-  c.innerHTML = `<div class="empty-state">No ${label} document found for current run.</div>`;
-}
-
-function md(src) {
-  return esc(src)
-    .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.*)$/gm, '<h1>$1</h1>')
-    .replace(/^- \[x\] (.*)$/gim, '<p>✅ $1</p>')
-    .replace(/^- \[ \] (.*)$/gim, '<p>⬜ $1</p>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\n\n/g, '<br><br>');
-}
-
-function renderArtifacts(c) {
-  $('drawerTitle').textContent = `INSPECTOR // ARTIFACTS`;
-  c.innerHTML = `
-    <div style="display:grid; gap:10px;">
-      <div class="file-list">
-        ${model.artifacts.map(f => `
-          <div class="file-row ${f.name === model.selectedArtifact ? 'active' : ''}" data-artifact="${esc(f.name)}">
-            <b>${esc(f.name)}</b>
-            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${f.size} bytes · ${dt(f.modifiedAt)}</div>
-          </div>
-        `).join('') || '<div class="empty-state">No artifacts for this run.</div>'}
-      </div>
-      <pre id="artifactPreview" class="raw-box">Select an artifact to preview content.</pre>
-    </div>
-  `;
-  c.querySelectorAll('[data-artifact]').forEach(el => {
-    el.onclick = () => loadPreview('artifact', el.dataset.artifact);
+  positions.forEach(({ el, top, left }) => {
+    if (el === document.documentElement || el === document.body) {
+      window.scrollTo(left, top);
+    } else {
+      el.scrollTop = top;
+      el.scrollLeft = left;
+    }
   });
-  if (model.selectedArtifact) loadPreview('artifact', model.selectedArtifact);
-}
-
-function renderLogs(c) {
-  $('drawerTitle').textContent = `INSPECTOR // LOGS`;
-  c.innerHTML = `
-    <div style="display:grid; gap:10px;">
-      <div class="file-list">
-        ${model.logs.map(f => `
-          <div class="file-row ${f.name === model.selectedLog ? 'active' : ''}" data-log="${esc(f.name)}">
-            <b>${esc(f.name)}</b>
-            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">${f.size} bytes · ${dt(f.modifiedAt)}</div>
-          </div>
-        `).join('') || '<div class="empty-state">No log files found.</div>'}
-      </div>
-      <pre id="logPreview" class="raw-box">Select a log file to view.</pre>
-    </div>
-  `;
-  c.querySelectorAll('[data-log]').forEach(el => {
-    el.onclick = () => loadPreview('log', el.dataset.log);
-  });
-  if (model.selectedLog) loadPreview('log', model.selectedLog);
-}
-
-async function loadPreview(kind, name) {
-  if (!name || !model.selectedRunId) return;
-  if (kind === 'artifact') {
-    model.selectedArtifact = name;
-    setPref('hermes.apb.dashboard.selectedArtifact', name);
-  } else {
-    model.selectedLog = name;
-    setPref('hermes.apb.dashboard.selectedLog', name);
-  }
-  const prevEl = $(kind === 'artifact' ? 'artifactPreview' : 'logPreview');
-  if (prevEl) prevEl.textContent = `Loading ${name}...`;
-  try {
-    const url = kind === 'artifact' 
-      ? `/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts/${encodeURIComponent(name)}` 
-      : `/api/runs/${encodeURIComponent(model.selectedRunId)}/logs/${encodeURIComponent(name)}?tail=1000`;
-    const txt = await getText(url);
-    if (prevEl) prevEl.textContent = txt;
-  } catch (err) {
-    if (prevEl) prevEl.textContent = `Error loading ${name}: ${err.message}`;
-  }
-}
-
-async function renderRunJson(c) {
-  $('drawerTitle').textContent = `INSPECTOR // RUN JSON`;
-  if (!model.selectedRunId) { c.innerHTML = '<div class="empty-state">No active run selected.</div>'; return; }
-  try {
-    c.innerHTML = `<pre class="raw-box">${esc(JSON.stringify(await getJson(`/api/runs/${encodeURIComponent(model.selectedRunId)}`), null, 2))}</pre>`;
-  } catch {
-    c.innerHTML = '<div class="empty-state">Run JSON data unavailable.</div>';
-  }
 }
 
 function renderAll() {
-  renderWorkflowStrip();
-  renderPulseStats();
-  renderSwarmGrid();
-  renderTelemetry();
-  if (!$('inspectorDrawer').hidden) renderInspector();
+  preserveScroll(() => {
+    renderWorkflowStrip();
+    renderPulseStats();
+    renderSwarmGrid();
+    renderTelemetry();
+    if (!$('inspectorDrawer').hidden) renderInspector(false);
+  });
 }
 
 async function loadRunResources() {
@@ -615,7 +700,7 @@ function setupListeners() {
     b.onclick = () => {
       model.inspector = b.dataset.inspector;
       setPref('hermes.apb.dashboard.inspectorTab', model.inspector);
-      renderInspector();
+      renderInspector(true);
     };
   });
 

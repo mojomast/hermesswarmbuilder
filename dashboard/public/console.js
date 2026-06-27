@@ -345,13 +345,15 @@ function renderSidebar() {
 
 function renderTerminal() {
   const out = $('terminalOutput');
+  if (!out) return;
   const tagFilter = $('terminalAgentFilterTag');
 
   if (model.selectedAgentId) {
-    tagFilter.classList.remove('hidden');
-    $('selectedAgentName').textContent = model.selectedAgentId;
+    if (tagFilter) tagFilter.classList.remove('hidden');
+    const selectedAgentNameEl = $('selectedAgentName');
+    if (selectedAgentNameEl) selectedAgentNameEl.textContent = model.selectedAgentId;
   } else {
-    tagFilter.classList.add('hidden');
+    if (tagFilter) tagFilter.classList.add('hidden');
   }
 
   // Filter events for terminal stream
@@ -368,50 +370,131 @@ function renderTerminal() {
   if (model.activeFilter === 'errors') lines = lines.filter(e => ['error', 'warn'].includes(e.level) || /error|failed/i.test(e.message));
 
   lines = lines.slice(-500);
-  $('terminalLineCount').textContent = `${lines.length} lines`;
+  const lineCountEl = $('terminalLineCount');
+  if (lineCountEl) lineCountEl.textContent = `${lines.length} lines`;
 
-  const lineItems = lines.map((e, idx) => {
-    const lineNum = String(idx + 1).padStart(4, '0');
-    const tag = e.type.startsWith('tool') ? 'tool' : e.level === 'error' ? 'error' : e.level === 'warn' ? 'warn' : e.agentId ? 'agent' : 'info';
-    return `
-      <div class="terminal-line">
-        <span class="line-num">${lineNum}</span>
-        <span class="line-time">${fmt(e.ts)}</span>
-        <span class="line-tag ${tag}">[${tag.toUpperCase()}]</span>
-        <span class="line-content">${esc(e.message || e.type)}</span>
+  const isAtBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  const savedScrollTop = out.scrollTop;
+
+  if (lines.length === 0) {
+    const promptLine = `
+      <div class="terminal-line system-line active-prompt">
+        <span class="line-num">0001</span>
+        <span class="line-time">${fmt(new Date().toISOString())}</span>
+        <span class="line-tag sys">[LIVE]</span>
+        <span class="line-content" style="color:var(--accent-green)">&gt; streaming active events...<span class="terminal-cursor"></span></span>
       </div>
     `;
-  }).join('');
+    out.innerHTML = '<div class="empty-state">No terminal log entries matching filter</div>' + promptLine;
+    return;
+  }
 
-  const promptLine = `
-    <div class="terminal-line system-line active-prompt">
-      <span class="line-num">${String(lines.length + 1).padStart(4, '0')}</span>
-      <span class="line-time">${fmt(new Date().toISOString())}</span>
-      <span class="line-tag sys">[LIVE]</span>
-      <span class="line-content" style="color:var(--accent-green)">&gt; streaming active events...<span class="terminal-cursor"></span></span>
-    </div>
-  `;
+  if (out.querySelector('.empty-state')) {
+    out.innerHTML = '';
+  }
 
-  out.innerHTML = (lineItems || '<div class="empty-state">No terminal log entries matching filter</div>') + promptLine;
+  // Find or create prompt line
+  let promptEl = out.querySelector('.active-prompt');
+  if (!promptEl) {
+    const temp = document.createElement('div');
+    temp.innerHTML = `
+      <div class="terminal-line system-line active-prompt">
+        <span class="line-num">${String(lines.length + 1).padStart(4, '0')}</span>
+        <span class="line-time">${fmt(new Date().toISOString())}</span>
+        <span class="line-tag sys">[LIVE]</span>
+        <span class="line-content" style="color:var(--accent-green)">&gt; streaming active events...<span class="terminal-cursor"></span></span>
+      </div>
+    `;
+    promptEl = temp.firstElementChild;
+    out.appendChild(promptEl);
+  }
 
-  if (model.followTerminal) {
+  const existingLines = new Map();
+  out.querySelectorAll('.terminal-line[data-event-id]').forEach(el => {
+    existingLines.set(el.dataset.eventId, el);
+  });
+
+  lines.forEach((e, idx) => {
+    const lineNum = String(idx + 1).padStart(4, '0');
+    const tag = e.type.startsWith('tool') ? 'tool' : e.level === 'error' ? 'error' : e.level === 'warn' ? 'warn' : e.agentId ? 'agent' : 'info';
+
+    let lineEl = existingLines.get(e.id);
+    if (!lineEl) {
+      const temp = document.createElement('div');
+      temp.innerHTML = `
+        <div class="terminal-line" data-event-id="${esc(e.id)}">
+          <span class="line-num">${lineNum}</span>
+          <span class="line-time">${fmt(e.ts)}</span>
+          <span class="line-tag ${tag}">[${tag.toUpperCase()}]</span>
+          <span class="line-content">${esc(e.message || e.type)}</span>
+        </div>
+      `;
+      lineEl = temp.firstElementChild;
+    } else {
+      const numEl = lineEl.querySelector('.line-num');
+      if (numEl) numEl.textContent = lineNum;
+    }
+
+    if (out.children[idx] !== lineEl) {
+      out.insertBefore(lineEl, out.children[idx] || promptEl);
+    }
+  });
+
+  // Remove lines no longer in filtered slice
+  const validEventIds = new Set(lines.map(e => e.id));
+  existingLines.forEach((el, id) => {
+    if (!validEventIds.has(id)) {
+      el.remove();
+    }
+  });
+
+  // Update prompt line number and place at end
+  const promptNumEl = promptEl.querySelector('.line-num');
+  if (promptNumEl) promptNumEl.textContent = String(lines.length + 1).padStart(4, '0');
+  if (out.lastElementChild !== promptEl) {
+    out.appendChild(promptEl);
+  }
+
+  if (model.followTerminal && isAtBottom) {
     requestAnimationFrame(() => { out.scrollTop = out.scrollHeight; });
+  } else {
+    out.scrollTop = savedScrollTop;
   }
 }
 
 function renderToolConsole() {
-  const c = $('toolConsoleContent');
+  const c = $('toolConsoleContent') || $('toolConsoleOutput');
+  if (!c) return;
   
   document.querySelectorAll('.console-tabs-bar .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.consoleTab === model.consoleTab);
   });
 
   const toolsList = [...model.toolCalls.values()];
-  $('toolCallCount').textContent = toolsList.length;
-  $('rawCount').textContent = model.raw.length;
+  const toolCallCountEl = $('toolCallCount');
+  if (toolCallCountEl) toolCallCountEl.textContent = toolsList.length;
+  const rawCountEl = $('rawCount');
+  if (rawCountEl) rawCountEl.textContent = model.raw.length;
 
   if (model.consoleTab === 'tools') {
-    c.innerHTML = toolsList.slice(-50).reverse().map(t => {
+    const savedScrollTop = c.scrollTop;
+    const currentTools = toolsList.slice(-50).reverse();
+
+    if (currentTools.length === 0) {
+      c.innerHTML = '<div class="empty-state">No structured tool calls recorded</div>';
+      return;
+    }
+
+    if (c.querySelector('.empty-state')) {
+      c.innerHTML = '';
+    }
+
+    const existingCards = new Map();
+    c.querySelectorAll('.tool-card[data-tool-id]').forEach(el => {
+      existingCards.set(el.dataset.toolId, el);
+    });
+
+    currentTools.forEach((t, index) => {
       const isExpanded = model.expandedTools.has(t.id);
       
       let inputHtml = '—';
@@ -433,41 +516,85 @@ function renderToolConsole() {
         }
       }
 
-      return `
-        <div class="tool-card">
-          <div class="tool-card-head" data-toggle-tool-card="${esc(t.id)}">
-            <div class="tool-name-group">
-              <span class="tool-pill">${esc(t.toolName)}</span>
-              <span class="tool-action-text">${esc(t.action || t.toolName)}</span>
-            </div>
-            <div class="tool-meta-group">
-              <span class="status-pill-sm ${esc(t.status)}">${esc(t.status)}</span>
-              <span>${t.durationMs ? `${t.durationMs}ms` : fmt(t.updatedAt)}</span>
-              <span style="font-size:14px">${isExpanded ? '▾' : '▸'}</span>
-            </div>
-          </div>
-          ${isExpanded ? `
-            <div class="tool-card-body">
-              <div class="tool-section-title">Agent ID: ${esc(t.agentId || 'unknown')}</div>
-              <div class="tool-section-title">Input Parameters</div>
-              ${inputHtml}
-              <div class="tool-section-title">Output Result</div>
-              ${outputHtml}
-              ${t.error ? `<div class="tool-section-title" style="color:var(--accent-red)">Error Details</div><pre class="code-box" style="color:var(--accent-red)">${esc(t.error)}</pre>` : ''}
-            </div>
-          ` : ''}
+      const cardBodyHtml = `
+        <div class="tool-card-body">
+          <div class="tool-section-title">Agent ID: ${esc(t.agentId || 'unknown')}</div>
+          <div class="tool-section-title">Input Parameters</div>
+          ${inputHtml}
+          <div class="tool-section-title">Output Result</div>
+          ${outputHtml}
+          ${t.error ? `<div class="tool-section-title" style="color:var(--accent-red)">Error Details</div><pre class="code-box" style="color:var(--accent-red)">${esc(t.error)}</pre>` : ''}
         </div>
       `;
-    }).join('') || '<div class="empty-state">No structured tool calls recorded</div>';
 
-    document.querySelectorAll('[data-toggle-tool-card]').forEach(el => {
-      el.onclick = () => {
-        const id = el.dataset.toggleToolCard;
-        if (model.expandedTools.has(id)) model.expandedTools.delete(id);
-        else model.expandedTools.add(id);
-        renderToolConsole();
-      };
+      let cardEl = existingCards.get(t.id);
+      if (!cardEl) {
+        const temp = document.createElement('div');
+        temp.innerHTML = `
+          <div class="tool-card" data-tool-id="${esc(t.id)}">
+            <div class="tool-card-head" data-toggle-tool-card="${esc(t.id)}">
+              <div class="tool-name-group">
+                <span class="tool-pill">${esc(t.toolName)}</span>
+                <span class="tool-action-text">${esc(t.action || t.toolName)}</span>
+              </div>
+              <div class="tool-meta-group">
+                <span class="status-pill-sm ${esc(t.status)}">${esc(t.status)}</span>
+                <span>${t.durationMs ? `${t.durationMs}ms` : fmt(t.updatedAt)}</span>
+                <span style="font-size:14px">${isExpanded ? '▾' : '▸'}</span>
+              </div>
+            </div>
+            ${isExpanded ? cardBodyHtml : ''}
+          </div>
+        `;
+        cardEl = temp.firstElementChild;
+        const headEl = cardEl.querySelector('[data-toggle-tool-card]');
+        if (headEl) {
+          headEl.onclick = () => {
+            if (model.expandedTools.has(t.id)) model.expandedTools.delete(t.id);
+            else model.expandedTools.add(t.id);
+            renderToolConsole();
+          };
+        }
+      } else {
+        // Update head info in place
+        const statusPill = cardEl.querySelector('.status-pill-sm');
+        if (statusPill) {
+          statusPill.className = `status-pill-sm ${esc(t.status)}`;
+          statusPill.textContent = esc(t.status);
+        }
+        const timeSpan = cardEl.querySelector('.tool-meta-group span:nth-child(2)');
+        if (timeSpan) {
+          timeSpan.textContent = t.durationMs ? `${t.durationMs}ms` : fmt(t.updatedAt);
+        }
+        const arrowSpan = cardEl.querySelector('.tool-meta-group span:nth-child(3)');
+        if (arrowSpan) {
+          arrowSpan.textContent = isExpanded ? '▾' : '▸';
+        }
+        
+        let bodyEl = cardEl.querySelector('.tool-card-body');
+        if (isExpanded) {
+          if (!bodyEl) {
+            const temp = document.createElement('div');
+            temp.innerHTML = cardBodyHtml;
+            cardEl.appendChild(temp.firstElementChild);
+          } else {
+            bodyEl.outerHTML = cardBodyHtml;
+          }
+        } else if (bodyEl) {
+          bodyEl.remove();
+        }
+      }
+
+      if (c.children[index] !== cardEl) {
+        c.insertBefore(cardEl, c.children[index] || null);
+      }
     });
+
+    while (c.children.length > currentTools.length) {
+      c.removeChild(c.lastChild);
+    }
+
+    c.scrollTop = savedScrollTop;
     return;
   }
 

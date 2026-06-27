@@ -252,28 +252,41 @@ function renderMilestoneGraph() {
   const s = model.state || {}, ws = workflowStatus(s);
   const activeIdx = stateNames.indexOf(ws);
   
-  $('activePhaseBadge').className = `chip status-pill ${theme[ws] || ''}`;
-  $('activePhaseBadge').innerHTML = `${dot(ws)} Active Phase: <b>${esc(ws)}</b>`;
+  const badge = $('activePhaseBadge');
+  if (badge) {
+    badge.className = `chip status-pill ${theme[ws] || ''}`;
+    badge.innerHTML = `${dot(ws)} Active Phase: <b>${esc(ws)}</b>`;
+  }
   
-  const html = stateNames.map((phase, i) => {
+  const container = $('milestoneGraph');
+  if (!container) return;
+
+  let nodes = container.querySelectorAll('.milestone-node');
+  if (nodes.length !== stateNames.length) {
+    const html = stateNames.map((phase, i) => {
+      return `
+        <div class="milestone-node" data-phase="${esc(phase)}">
+          <div class="milestone-pill" title="Phase: ${esc(phase)}">
+            <span class="milestone-step-num">${i + 1}</span>
+            <span>${esc(shortState[phase] || phase)}</span>
+          </div>
+        </div>
+        ${i < stateNames.length - 1 ? '<div class="milestone-connector"></div>' : ''}
+      `;
+    }).join('');
+    container.innerHTML = html;
+    nodes = container.querySelectorAll('.milestone-node');
+  }
+
+  stateNames.forEach((phase, i) => {
     const isCurrent = ws === phase;
     const isDone = activeIdx >= 0 && i < activeIdx && !['blocked', 'deblocking', 'on-hold'].includes(phase);
     const isInterrupt = ['blocked', 'on-hold', 'deblocking'].includes(phase);
-    
     const nodeClass = `milestone-node ${isCurrent ? 'current' : ''} ${isDone ? 'done' : ''} ${isInterrupt ? 'interrupt' : ''}`;
-    
-    return `
-      <div class="${nodeClass}">
-        <div class="milestone-pill" title="Phase: ${esc(phase)}">
-          <span class="milestone-step-num">${i + 1}</span>
-          <span>${esc(shortState[phase] || phase)}</span>
-        </div>
-      </div>
-      ${i < stateNames.length - 1 ? '<div class="milestone-connector"></div>' : ''}
-    `;
-  }).join('');
-  
-  $('milestoneGraph').innerHTML = html;
+    if (nodes[i] && nodes[i].className !== nodeClass) {
+      nodes[i].className = nodeClass;
+    }
+  });
 }
 
 function renderAgentFilterOptions() {
@@ -296,6 +309,11 @@ function updateFilterCounts() {
 function renderWaterfallStream() {
   updateFilterCounts();
   const container = $('waterfallStream');
+  if (!container) return;
+
+  const pane = document.querySelector('.waterfall-section') || container.parentElement || container;
+  const savedScrollTop = pane ? pane.scrollTop : 0;
+
   let filtered = [...model.events];
   
   // Filter by Type
@@ -327,15 +345,32 @@ function renderWaterfallStream() {
   
   // Sort events chronologically to compute delta times
   filtered.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
-  
-  const cardsHtml = [];
+
+  const deltaMap = new Map();
   let prevTs = null;
-  
   for (let i = 0; i < filtered.length; i++) {
     const e = filtered[i];
-    const deltaMs = calcDeltaMs(e.ts, prevTs);
+    deltaMap.set(e.id, calcDeltaMs(e.ts, prevTs));
     prevTs = e.ts;
-    
+  }
+  
+  if (model.sortOrder === 'desc') {
+    filtered.reverse();
+  }
+
+  if (container.querySelector('.empty-stream-state')) {
+    container.innerHTML = '';
+  }
+
+  const existingCards = new Map();
+  container.querySelectorAll('article[data-event-id]').forEach(el => {
+    existingCards.set(el.dataset.eventId, el);
+  });
+
+  const branchSvg = `<svg class="branch-connector-svg" viewBox="0 0 28 16"><path d="M 0 8 Q 14 8 28 8" /></svg>`;
+
+  filtered.forEach((e, index) => {
+    const deltaMs = deltaMap.get(e.id);
     const tool = extractTool(e);
     let cardTypeClass = 'type-info';
     if (e.level === 'error' || e.type?.includes('error')) cardTypeClass = 'type-error';
@@ -344,63 +379,77 @@ function renderWaterfallStream() {
     else if (e.type?.includes('decision')) cardTypeClass = 'type-decision';
     else if (e.level === 'success' || e.type?.includes('approved') || e.type?.includes('completed')) cardTypeClass = 'type-success';
     
-    // Latency Indicators: green <100ms, yellow <500ms, red >=500ms
     let latencyBadge = '';
     if (tool && tool.durationMs !== undefined) {
       const durMs = tool.durationMs;
-      let speedClass = 'latency-fast'; // green <100ms
-      if (durMs >= 500) speedClass = 'latency-slow'; // red >=500ms
-      else if (durMs >= 100) speedClass = 'latency-medium'; // yellow <500ms (100-499ms)
+      let speedClass = 'latency-fast';
+      if (durMs >= 500) speedClass = 'latency-slow';
+      else if (durMs >= 100) speedClass = 'latency-medium';
       latencyBadge = `<span class="latency-badge ${speedClass}">${durMs}ms</span>`;
     }
-    
-    // SVG Branch connector graphics for subagents
-    const branchSvg = `<svg class="branch-connector-svg" viewBox="0 0 28 16"><path d="M 0 8 Q 14 8 28 8" /></svg>`;
 
-    cardsHtml.push(`
-      <article class="timeline-card ${cardTypeClass}" data-event-id="${esc(e.id)}">
-        ${branchSvg}
-        <header class="card-header">
-          <div class="card-title-group">
-            ${dot(e.level)}
-            <span class="card-title">${esc(tool ? `Tool: ${tool.toolName}` : e.type)}</span>
-            <span class="agent-tag">${esc(e.agentId)}</span>
-          </div>
-          <div class="card-time-group">
-            ${latencyBadge}
-            <span class="delta-badge">${formatDelta(deltaMs)}</span>
-            <span class="time-stamp">${fmt(e.ts)}</span>
-          </div>
-        </header>
-        <div class="card-message">${esc(e.message || tool?.action || 'Stream telemetry entry.')}</div>
-        <footer class="card-meta-bar">
-          <span>Source: <code>${esc(e.source)}</code></span>
-          <button class="inspect-btn" data-inspect-event="${esc(e.id)}">Inspect Details</button>
-        </footer>
-      </article>
-    `);
-  }
-  
-  if (model.sortOrder === 'desc') {
-    cardsHtml.reverse();
-  }
-  
-  container.innerHTML = cardsHtml.join('');
-  
-  // Attach inspect button listeners
-  container.querySelectorAll('[data-inspect-event]').forEach(btn => {
-    btn.onclick = (ev) => {
-      ev.stopPropagation();
-      const id = btn.dataset.inspectEvent;
-      const targetEvent = model.events.find(x => x.id === id);
-      openDrawerTab('raw', targetEvent);
-    };
+    let cardEl = existingCards.get(e.id);
+    if (!cardEl) {
+      const temp = document.createElement('div');
+      temp.innerHTML = `
+        <article class="timeline-card ${cardTypeClass}" data-event-id="${esc(e.id)}">
+          ${branchSvg}
+          <header class="card-header">
+            <div class="card-title-group">
+              ${dot(e.level)}
+              <span class="card-title">${esc(tool ? `Tool: ${tool.toolName}` : e.type)}</span>
+              <span class="agent-tag">${esc(e.agentId)}</span>
+            </div>
+            <div class="card-time-group">
+              ${latencyBadge}
+              <span class="delta-badge">${formatDelta(deltaMs)}</span>
+              <span class="time-stamp">${fmt(e.ts)}</span>
+            </div>
+          </header>
+          <div class="card-message">${esc(e.message || tool?.action || 'Stream telemetry entry.')}</div>
+          <footer class="card-meta-bar">
+            <span>Source: <code>${esc(e.source)}</code></span>
+            <button class="inspect-btn" data-inspect-event="${esc(e.id)}">Inspect Details</button>
+          </footer>
+        </article>
+      `;
+      cardEl = temp.firstElementChild;
+      const btn = cardEl.querySelector('[data-inspect-event]');
+      if (btn) {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          openDrawerTab('raw', e);
+        };
+      }
+    } else {
+      cardEl.className = `timeline-card ${cardTypeClass}`;
+      const dotEl = cardEl.querySelector('.dot');
+      if (dotEl) dotEl.className = `dot ${theme[e.level] || e.level || ''}`;
+      const titleEl = cardEl.querySelector('.card-title');
+      if (titleEl) titleEl.textContent = tool ? `Tool: ${tool.toolName}` : e.type;
+      const agentEl = cardEl.querySelector('.agent-tag');
+      if (agentEl) agentEl.textContent = e.agentId;
+      const timeGroup = cardEl.querySelector('.card-time-group');
+      if (timeGroup) {
+        timeGroup.innerHTML = `${latencyBadge}<span class="delta-badge">${formatDelta(deltaMs)}</span><span class="time-stamp">${fmt(e.ts)}</span>`;
+      }
+      const msgEl = cardEl.querySelector('.card-message');
+      if (msgEl) msgEl.textContent = e.message || tool?.action || 'Stream telemetry entry.';
+    }
+
+    if (container.children[index] !== cardEl) {
+      container.insertBefore(cardEl, container.children[index] || null);
+    }
   });
-  
-  // Auto scroll if follow mode is active
+
+  while (container.children.length > filtered.length) {
+    container.removeChild(container.lastChild);
+  }
+
   if (model.followWaterfall && model.sortOrder === 'asc') {
-    const pane = document.querySelector('.waterfall-section');
     if (pane) pane.scrollTop = pane.scrollHeight;
+  } else if (pane) {
+    pane.scrollTop = savedScrollTop;
   }
 }
 
@@ -439,35 +488,55 @@ function renderPerformanceInspector() {
       runtimeMap.set(a.id, { agent: a, ms: 0, count: 0 });
     }
   });
-  
-  const runtimesHtml = [...runtimeMap.values()]
-    .sort((a, b) => b.ms - a.ms)
-    .slice(0, 6)
-    .map(item => {
-      const pct = Math.round((item.ms / maxRuntimeMs) * 100);
-      const sec = (item.ms / 1000).toFixed(1);
-      return `
-        <div class="runtime-row" data-agent-runtime="${esc(item.agent.id)}">
-          <div class="runtime-info">
-            <b>${esc(item.agent.label || item.agent.id)}</b>
-            <span class="muted">${sec}s (${pct}% · ${item.count} evts)</span>
-          </div>
-          <div class="runtime-bar-bg">
-            <div class="runtime-bar-fill" style="width: ${pct}%;"></div>
-          </div>
-        </div>
-      `;
-    }).join('') || '<div class="empty">No agent runtime telemetry.</div>';
+
+  const runtimesContainer = $('agentRuntimesList');
+  if (runtimesContainer) {
+    const existingRuntimeRows = new Map();
+    runtimesContainer.querySelectorAll('[data-agent-runtime]').forEach(el => {
+      existingRuntimeRows.set(el.dataset.agentRuntime, el);
+    });
     
-  $('agentRuntimesList').innerHTML = runtimesHtml;
-  
-  document.querySelectorAll('[data-agent-runtime]').forEach(el => {
-    el.onclick = () => {
-      const id = el.dataset.agentRuntime;
-      const targetAgent = agents().find(a => a.id === id);
-      openDrawerTab('agent', targetAgent);
-    };
-  });
+    const sortedRuntimes = [...runtimeMap.values()].sort((a, b) => b.ms - a.ms).slice(0, 6);
+    if (sortedRuntimes.length === 0) {
+      runtimesContainer.innerHTML = '<div class="empty">No agent runtime telemetry.</div>';
+    } else {
+      if (runtimesContainer.querySelector('.empty')) runtimesContainer.innerHTML = '';
+      sortedRuntimes.forEach((item, index) => {
+        const pct = Math.round((item.ms / maxRuntimeMs) * 100);
+        const sec = (item.ms / 1000).toFixed(1);
+        let rowEl = existingRuntimeRows.get(item.agent.id);
+        if (!rowEl) {
+          const temp = document.createElement('div');
+          temp.innerHTML = `
+            <div class="runtime-row" data-agent-runtime="${esc(item.agent.id)}">
+              <div class="runtime-info">
+                <b>${esc(item.agent.label || item.agent.id)}</b>
+                <span class="muted">${sec}s (${pct}% · ${item.count} evts)</span>
+              </div>
+              <div class="runtime-bar-bg">
+                <div class="runtime-bar-fill" style="width: ${pct}%;"></div>
+              </div>
+            </div>
+          `;
+          rowEl = temp.firstElementChild;
+          rowEl.onclick = () => {
+            openDrawerTab('agent', item.agent);
+          };
+        } else {
+          const mutedEl = rowEl.querySelector('.muted');
+          if (mutedEl) mutedEl.textContent = `${sec}s (${pct}% · ${item.count} evts)`;
+          const fillEl = rowEl.querySelector('.runtime-bar-fill');
+          if (fillEl) fillEl.style.width = `${pct}%`;
+        }
+        if (runtimesContainer.children[index] !== rowEl) {
+          runtimesContainer.insertBefore(rowEl, runtimesContainer.children[index] || null);
+        }
+      });
+      while (runtimesContainer.children.length > sortedRuntimes.length) {
+        runtimesContainer.removeChild(runtimesContainer.lastChild);
+      }
+    }
+  }
   
   // Tool Call Speeds Leaderboard Sparkbars
   const toolStats = new Map();
@@ -485,33 +554,62 @@ function renderPerformanceInspector() {
   const toolEntries = [...toolStats.entries()].sort((a, b) => (b[1].totalMs / b[1].count) - (a[1].totalMs / a[1].count));
   const maxAvgMs = toolEntries.length > 0 ? Math.max(...toolEntries.map(e => e[1].totalMs / e[1].count), 500) : 1000;
 
-  const toolSpeedHtml = toolEntries
-    .slice(0, 6)
-    .map(([name, stat]) => {
-      const avg = Math.round(stat.totalMs / stat.count);
-      const barPct = Math.min(100, Math.round((avg / maxAvgMs) * 100));
-      
-      let speedClass = 'latency-fast';
-      if (avg >= 500) speedClass = 'latency-slow';
-      else if (avg >= 100) speedClass = 'latency-medium';
-      
-      return `
-        <div class="tool-speed-row">
-          <div class="tool-speed-info">
-            <div>
-              <b>${esc(name)}</b>
-              <span class="muted">×${stat.count} calls</span>
+  const toolSpeedContainer = $('toolSpeedList');
+  if (toolSpeedContainer) {
+    const existingSpeedRows = new Map();
+    toolSpeedContainer.querySelectorAll('[data-tool-speed]').forEach(el => {
+      existingSpeedRows.set(el.dataset.toolSpeed, el);
+    });
+    if (toolEntries.length === 0) {
+      toolSpeedContainer.innerHTML = '<div class="empty">No tool telemetry recorded yet.</div>';
+    } else {
+      if (toolSpeedContainer.querySelector('.empty')) toolSpeedContainer.innerHTML = '';
+      const topEntries = toolEntries.slice(0, 6);
+      topEntries.forEach(([name, stat], index) => {
+        const avg = Math.round(stat.totalMs / stat.count);
+        const barPct = Math.min(100, Math.round((avg / maxAvgMs) * 100));
+        let speedClass = 'latency-fast';
+        if (avg >= 500) speedClass = 'latency-slow';
+        else if (avg >= 100) speedClass = 'latency-medium';
+        
+        let rowEl = existingSpeedRows.get(name);
+        if (!rowEl) {
+          const temp = document.createElement('div');
+          temp.innerHTML = `
+            <div class="tool-speed-row" data-tool-speed="${esc(name)}">
+              <div class="tool-speed-info">
+                <div>
+                  <b>${esc(name)}</b>
+                  <span class="muted">×${stat.count} calls</span>
+                </div>
+                <span class="latency-badge ${speedClass}">avg ${avg}ms (max ${stat.maxMs}ms)</span>
+              </div>
+              <div class="tool-bar-bg">
+                <div class="tool-bar-fill" style="width: ${barPct}%;"></div>
+              </div>
             </div>
-            <span class="latency-badge ${speedClass}">avg ${avg}ms (max ${stat.maxMs}ms)</span>
-          </div>
-          <div class="tool-bar-bg">
-            <div class="tool-bar-fill" style="width: ${barPct}%;"></div>
-          </div>
-        </div>
-      `;
-    }).join('') || '<div class="empty">No tool telemetry recorded yet.</div>';
-    
-  $('toolSpeedList').innerHTML = toolSpeedHtml;
+          `;
+          rowEl = temp.firstElementChild;
+        } else {
+          const mutedEl = rowEl.querySelector('.muted');
+          if (mutedEl) mutedEl.textContent = `×${stat.count} calls`;
+          const badgeEl = rowEl.querySelector('.latency-badge');
+          if (badgeEl) {
+            badgeEl.className = `latency-badge ${speedClass}`;
+            badgeEl.textContent = `avg ${avg}ms (max ${stat.maxMs}ms)`;
+          }
+          const fillEl = rowEl.querySelector('.tool-bar-fill');
+          if (fillEl) fillEl.style.width = `${barPct}%`;
+        }
+        if (toolSpeedContainer.children[index] !== rowEl) {
+          toolSpeedContainer.insertBefore(rowEl, toolSpeedContainer.children[index] || null);
+        }
+      });
+      while (toolSpeedContainer.children.length > topEntries.length) {
+        toolSpeedContainer.removeChild(toolSpeedContainer.lastChild);
+      }
+    }
+  }
 }
 
 // ==========================================================================

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HAPB · Waterfall Timeline Stream</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/timeline.css" />
+</head>
+<body>
+  <div id="app" class="app-shell timeline-shell">
+    <!-- Topbar Header -->
+    <header class="topbar" aria-live="polite">
+      <div class="brand-group">
+        <div class="brand" title="Hermes Autonomous Project Builder">HAPB</div>
+        <span class="version-tag">2026.4</span>
+      </div>
+      
+      <div class="dashboard-switcher" aria-label="Dashboard View Switcher">
+        <a href="/" class="switcher-btn">Classic Studio</a>
+        <a href="/matrix.html" class="switcher-btn">Command Matrix</a>
+        <a href="/timeline.html" class="switcher-btn active">Timeline Stream</a>
+        <a href="/console.html" class="switcher-btn">Dev Console</a>
+      </div>
+
+      <div id="topStatus" class="top-status">Loading execution state…</div>
+
+      <div class="top-actions">
+        <select id="runSelect" class="run-select" aria-label="Select Execution Run">
+          <option value="">Loading runs…</option>
+        </select>
+        <div class="search-wrapper">
+          <svg class="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="timelineFilter" class="filter-input" placeholder="Filter stream timeline… (/)" aria-label="Filter timeline events" />
+        </div>
+        <span id="streamState" class="chip sse-status-chip">SSE connecting…</span>
+        <button id="refreshNow" class="btn-glass">Refresh</button>
+        <button id="pauseEvents" class="btn-glass">Pause</button>
+      </div>
+    </header>
+
+    <!-- Horizontal Phase Milestone Progression graph -->
+    <section class="milestone-strip-container">
+      <div class="milestone-header">
+        <div class="milestone-title-group">
+          <svg class="milestone-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <span class="milestone-title">Workflow Phase Progression</span>
+        </div>
+        <span id="activePhaseBadge" class="chip status-pill">—</span>
+      </div>
+      <nav id="milestoneGraph" class="milestone-graph" aria-label="Workflow Milestone Progression"></nav>
+    </section>
+
+    <!-- Main Workspace Layout -->
+    <main class="timeline-workspace">
+      <!-- Left Column: Chronological Event & Tool Waterfall Stream -->
+      <section class="waterfall-section panel-scroll">
+        <div class="waterfall-controls">
+          <div class="controls-group filter-pills">
+            <span class="controls-label">Filter:</span>
+            <button data-type-filter="all" class="type-filter-btn active">All <span id="countAll" class="pill-count">0</span></button>
+            <button data-type-filter="tools" class="type-filter-btn">Tools <span id="countTools" class="pill-count">0</span></button>
+            <button data-type-filter="spawns" class="type-filter-btn">Spawns <span id="countSpawns" class="pill-count">0</span></button>
+            <button data-type-filter="decisions" class="type-filter-btn">Decisions <span id="countDecisions" class="pill-count">0</span></button>
+            <button data-type-filter="errors" class="type-filter-btn">Errors <span id="countErrors" class="pill-count">0</span></button>
+          </div>
+          <div class="controls-group stream-actions">
+            <select id="agentFilterSelect" class="agent-select" aria-label="Filter stream by agent">
+              <option value="all">All Agents</option>
+            </select>
+            <button id="sortOrderBtn" class="action-btn" title="Toggle Sort Order">Order: Oldest First</button>
+            <button id="followWaterfall" class="follow-toggle active" title="Keep stream scrolled to latest event">Follow: ON</button>
+          </div>
+        </div>
+
+        <div id="waterfallStream" class="waterfall-stream">
+          <div class="empty-stream-state">
+            <div class="spinner"></div>
+            <span>Initializing chronological event waterfall stream…</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Bottleneck & Performance Inspector panel -->
+      <aside class="performance-section panel-scroll">
+        <header class="section-header">
+          <div class="header-title-wrapper">
+            <h3>Bottleneck Inspector</h3>
+            <span class="header-sub">Real-time Telemetry Metrics</span>
+          </div>
+          <span class="pulse-indicator" title="Live telemetry active"></span>
+        </header>
+
+        <!-- Metrics Overview Grid -->
+        <div class="perf-metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">Total Stream Events</span>
+            <strong id="metricTotalEvents" class="metric-val">0</strong>
+            <div class="metric-spark-line"></div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Tool Executions</span>
+            <strong id="metricTotalTools" class="metric-val">0</strong>
+            <div class="metric-spark-line tools-spark"></div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Avg Tool Latency</span>
+            <strong id="metricAvgLatency" class="metric-val">0ms</strong>
+            <div class="metric-spark-line latency-spark"></div>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Active Subagents</span>
+            <strong id="metricActiveAgents" class="metric-val">0</strong>
+            <div class="metric-spark-line agents-spark"></div>
+          </div>
+        </div>
+
+        <!-- Subagent Runtimes Breakdown -->
+        <section class="perf-block">
+          <div class="block-header">
+            <h4>Subagent Runtime Sparkbars</h4>
+            <span class="muted">Active Execution Share</span>
+          </div>
+          <div id="agentRuntimesList" class="runtimes-list">
+            <div class="empty">Calculating runtime distribution…</div>
+          </div>
+        </section>
+
+        <!-- Tool Execution Speed Leaderboard -->
+        <section class="perf-block">
+          <div class="block-header">
+            <h4>Tool Call Speeds & Latency</h4>
+            <span class="muted">Performance Leaderboard</span>
+          </div>
+          <div id="toolSpeedList" class="tool-speed-list">
+            <div class="empty">Recording tool invocation telemetry…</div>
+          </div>
+        </section>
+
+        <!-- Quick Resources Inspector Launcher -->
+        <section class="perf-block quick-access-block">
+          <div class="block-header">
+            <h4>Workspace Inspector</h4>
+            <span class="muted">Instant Drawer Access</span>
+          </div>
+          <div class="quick-inspector-btns">
+            <button data-open-drawer="spec" class="drawer-launch-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Inspect SPEC
+            </button>
+            <button data-open-drawer="devplan" class="drawer-launch-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+              Inspect DEVPLAN
+            </button>
+            <button data-open-drawer="artifacts" class="drawer-launch-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Browse Artifacts
+            </button>
+            <button data-open-drawer="logs" class="drawer-launch-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              View Agent Logs
+            </button>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <!-- Slide-over Inspector Drawer Backdrop -->
+    <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+
+    <!-- Slide-over Inspector Drawer -->
+    <aside id="inspectorDrawer" class="inspector-drawer" hidden>
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="drawer-accent-indicator"></span>
+          <h3 id="drawerTitle">Inspector Drawer</h3>
+        </div>
+        <button id="closeDrawerBtn" class="close-btn" aria-label="Close Drawer">&times;</button>
+      </div>
+      <nav class="drawer-tabs" aria-label="Inspector drawer options">
+        <button data-drawer-tab="agent" class="tab-btn active">Agent Detail</button>
+        <button data-drawer-tab="spec" class="tab-btn">SPEC</button>
+        <button data-drawer-tab="devplan" class="tab-btn">DEVPLAN</button>
+        <button data-drawer-tab="artifacts" class="tab-btn">Artifacts</button>
+        <button data-drawer-tab="logs" class="tab-btn">Logs</button>
+        <button data-drawer-tab="raw" class="tab-btn">Raw Event</button>
+      </nav>
+      <div id="drawerContent" class="drawer-body panel-scroll">
+        <div class="empty">Select an item from the waterfall or metrics panel to inspect details.</div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/timeline.js" type="module"></script>
+</body>
+</html>

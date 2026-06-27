@@ -9,7 +9,15 @@
 <body>
   <div id="app" class="app-shell">
     <header class="topbar" aria-live="polite">
-      <div class="brand" title="Hermes Autonomous Project Builder">HAPB</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="brand" title="Hermes Autonomous Project Builder">HAPB</div>
+        <nav class="dashboard-switcher" aria-label="Dashboard View Switcher">
+          <a href="/" class="switcher-btn active" title="Classic Studio Multi-pane Layout">Studio</a>
+          <a href="/matrix.html" class="switcher-btn" title="Command Matrix Dense Grid View">Matrix</a>
+          <a href="/timeline.html" class="switcher-btn" title="Timeline Stream Workflow DAG">Timeline</a>
+          <a href="/console.html" class="switcher-btn" title="Developer Terminal/IDE View">Console</a>
+        </nav>
+      </div>
       <div id="topStatus" class="top-status">loading state…</div>
       <div class="top-actions">
         <input id="globalFilter" class="filter-input" placeholder="filter events/tools/logs…" aria-label="Global filter" />

@@ -80,9 +80,12 @@ The installer copies source into this layout:
 ```text
 ~/.hermes/autonomous-projects-dashboard/
   src/server.ts
-  public/index.html
-  public/app.js
-  public/styles.css
+  public/index.html    (Classic Studio)
+  public/matrix.html   (Command Matrix)
+  public/timeline.html (Timeline Stream)
+  public/console.html  (Developer Console)
+  public/*.js
+  public/*.css
 
 ~/.hermes/autonomous-projects/
   state.json

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HAPB // Command Matrix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/matrix.css" />
+</head>
+<body class="matrix-theme">
+  <div id="app" class="matrix-shell">
+    <!-- Matrix Topbar -->
+    <header class="matrix-topbar">
+      <div class="topbar-left">
+        <div class="matrix-brand">
+          <span class="brand-glitch" data-text="HAPB">HAPB</span>
+          <span class="brand-subtitle">// COMMAND MATRIX</span>
+        </div>
+        <nav class="dashboard-switcher" aria-label="Dashboard Switcher">
+          <a href="/" class="switcher-btn">Classic Studio</a>
+          <a href="/matrix.html" class="switcher-btn active">Command Matrix</a>
+          <a href="/timeline.html" class="switcher-btn">Timeline Stream</a>
+          <a href="/console.html" class="switcher-btn">Dev Console</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input id="globalFilter" class="matrix-input" placeholder="Filter node telemetry & tools... (/)" aria-label="Global matrix filter" />
+        </div>
+        <span id="streamState" class="matrix-badge status-connecting">
+          <span class="pulse-dot"></span> SSE Connecting
+        </span>
+        <button id="pauseEvents" class="matrix-btn">Pause Stream</button>
+        <button id="refreshNow" class="matrix-btn primary">Refresh</button>
+      </div>
+    </header>
+
+    <!-- Workflow / Phase Pipeline Bar -->
+    <nav id="workflowStrip" class="matrix-workflow-strip" aria-label="Workflow pipeline"></nav>
+
+    <!-- Real-time Pulse Stats Header Bar -->
+    <section id="pulseStats" class="pulse-stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">TARGET RUN ID</span>
+        <div class="stat-value-group">
+          <select id="runSelector" class="matrix-select" aria-label="Select Run"></select>
+        </div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">SWARM STATUS</span>
+        <div id="statStatus" class="stat-value"><span class="dot idle"></span> IDLE</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">ACTIVE NODES</span>
+        <div id="statActiveAgents" class="stat-value highlight-cyan">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">TOTAL TOOLS RUN</span>
+        <div id="statTotalTools" class="stat-value highlight-green">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">TELEMETRY ERRORS</span>
+        <div id="statErrorCount" class="stat-value highlight-red">0</div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">CURRENT PHASE</span>
+        <div id="statPhase" class="stat-value highlight-violet">INIT</div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Matrix Grid -->
+    <main class="matrix-workspace">
+      <!-- Section 1: Swarm Status Grid -->
+      <section class="swarm-section">
+        <div class="section-header">
+          <div class="section-title">
+            <span class="title-icon">❖</span> SWARM NODE MATRIX
+          </div>
+          <div class="section-controls">
+            <button id="filterActiveNodes" class="matrix-btn mini active">All Nodes</button>
+            <button id="filterOnlyActive" class="matrix-btn mini">Active Only</button>
+          </div>
+        </div>
+        <div id="swarmGrid" class="swarm-grid panel-scroll">
+          <!-- Subagent node cards injected here -->
+        </div>
+      </section>
+
+      <!-- Section 2: Live Activity & Tool Telemetry Table -->
+      <section class="telemetry-section">
+        <div class="section-header">
+          <div class="section-title">
+            <span class="title-icon">⚡</span> TELEMETRY STREAM & TOOL CALLS
+          </div>
+          <div class="telemetry-filters">
+            <button data-filter="all" class="matrix-btn mini active">ALL EVENTS</button>
+            <button data-filter="tools" class="matrix-btn mini">TOOLS ONLY</button>
+            <button data-filter="errors" class="matrix-btn mini">ERRORS</button>
+            <button data-filter="artifacts" class="matrix-btn mini">ARTIFACTS</button>
+          </div>
+        </div>
+        <div id="telemetryContent" class="telemetry-content panel-scroll">
+          <div class="telemetry-table-header">
+            <span>TIME</span>
+            <span>LEVEL</span>
+            <span>SOURCE / NODE</span>
+            <span>EVENT / TOOL</span>
+            <span>DETAILS / ACTION</span>
+          </div>
+          <div id="telemetryRows" class="telemetry-rows">
+            <!-- Telemetry rows injected here -->
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Quick Inspector Drawer -->
+    <aside id="inspectorDrawer" class="matrix-drawer" hidden>
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="drawer-icon">🔬</span>
+          <span id="drawerTitle" class="drawer-title">NODE INSPECTOR</span>
+        </div>
+        <button id="closeDrawer" class="matrix-btn close-btn">✕ CLOSE</button>
+      </div>
+      <nav id="inspectorTabs" class="drawer-tabs">
+        <button data-inspector="agent" class="drawer-tab active">AGENT</button>
+        <button data-inspector="spec" class="drawer-tab">SPEC</button>
+        <button data-inspector="devplan" class="drawer-tab">DEVPLAN</button>
+        <button data-inspector="artifacts" class="drawer-tab">ARTIFACTS</button>
+        <button data-inspector="logs" class="drawer-tab">LOGS</button>
+        <button data-inspector="run" class="drawer-tab">RUN JSON</button>
+      </nav>
+      <div id="inspectorContent" class="drawer-body panel-scroll">
+        <!-- Inspector detail content injected here -->
+      </div>
+    </aside>
+
+    <!-- Tool Popover Overlay Container -->
+    <div id="toolPopover" class="tool-popover" hidden></div>
+  </div>
+
+  <script src="/matrix.js" type="module"></script>
+</body>
+</html>

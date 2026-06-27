@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HAPB // Developer Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/console.css" />
+</head>
+<body class="dev-theme">
+  <div id="app" class="dev-app-shell">
+    <!-- Topbar Header -->
+    <header class="dev-topbar" aria-label="Developer Topbar">
+      <div class="dev-brand" title="Hermes Autonomous Project Builder - Developer Console">
+        <span class="prompt-symbol">&gt;_</span> HAPB<span class="brand-sub">//DEV_CONSOLE</span>
+      </div>
+      
+      <div id="topStatus" class="dev-top-status">
+        <span class="status-dot pulsing"></span> Loading runtime state...
+      </div>
+
+      <div class="top-right-group">
+        <div class="dashboard-switcher">
+          <a href="/" class="switcher-btn">Classic Studio</a>
+          <a href="/matrix.html" class="switcher-btn">Command Matrix</a>
+          <a href="/timeline.html" class="switcher-btn">Timeline Stream</a>
+          <a href="/console.html" class="switcher-btn active">Dev Console</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Command Bar & Global Filter -->
+    <section class="dev-command-bar" aria-label="Command and Search Bar">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input id="globalSearch" class="dev-search-input" placeholder="Search events, tools, logs, agents..." aria-label="Global search input" />
+        <kbd class="hotkey-hint">/</kbd>
+      </div>
+
+      <div class="filter-badges" id="filterBadges">
+        <button data-filter="all" class="dev-badge active">ALL</button>
+        <button data-filter="tools" class="dev-badge">TOOLS</button>
+        <button data-filter="errors" class="dev-badge">ERRORS</button>
+        <button data-filter="logs" class="dev-badge">LOGS</button>
+        <button data-filter="artifacts" class="dev-badge">ARTIFACTS</button>
+        <button data-filter="agents" class="dev-badge">AGENTS</button>
+      </div>
+
+      <div class="quick-actions">
+        <button id="btnOpenSpec" class="dev-btn dev-btn-outline" title="Quick View SPEC.md (Alt+S)">📄 SPEC <kbd class="kbd-badge">Alt+S</kbd></button>
+        <button id="btnOpenDevplan" class="dev-btn dev-btn-outline" title="Quick View DEVPLAN.md (Alt+D)">📋 DEVPLAN <kbd class="kbd-badge">Alt+D</kbd></button>
+        <span id="sseStatus" class="sse-chip">SSE: connecting...</span>
+        <button id="btnPause" class="dev-btn">Pause</button>
+        <button id="btnRefresh" class="dev-btn dev-btn-primary">Refresh</button>
+      </div>
+    </section>
+
+    <!-- Main Split Workspace Layout -->
+    <main class="dev-workspace">
+      <!-- Left Sidebar: Run Picker & Tree Navigator -->
+      <aside class="dev-sidebar">
+        <section class="sidebar-block run-selector-block">
+          <div class="block-header">
+            <span>RUN PICKER</span>
+            <span id="runCount" class="count-tag">0</span>
+          </div>
+          <select id="runSelect" class="dev-select" aria-label="Select Execution Run">
+            <option value="">Loading runs...</option>
+          </select>
+        </section>
+
+        <section class="sidebar-block tree-block grow-block">
+          <nav class="sidebar-tabs" aria-label="Sidebar navigation tabs">
+            <button data-sidebar-tab="agents" class="tab-btn active">Agents (<span id="agentCount">0</span>)</button>
+            <button data-sidebar-tab="artifacts" class="tab-btn">Artifacts (<span id="artifactCount">0</span>)</button>
+            <button data-sidebar-tab="logs" class="tab-btn">Logs (<span id="logCount">0</span>)</button>
+          </nav>
+
+          <div class="sidebar-content-view panel-scroll">
+            <div id="agentsTree" class="tree-pane active"></div>
+            <div id="artifactsTree" class="tree-pane hidden"></div>
+            <div id="logsTree" class="tree-pane hidden"></div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Right Split Workspace: Terminal Top & Tool Console Bottom -->
+      <section class="dev-main-split">
+        <!-- Top-Right Active Terminal Log Stream -->
+        <div class="terminal-pane" id="terminalPane">
+          <header class="pane-header">
+            <div class="pane-title">
+              <span class="terminal-icon">&gt;_</span> ACTIVE TERMINAL LOG STREAM
+              <span id="terminalAgentFilterTag" class="active-filter-tag hidden">Agent: <b id="selectedAgentName">all</b> <button id="clearAgentFilter" title="Clear Agent Filter">×</button></span>
+            </div>
+            <div class="pane-controls">
+              <span id="terminalLineCount" class="meta-info">0 lines</span>
+              <button id="toggleFollow" class="dev-btn dev-btn-sm active" title="Toggle Auto Scroll">Follow: ON</button>
+              <button id="btnClearTerminal" class="dev-btn dev-btn-sm" title="Clear terminal output view">Clear</button>
+            </div>
+          </header>
+          
+          <div id="terminalOutput" class="terminal-body panel-scroll monospace-text" role="log" aria-live="polite">
+            <div class="terminal-line system-line"><span class="line-num">0000</span><span class="line-time">00:00:00</span><span class="line-tag info">[SYS]</span> Initializing Dev Console terminal engine...</div>
+          </div>
+        </div>
+
+        <!-- Horizontal Resize Handle -->
+        <div id="paneResizer" class="pane-resizer" title="Drag to resize Terminal and Tool Console" role="separator" aria-orientation="horizontal">
+          <div class="resizer-handle-bar"></div>
+        </div>
+
+        <!-- Bottom-Right Structured Tool Call Console -->
+        <div class="tool-console-pane" id="toolConsolePane">
+          <header class="pane-header">
+            <nav class="console-tabs-bar" aria-label="Console Subtabs">
+              <button data-console-tab="tools" class="tab-btn active">🛠️ Structured Tool Calls (<span id="toolCallCount">0</span>)</button>
+              <button data-console-tab="inspector" class="tab-btn">🔍 Input/Output Inspector</button>
+              <button data-console-tab="raw" class="tab-btn">📡 Raw SSE Events (<span id="rawCount">0</span>)</button>
+              <button data-console-tab="state" class="tab-btn">⚡ State JSON</button>
+            </nav>
+            <div class="pane-controls">
+              <span id="consoleStatus" class="meta-info">Ready</span>
+            </div>
+          </header>
+
+          <div id="toolConsoleContent" class="console-body panel-scroll">
+            <div class="empty-state monospace-text">Awaiting structured tool executions...</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Quick Doc Overlay / Modal -->
+    <div id="docModal" class="dev-modal-overlay hidden" aria-hidden="true" role="dialog">
+      <div class="dev-modal-box">
+        <header class="modal-header">
+          <div class="modal-tabs">
+            <button id="modalTabSpec" class="modal-tab-btn active">SPEC.md</button>
+            <button id="modalTabDevplan" class="modal-tab-btn">DEVPLAN.md</button>
+          </div>
+          <div class="modal-actions">
+            <span id="docAdherenceBadge" class="adherence-chip">Adherence: loading...</span>
+            <button id="btnCopyDoc" class="dev-btn dev-btn-sm" title="Copy Markdown Content">Copy</button>
+            <button id="btnCloseModal" class="dev-btn dev-btn-sm close-btn" title="Close Overlay (Esc)">✕ <kbd class="kbd-badge">Esc</kbd></button>
+          </div>
+        </header>
+        <div id="docModalContent" class="modal-body panel-scroll markdown-body monospace-text">
+          Loading document content...
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Drawer / Slide Inspector -->
+    <aside id="detailDrawer" class="dev-drawer hidden" aria-hidden="true">
+      <header class="drawer-header">
+        <span id="drawerTitle" class="drawer-title">Payload Detail</span>
+        <button id="btnCloseDrawer" class="dev-btn dev-btn-sm">Close</button>
+      </header>
+      <div id="drawerContent" class="drawer-body panel-scroll monospace-text"></div>
+    </aside>
+  </div>
+
+  <script src="/console.js" type="module"></script>
+</body>
+</html>

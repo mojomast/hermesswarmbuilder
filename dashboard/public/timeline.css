@@ -1,0 +1,1070 @@
+/* ==========================================================================
+   Hermes Swarm Builder - Timeline Stream Dashboard (2026 Edition)
+   Modern OKLCH Color Palette, Glassmorphism, CSS Sparkbars, `@starting-style`
+   ========================================================================== */
+
+:root {
+  /* OKLCH Color Palette System */
+  --tl-bg: oklch(0.12 0.03 260);
+  --tl-panel: oklch(0.15 0.035 260 / 0.75);
+  --tl-panel-solid: oklch(0.15 0.035 260);
+  --tl-panel-hover: oklch(0.18 0.04 260 / 0.85);
+  
+  --tl-border: oklch(0.28 0.04 260 / 0.45);
+  --tl-border-subtle: oklch(0.22 0.03 260 / 0.4);
+  --tl-border-glow: oklch(0.78 0.15 220 / 0.35);
+
+  --tl-text-main: oklch(0.96 0.01 240);
+  --tl-text-muted: oklch(0.70 0.04 250);
+  --tl-text-dim: oklch(0.50 0.04 250);
+
+  /* Wide-gamut Accents */
+  --tl-cyan: oklch(0.80 0.14 220);
+  --tl-cyan-glow: oklch(0.80 0.14 220 / 0.25);
+  --tl-green: oklch(0.84 0.18 145);
+  --tl-green-glow: oklch(0.84 0.18 145 / 0.25);
+  --tl-yellow: oklch(0.86 0.16 90);
+  --tl-yellow-glow: oklch(0.86 0.16 90 / 0.25);
+  --tl-red: oklch(0.72 0.22 25);
+  --tl-red-glow: oklch(0.72 0.22 25 / 0.25);
+  --tl-purple: oklch(0.78 0.18 300);
+  --tl-purple-glow: oklch(0.78 0.18 300 / 0.25);
+
+  /* Glassmorphism settings */
+  --glass-blur: blur(12px);
+  --glass-bg: color-mix(in oklch, oklch(0.16 0.035 260) 75%, transparent);
+  --glass-header: color-mix(in oklch, oklch(0.13 0.03 260) 82%, transparent);
+}
+
+.timeline-shell {
+  display: grid;
+  grid-template-rows: var(--topbar-h) auto minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+  background: var(--tl-bg);
+  color: var(--tl-text-main);
+}
+
+/* ==========================================================================
+   Topbar Header & Glassmorphism Navigation
+   ========================================================================== */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--glass-header);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--tl-border);
+  z-index: 30;
+  gap: 12px;
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand {
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  color: var(--tl-cyan);
+  font-size: 14px;
+  text-shadow: 0 0 12px var(--tl-cyan-glow);
+}
+
+.version-tag {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--tl-cyan) 15%, transparent);
+  color: var(--tl-cyan);
+  border: 1px solid color-mix(in oklch, var(--tl-cyan) 30%, transparent);
+}
+
+/* Dashboard Switcher Component */
+.dashboard-switcher {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in oklch, oklch(0.08 0.02 260) 80%, transparent);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--tl-border);
+  backdrop-filter: var(--glass-blur);
+}
+
+.switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tl-text-muted);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid transparent;
+}
+
+.switcher-btn:hover {
+  color: var(--tl-text-main);
+  background: color-mix(in oklch, var(--tl-text-main) 8%, transparent);
+  border-color: var(--tl-border-subtle);
+}
+
+.switcher-btn.active {
+  color: var(--tl-cyan);
+  background: color-mix(in oklch, var(--tl-cyan) 15%, transparent);
+  border-color: color-mix(in oklch, var(--tl-cyan) 40%, transparent);
+  box-shadow: 0 0 14px var(--tl-cyan-glow);
+  font-weight: 700;
+}
+
+.top-status {
+  font-size: 11px;
+  color: var(--tl-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-status code {
+  color: var(--tl-cyan);
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--tl-text-dim);
+  pointer-events: none;
+}
+
+.filter-input {
+  height: 28px;
+  width: 210px;
+  padding-left: 26px;
+  padding-right: 8px;
+  border: 1px solid var(--tl-border);
+  border-radius: 6px;
+  background: color-mix(in oklch, oklch(0.08 0.02 260) 90%, transparent);
+  color: var(--tl-text-main);
+  font-size: 11px;
+  transition: all 0.2s ease;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--tl-cyan);
+  box-shadow: 0 0 12px var(--tl-cyan-glow);
+  width: 250px;
+}
+
+.btn-glass {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--tl-panel-solid) 80%, transparent);
+  border: 1px solid var(--tl-border);
+  color: var(--tl-text-main);
+  backdrop-filter: var(--glass-blur);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-glass:hover {
+  background: color-mix(in oklch, var(--tl-cyan) 20%, transparent);
+  border-color: var(--tl-cyan);
+  box-shadow: 0 0 10px var(--tl-cyan-glow);
+}
+
+.sse-status-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--tl-green) 15%, transparent);
+  color: var(--tl-green);
+  border: 1px solid color-mix(in oklch, var(--tl-green) 35%, transparent);
+}
+
+/* ==========================================================================
+   Horizontal Phase Milestone Progression Strip
+   ========================================================================== */
+.milestone-strip-container {
+  background: color-mix(in oklch, oklch(0.10 0.03 260) 90%, transparent);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--tl-border);
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.milestone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.milestone-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tl-text-muted);
+}
+
+.milestone-title {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.milestone-graph {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: 4px 0 6px 0;
+  scrollbar-width: thin;
+}
+
+.milestone-node {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.milestone-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 20px;
+  background: color-mix(in oklch, var(--tl-panel-solid) 90%, transparent);
+  border: 1px solid var(--tl-border);
+  color: var(--tl-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.milestone-step-num {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.milestone-node.done .milestone-pill {
+  color: var(--tl-green);
+  border-color: color-mix(in oklch, var(--tl-green) 40%, transparent);
+  background: color-mix(in oklch, var(--tl-green) 10%, transparent);
+}
+
+.milestone-node.done .milestone-step-num {
+  background: var(--tl-green);
+  color: #041208;
+}
+
+.milestone-node.current .milestone-pill {
+  color: #030a14;
+  background: var(--tl-cyan);
+  border-color: var(--tl-cyan);
+  font-weight: 800;
+  box-shadow: 0 0 16px var(--tl-cyan-glow);
+  animation: milestone-pulse 2s infinite ease-in-out;
+}
+
+.milestone-node.current .milestone-step-num {
+  background: #030a14;
+  color: var(--tl-cyan);
+}
+
+.milestone-node.interrupt .milestone-pill {
+  background: var(--tl-red);
+  border-color: var(--tl-red);
+  color: #1a0404;
+}
+
+.milestone-connector {
+  width: 24px;
+  height: 2px;
+  background: var(--tl-border-subtle);
+  flex: 0 0 auto;
+  transition: background 0.2s ease;
+}
+
+.milestone-node.done + .milestone-connector,
+.milestone-node.current + .milestone-connector {
+  background: color-mix(in oklch, var(--tl-cyan) 50%, transparent);
+}
+
+@keyframes milestone-pulse {
+  0%, 100% { box-shadow: 0 0 12px var(--tl-cyan-glow); transform: scale(1); }
+  50% { box-shadow: 0 0 22px var(--tl-cyan); transform: scale(1.03); }
+}
+
+/* ==========================================================================
+   Main Timeline Workspace Layout
+   ========================================================================== */
+.timeline-workspace {
+  display: grid;
+  grid-template-columns: minmax(540px, 1fr) clamp(350px, 32vw, 480px);
+  gap: 1px;
+  background: var(--tl-border);
+  min-height: 0;
+}
+
+.waterfall-section, .performance-section {
+  background: var(--tl-glass);
+  backdrop-filter: var(--glass-blur);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Controls Bar */
+.waterfall-controls {
+  padding: 8px 14px;
+  background: color-mix(in oklch, oklch(0.10 0.03 260) 95%, transparent);
+  border-bottom: 1px solid var(--tl-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.controls-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.controls-label {
+  font-size: 11px;
+  color: var(--tl-text-muted);
+  font-weight: 700;
+}
+
+.type-filter-btn {
+  height: 26px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--tl-border);
+  color: var(--tl-text-muted);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.type-filter-btn:hover {
+  border-color: var(--tl-border-glow);
+  color: var(--tl-text-main);
+  background: rgba(255,255,255,0.04);
+}
+
+.type-filter-btn.active {
+  background: color-mix(in oklch, var(--tl-cyan) 15%, transparent);
+  border-color: var(--tl-cyan);
+  color: var(--tl-cyan);
+  font-weight: 700;
+  box-shadow: 0 0 10px var(--tl-cyan-glow);
+}
+
+.pill-count {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.1);
+  color: currentColor;
+}
+
+.action-btn, .follow-toggle {
+  height: 26px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--tl-panel-solid) 80%, transparent);
+  border: 1px solid var(--tl-border);
+  color: var(--tl-text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.follow-toggle.active {
+  background: color-mix(in oklch, var(--tl-green) 15%, transparent);
+  border-color: var(--tl-green);
+  color: var(--tl-green);
+}
+
+/* ==========================================================================
+   Waterfall Vertical Timeline Stream Track & Animated `@starting-style`
+   ========================================================================== */
+.waterfall-stream {
+  padding: 16px 20px 32px 24px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Glowing Waterfall Track Line */
+.waterfall-stream::before {
+  content: "";
+  position: absolute;
+  left: 40px;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  background: linear-gradient(180deg, 
+    var(--tl-cyan) 0%, 
+    color-mix(in oklch, var(--tl-purple) 60%, transparent) 50%, 
+    var(--tl-border) 100%);
+  box-shadow: 0 0 8px var(--tl-cyan-glow);
+}
+
+/* Timeline Card Base Styles with Glassmorphism */
+.timeline-card {
+  position: relative;
+  margin-left: 36px;
+  background: color-mix(in oklch, oklch(0.14 0.035 260) 85%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--tl-border);
+  border-left: 4px solid var(--tl-text-dim);
+  border-radius: 10px;
+  padding: 10px 14px;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.25s ease, 
+              border-color 0.25s ease;
+}
+
+/* Animated Entry via `@starting-style` (2026 Web Standard) */
+@starting-style {
+  .timeline-card {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+}
+
+/* Hover Expand & Micro-interactions */
+.timeline-card:hover {
+  border-color: var(--tl-border-glow);
+  background: color-mix(in oklch, oklch(0.17 0.04 260) 90%, transparent);
+  transform: translateY(-2px) scale(1.005);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 16px var(--tl-cyan-glow);
+  z-index: 5;
+}
+
+/* Waterfall SVG Branch Connector Nodes */
+.timeline-card::before {
+  content: "";
+  position: absolute;
+  left: -44px;
+  top: 16px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tl-text-dim);
+  border: 2px solid var(--tl-bg);
+  box-shadow: 0 0 0 2px var(--tl-border);
+  transition: all 0.25s ease;
+}
+
+.timeline-card:hover::before {
+  transform: scale(1.3);
+  box-shadow: 0 0 12px currentColor;
+}
+
+/* Card Variant Styles */
+.timeline-card.type-tool {
+  border-left-color: var(--tl-yellow);
+}
+.timeline-card.type-tool::before {
+  background: var(--tl-yellow);
+  color: var(--tl-yellow);
+}
+
+.timeline-card.type-spawn {
+  border-left-color: var(--tl-purple);
+  background: color-mix(in oklch, var(--tl-purple) 6%, transparent);
+}
+.timeline-card.type-spawn::before {
+  background: var(--tl-purple);
+  color: var(--tl-purple);
+}
+
+.timeline-card.type-decision {
+  border-left-color: var(--tl-cyan);
+}
+.timeline-card.type-decision::before {
+  background: var(--tl-cyan);
+  color: var(--tl-cyan);
+}
+
+.timeline-card.type-error {
+  border-left-color: var(--tl-red);
+  background: color-mix(in oklch, var(--tl-red) 8%, transparent);
+}
+.timeline-card.type-error::before {
+  background: var(--tl-red);
+  color: var(--tl-red);
+}
+
+.timeline-card.type-success {
+  border-left-color: var(--tl-green);
+}
+.timeline-card.type-success::before {
+  background: var(--tl-green);
+  color: var(--tl-green);
+}
+
+/* SVG Branch Connector Graphic on Card */
+.branch-connector-svg {
+  position: absolute;
+  left: -32px;
+  top: 14px;
+  width: 28px;
+  height: 16px;
+  pointer-events: none;
+  stroke: var(--tl-border-subtle);
+  stroke-width: 2;
+  fill: none;
+  transition: stroke 0.25s ease;
+}
+
+.timeline-card:hover .branch-connector-svg {
+  stroke: var(--tl-cyan);
+}
+
+/* Card Component Layout */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--tl-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--tl-border-subtle);
+  color: var(--tl-text-muted);
+}
+
+.card-time-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.time-stamp {
+  color: var(--tl-text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Delta Time ($\Delta t$) Badge */
+.delta-badge {
+  background: color-mix(in oklch, var(--tl-cyan) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--tl-cyan) 30%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--tl-cyan);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+}
+
+/* Latency Indicators: green <100ms, yellow <500ms, red >=500ms */
+.latency-badge {
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 800;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.latency-fast {
+  background: color-mix(in oklch, var(--tl-green) 15%, transparent);
+  color: var(--tl-green);
+  border: 1px solid color-mix(in oklch, var(--tl-green) 35%, transparent);
+  box-shadow: 0 0 8px var(--tl-green-glow);
+}
+
+.latency-medium {
+  background: color-mix(in oklch, var(--tl-yellow) 15%, transparent);
+  color: var(--tl-yellow);
+  border: 1px solid color-mix(in oklch, var(--tl-yellow) 35%, transparent);
+}
+
+.latency-slow {
+  background: color-mix(in oklch, var(--tl-red) 20%, transparent);
+  color: var(--tl-red);
+  border: 1px solid color-mix(in oklch, var(--tl-red) 40%, transparent);
+  box-shadow: 0 0 10px var(--tl-red-glow);
+}
+
+.card-message {
+  font-size: 12px;
+  color: oklch(0.88 0.02 240);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.card-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--tl-border-subtle);
+  font-size: 10.5px;
+  color: var(--tl-text-muted);
+}
+
+.inspect-btn {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  height: 22px;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--tl-cyan) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--tl-cyan) 30%, transparent);
+  color: var(--tl-cyan);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inspect-btn:hover {
+  background: var(--tl-cyan);
+  color: #030a14;
+  box-shadow: 0 0 10px var(--tl-cyan-glow);
+}
+
+.empty-stream-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 12px;
+  color: var(--tl-text-muted);
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--tl-border);
+  border-top-color: var(--tl-cyan);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   Bottleneck & Performance Inspector Panel
+   ========================================================================== */
+.performance-section {
+  padding: 14px;
+  gap: 14px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-title-wrapper h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--tl-text-main);
+}
+
+.header-sub {
+  font-size: 11px;
+  color: var(--tl-text-muted);
+}
+
+.pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tl-green);
+  box-shadow: 0 0 10px var(--tl-green);
+  animation: pulse-dot 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.5; }
+}
+
+.perf-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.metric-card {
+  position: relative;
+  background: color-mix(in oklch, oklch(0.14 0.035 260) 90%, transparent);
+  border: 1px solid var(--tl-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.metric-card:hover {
+  border-color: var(--tl-border-glow);
+  transform: translateY(-1px);
+}
+
+.metric-label {
+  display: block;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tl-text-muted);
+  font-weight: 800;
+}
+
+.metric-val {
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--tl-cyan);
+  margin-top: 3px;
+}
+
+.metric-spark-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--tl-cyan) 0%, transparent 100%);
+}
+.tools-spark { background: linear-gradient(90deg, var(--tl-yellow) 0%, transparent 100%); }
+.latency-spark { background: linear-gradient(90deg, var(--tl-green) 0%, transparent 100%); }
+.agents-spark { background: linear-gradient(90deg, var(--tl-purple) 0%, transparent 100%); }
+
+.perf-block {
+  background: color-mix(in oklch, oklch(0.13 0.03 260) 90%, transparent);
+  border: 1px solid var(--tl-border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.block-header h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tl-text-main);
+}
+
+/* Bottleneck CSS Sparkbars */
+.runtimes-list, .tool-speed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runtime-row, .tool-speed-row {
+  background: color-mix(in oklch, oklch(0.16 0.035 260) 85%, transparent);
+  border: 1px solid var(--tl-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.runtime-row:hover, .tool-speed-row:hover {
+  border-color: var(--tl-cyan);
+  background: color-mix(in oklch, oklch(0.19 0.04 260) 90%, transparent);
+  transform: translateX(2px);
+}
+
+.runtime-info, .tool-speed-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.runtime-bar-bg, .tool-bar-bg {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Animated Shimmer CSS Sparkbars */
+.runtime-bar-fill, .tool-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, 
+    var(--tl-cyan) 0%, 
+    color-mix(in oklch, var(--tl-purple) 80%, var(--tl-cyan)) 100%);
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 8px var(--tl-cyan-glow);
+  position: relative;
+  overflow: hidden;
+}
+
+.runtime-bar-fill::after, .tool-bar-fill::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: spark-shimmer 2s infinite linear;
+}
+
+@keyframes spark-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.quick-inspector-btns {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.drawer-launch-btn {
+  height: 32px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--tl-panel-solid) 80%, transparent);
+  border: 1px solid var(--tl-border);
+  color: var(--tl-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.drawer-launch-btn:hover {
+  border-color: var(--tl-cyan);
+  background: color-mix(in oklch, var(--tl-cyan) 15%, transparent);
+  color: var(--tl-cyan);
+  box-shadow: 0 0 12px var(--tl-cyan-glow);
+}
+
+/* ==========================================================================
+   Slide-over Inspector Drawer & Backdrop
+   ========================================================================== */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 90;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.drawer-backdrop[hidden] {
+  display: none;
+  opacity: 0;
+}
+
+.inspector-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(720px, 54vw);
+  height: 100vh;
+  background: color-mix(in oklch, oklch(0.12 0.03 260) 95%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-left: 1px solid var(--tl-cyan);
+  box-shadow: -24px 0 80px rgba(0, 0, 0, 0.8), 0 0 30px var(--tl-cyan-glow);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateX(0);
+}
+
+.inspector-drawer[hidden] {
+  display: flex;
+  transform: translateX(100%);
+  pointer-events: none;
+}
+
+.drawer-header {
+  padding: 12px 16px;
+  background: color-mix(in oklch, oklch(0.09 0.025 260) 95%, transparent);
+  border-bottom: 1px solid var(--tl-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.drawer-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-accent-indicator {
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--tl-cyan);
+  box-shadow: 0 0 10px var(--tl-cyan);
+}
+
+.drawer-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--tl-cyan);
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: var(--tl-text-muted);
+  cursor: pointer;
+  padding: 0 6px;
+  transition: color 0.2s ease;
+}
+.close-btn:hover { color: var(--tl-text-main); }
+
+.drawer-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px;
+  background: color-mix(in oklch, oklch(0.11 0.03 260) 95%, transparent);
+  border-bottom: 1px solid var(--tl-border);
+  overflow-x: auto;
+}
+
+.tab-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--tl-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover { color: var(--tl-text-main); }
+
+.tab-btn.active {
+  background: color-mix(in oklch, var(--tl-cyan) 15%, transparent);
+  border-color: var(--tl-cyan);
+  color: var(--tl-cyan);
+  font-weight: 700;
+}
+
+.drawer-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Markdown and Inspector Code Blocks inside Drawer */
+.raw-box, .preview {
+  background: color-mix(in oklch, oklch(0.08 0.02 260) 95%, transparent);
+  border: 1px solid var(--tl-border);
+  border-radius: 8px;
+  padding: 12px;
+  color: oklch(0.92 0.02 240);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+/* ==========================================================================
+   Responsive Rules
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .timeline-workspace {
+    grid-template-columns: 1fr;
+  }
+  .performance-section {
+    border-top: 1px solid var(--tl-border);
+  }
+  .inspector-drawer {
+    width: min(600px, 90vw);
+  }
+}

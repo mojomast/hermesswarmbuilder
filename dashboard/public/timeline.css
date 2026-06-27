@@ -45,6 +45,11 @@
   color: var(--tl-text-main);
 }
 
+.panel-scroll {
+  overflow: auto;
+  overflow-y: auto;
+}
+
 /* ==========================================================================
    Topbar Header & Glassmorphism Navigation
    ========================================================================== */

@@ -22,12 +22,13 @@
       </div>
 
       <div class="top-right-group">
-        <div class="dashboard-switcher">
-          <a href="/" class="switcher-btn">Classic Studio</a>
-          <a href="/matrix.html" class="switcher-btn">Command Matrix</a>
-          <a href="/timeline.html" class="switcher-btn">Timeline Stream</a>
-          <a href="/console.html" class="switcher-btn active">Dev Console</a>
-        </div>
+        <nav class="dashboard-switcher" aria-label="Dashboard View Switcher">
+          <a href="/" class="switcher-btn">Studio</a>
+          <a href="/matrix.html" class="switcher-btn">Matrix</a>
+          <a href="/timeline.html" class="switcher-btn">Timeline</a>
+          <a href="/console.html" class="switcher-btn active">Console</a>
+          <a href="/ultimate.html" class="switcher-btn">Swarm Ops</a>
+        </nav>
       </div>
     </header>
 
@@ -157,7 +158,10 @@
     <aside id="detailDrawer" class="dev-drawer hidden" aria-hidden="true">
       <header class="drawer-header">
         <span id="drawerTitle" class="drawer-title">Payload Detail</span>
-        <button id="btnCloseDrawer" class="dev-btn dev-btn-sm">Close</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button id="btnCopyDrawer" class="dev-btn dev-btn-sm" title="Copy Content">Copy</button>
+          <button id="btnCloseDrawer" class="dev-btn dev-btn-sm">Close</button>
+        </div>
       </header>
       <div id="drawerContent" class="drawer-body panel-scroll monospace-text"></div>
     </aside>

@@ -314,9 +314,7 @@ function renderSidebar() {
 
     document.querySelectorAll('[data-artifact-name]').forEach(el => {
       el.onclick = () => {
-        model.selectedArtifact = el.dataset.artifactName;
-        setPref('hermes.apb.dashboard.selectedArtifact', model.selectedArtifact);
-        openDocModal(model.selectedArtifact.toLowerCase().includes('devplan') ? 'devplan' : 'spec');
+        openResourcePreview('artifact', el.dataset.artifactName);
       };
     });
   }
@@ -335,9 +333,7 @@ function renderSidebar() {
 
     document.querySelectorAll('[data-log-name]').forEach(el => {
       el.onclick = () => {
-        model.selectedLog = el.dataset.logName;
-        setPref('hermes.apb.dashboard.selectedLog', model.selectedLog);
-        renderSidebar();
+        openResourcePreview('log', el.dataset.logName);
       };
     });
   }
@@ -697,6 +693,78 @@ function closeDocModal() {
   $('docModal').classList.add('hidden');
 }
 
+async function openResourcePreview(type, name) {
+  if (!model.selectedRunId) return;
+
+  if (type === 'artifact') {
+    model.selectedArtifact = name;
+    setPref('hermes.apb.dashboard.selectedArtifact', name);
+  } else {
+    model.selectedLog = name;
+    setPref('hermes.apb.dashboard.selectedLog', name);
+  }
+  renderSidebar();
+
+  const drawer = $('detailDrawer');
+  const title = $('drawerTitle');
+  const content = $('drawerContent');
+  if (!drawer || !title || !content) return;
+
+  drawer.classList.remove('hidden');
+  drawer.setAttribute('aria-hidden', 'false');
+  title.textContent = `${type === 'artifact' ? '📄 ARTIFACT' : '📜 LOG'}: ${name}`;
+  content.innerHTML = '<div style="padding: 14px; color: var(--text-muted);">Loading resource content...</div>';
+
+  const cacheKey = `${model.selectedRunId}:${name}`;
+  const cache = type === 'artifact' ? model.artifactCache : model.logCache;
+  const url = type === 'artifact'
+    ? `/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts/${encodeURIComponent(name)}`
+    : `/api/runs/${encodeURIComponent(model.selectedRunId)}/logs/${encodeURIComponent(name)}`;
+
+  try {
+    let txt;
+    if (cache.has(cacheKey)) {
+      txt = cache.get(cacheKey);
+    } else {
+      txt = await getText(url);
+      cache.set(cacheKey, txt);
+    }
+
+    const lines = txt.split('\n');
+    const totalLines = lines.length;
+    const lineNumWidth = Math.max(3, String(totalLines).length);
+
+    const formattedLines = lines.map((line, idx) => {
+      const lineNum = String(idx + 1).padStart(lineNumWidth, '0');
+      let lineContent = esc(line);
+
+      if (type === 'log') {
+        if (/error|failed|exception|fatal|stderr/i.test(lineContent)) {
+          lineContent = `<span style="color: var(--accent-red); font-weight: 600;">${lineContent}</span>`;
+        } else if (/warn|warning/i.test(lineContent)) {
+          lineContent = `<span style="color: var(--accent-amber);">${lineContent}</span>`;
+        } else if (/info|success|completed|done/i.test(lineContent)) {
+          lineContent = `<span style="color: var(--accent-green);">${lineContent}</span>`;
+        }
+      } else {
+        if (lineContent.startsWith('#')) {
+          lineContent = `<span style="color: var(--accent-cyan); font-weight: 700;">${lineContent}</span>`;
+        } else if (/^\s*("[^"]+"):/.test(lineContent)) {
+          lineContent = lineContent.replace(/^\s*("[^"]+"):/, '<span style="color: var(--accent-violet); font-weight: 600;">$1</span>:');
+        }
+      }
+      return `<div class="terminal-line" style="display: flex; gap: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; padding: 2px 4px; border-radius: 2px;">` +
+             `<span class="line-num" style="user-select: none; color: oklch(0.48 0.03 260); flex: 0 0 auto; text-align: right; min-width: ${lineNumWidth * 9}px;">${lineNum}</span>` +
+             `<span class="line-text" style="flex: 1; white-space: pre-wrap; word-break: break-all;">${lineContent || '&nbsp;'}</span>` +
+             `</div>`;
+    }).join('');
+
+    content.innerHTML = `<div class="preview-container" style="display: flex; flex-direction: column; gap: 1px; padding: 4px 0;">${formattedLines}</div>`;
+  } catch (err) {
+    content.innerHTML = `<div style="padding: 14px; color: var(--accent-red);">Failed to load content for ${esc(name)}: ${esc(err.message)}</div>`;
+  }
+}
+
 // --------------------------------------------------------------------------
 // Data Synchronizers & Stream Handlers
 // --------------------------------------------------------------------------
@@ -861,6 +929,22 @@ function setupEventListeners() {
     $('btnCopyDoc').textContent = 'Copied!';
     setTimeout(() => { $('btnCopyDoc').textContent = 'Copy'; }, 2000);
   };
+
+  // Drawer Controls
+  if ($('btnCloseDrawer')) {
+    $('btnCloseDrawer').onclick = () => {
+      $('detailDrawer').classList.add('hidden');
+      $('detailDrawer').setAttribute('aria-hidden', 'true');
+    };
+  }
+  if ($('btnCopyDrawer')) {
+    $('btnCopyDrawer').onclick = () => {
+      const txt = $('drawerContent').innerText;
+      navigator.clipboard.writeText(txt);
+      $('btnCopyDrawer').textContent = 'Copied!';
+      setTimeout(() => { $('btnCopyDrawer').textContent = 'Copy'; }, 2000);
+    };
+  }
 
   // Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {

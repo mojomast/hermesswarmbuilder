@@ -47,6 +47,8 @@ let model = {
   selectedAgentId: pref('hermes.apb.dashboard.selectedAgentId', 'main-orchestrator'),
   inspectorTab: pref('hermes.apb.dashboard.inspectorTab', 'agent'),
   expandedAgents: new Set(pref('hermes.apb.dashboard.expandedAgents', ['main-orchestrator', 'builder'])),
+  expandedToolBoxes: new Set(pref('hermes.apb.dashboard.expandedToolBoxes', [])),
+  expandedToolItems: new Set(pref('hermes.apb.dashboard.expandedToolItems', [])),
   paused: pref('hermes.apb.dashboard.pauseRealtime', false),
   filter: 'all',
   query: '',
@@ -443,19 +445,25 @@ function buildAgentCardHTML(a) {
 
   let liveToolHTML = '';
   if (activeTool) {
+    const isBoxExp = model.expandedToolBoxes.has(a.id);
     const inputPreview = activeTool.input ? (typeof activeTool.input === 'string' ? activeTool.input : JSON.stringify(activeTool.input, null, 2)) : 'No input payload';
     const outputPreview = activeTool.output ? (typeof activeTool.output === 'string' ? activeTool.output : JSON.stringify(activeTool.output, null, 2)) : '';
     liveToolHTML = `
-      <div class="live-tool-box">
+      <div class="live-tool-box ${isBoxExp ? 'expanded open active' : ''}" data-toggle-toolbox="${esc(a.id)}" style="cursor:pointer;">
         <div class="tool-box-header">
           <div class="tool-name-tag">
             <span class="tool-pulse-ring"></span>
             <span>${esc(activeTool.toolName)}</span>
           </div>
           <span class="tool-timer" data-timer-start="${activeTool.startedAt}">${calcDuration(activeTool.startedAt)}</span>
+          <span style="font-size:10px; margin-left: auto; color:var(--text-muted);">${isBoxExp ? '▲ Hide' : '▼ Details'}</span>
         </div>
         <div class="tool-action-summary">${esc(activeTool.action || 'Executing tool action…')}</div>
-        <div class="tool-code-preview">${esc(inputPreview)}\n${esc(outputPreview)}</div>
+        ${isBoxExp ? `
+          <div class="tool-code-preview" style="max-height:200px; overflow:auto;"><b>Input:</b>\n${esc(inputPreview)}\n\n<b>Output/Error:</b>\n${esc(outputPreview || activeTool.error || 'Running…')}</div>
+        ` : `
+          <div class="tool-code-preview" style="max-height:60px; overflow:hidden; text-overflow:ellipsis;">${esc(inputPreview.slice(0, 120))}</div>
+        `}
       </div>
     `;
   } else {
@@ -466,7 +474,7 @@ function buildAgentCardHTML(a) {
   const logTailText = a.lastMessage || (recentEvents.length ? recentEvents.map(e => `[${fmtTime(e.ts)}] ${e.message}`).join('\n') : 'No recent telemetry entries.');
 
   return `
-    <article class="subagent-card ${isSelected ? 'selected' : ''} ${isBlocked ? 'blocked-card' : ''}" data-card-agent="${esc(a.id)}">
+    <article class="subagent-card ${isSelected ? 'selected active' : ''} ${isBlocked ? 'blocked-card' : ''} ${expanded ? 'expanded open' : ''}" data-card-agent="${esc(a.id)}">
       <div class="card-topbar">
         <div class="card-title-group">
           <span class="agent-name">${esc(a.label || a.id)}</span>
@@ -494,12 +502,24 @@ function buildAgentCardHTML(a) {
           ${expanded ? `
             <div class="details-drawer-body">
               <div class="sub-timeline-list">
-                ${tools.slice(-3).reverse().map(t => `
-                  <div class="sub-tool-item">
-                    <span>⚡ <b>${esc(t.toolName)}</b> - ${esc(t.action || 'action')}</span>
-                    <span class="muted">${calcDuration(t.startedAt, t.updatedAt)}</span>
-                  </div>
-                `).join('') || '<div class="empty-state" style="padding:10px;">No tools recorded</div>'}
+                ${tools.slice(-5).reverse().map(t => {
+                  const isToolExp = model.expandedToolItems.has(t.id);
+                  return `
+                    <div class="sub-tool-item ${isToolExp ? 'expanded open active' : ''}" data-toggle-toolitem="${esc(t.id)}" style="cursor:pointer; flex-direction:column; align-items:flex-start;">
+                      <div style="display:flex; justify-content:space-between; width:100%;">
+                        <span>⚡ <b>${esc(t.toolName)}</b> - ${esc(t.action || 'action')}</span>
+                        <span class="muted">${calcDuration(t.startedAt, t.updatedAt)} ${isToolExp ? '▲' : '▼'}</span>
+                      </div>
+                      ${isToolExp ? `
+                        <div class="sub-tool-details" style="margin-top:6px; width:100%; font-size:11px;">
+                          ${t.input !== undefined ? `<div><b>Input:</b> <pre class="raw-box" style="max-height:100px; overflow:auto;">${esc(typeof t.input === 'string' ? t.input : JSON.stringify(t.input, null, 2))}</pre></div>` : ''}
+                          ${t.output !== undefined ? `<div><b>Output:</b> <pre class="raw-box" style="max-height:100px; overflow:auto;">${esc(typeof t.output === 'string' ? t.output : JSON.stringify(t.output, null, 2))}</pre></div>` : ''}
+                          ${t.error !== undefined ? `<div><b>Error:</b> <pre class="raw-box danger" style="max-height:100px; overflow:auto;">${esc(typeof t.error === 'string' ? t.error : JSON.stringify(t.error, null, 2))}</pre></div>` : ''}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }).join('') || '<div class="empty-state" style="padding:10px;">No tools recorded</div>'}
               </div>
               <div class="log-tail-box">${esc(logTailText)}</div>
             </div>
@@ -515,24 +535,18 @@ function buildAgentCardHTML(a) {
 }
 
 function updateAgentCardDOM(el, a) {
+  const expanded = model.expandedAgents.has(a.id);
   const isSelected = a.id === model.selectedAgentId;
   const isBlocked = a.status === 'blocked';
-  el.className = `subagent-card ${isSelected ? 'selected' : ''} ${isBlocked ? 'blocked-card' : ''}`;
+  el.className = `subagent-card ${isSelected ? 'selected active' : ''} ${isBlocked ? 'blocked-card' : ''} ${expanded ? 'expanded open' : ''}`;
   
-  const statusSpan = el.querySelector('.status-tag');
-  if (statusSpan) {
-    statusSpan.className = `status-tag ${esc(a.status)}`;
-    statusSpan.textContent = a.status;
-  }
+  const newHTML = buildAgentCardHTML(a);
+  const newEl = parseHTML(newHTML);
   
-  const taskText = el.querySelector('.task-description-box .task-text');
-  if (taskText) taskText.textContent = a.currentTask || 'Idle / Monitoring workflow';
-
-  const timerEl = el.querySelector('.tool-timer');
-  if (timerEl) {
-    const start = timerEl.getAttribute('data-timer-start');
-    if (start) timerEl.textContent = calcDuration(start);
-  }
+  const oldScrolls = [...el.querySelectorAll('div, pre')].map(x => x.scrollTop);
+  el.innerHTML = newEl.innerHTML;
+  const newScrollables = el.querySelectorAll('div, pre');
+  oldScrollables.forEach((st, idx) => { if (newScrollables[idx] && st) newScrollables[idx].scrollTop = st; });
 }
 
 // Tick timers every second
@@ -554,7 +568,7 @@ function openDrawer(tab = 'agent', agentId = null) {
 
   const drawer = $('inspectorDrawer');
   const overlay = $('drawerOverlay');
-  if (drawer) drawer.classList.add('open');
+  if (drawer) drawer.classList.add('open', 'active');
   if (overlay) overlay.hidden = false;
 
   renderInspectorDrawer();
@@ -564,7 +578,7 @@ function closeDrawer() {
   model.drawerOpen = false;
   const drawer = $('inspectorDrawer');
   const overlay = $('drawerOverlay');
-  if (drawer) drawer.classList.remove('open');
+  if (drawer) drawer.classList.remove('open', 'active');
   if (overlay) overlay.hidden = true;
 }
 
@@ -580,12 +594,16 @@ function renderInspectorDrawer() {
   const a = agents().find(x => x.id === model.selectedAgentId) || { id: model.selectedAgentId, role: 'subagent', status: 'unknown' };
   if ($('drawerTitle')) $('drawerTitle').textContent = `Inspect: ${a.label || a.id}`;
 
+  const savedScroll = content ? content.scrollTop : 0;
+
   if (model.inspectorTab === 'agent') renderAgentTab(content, a);
   else if (model.inspectorTab === 'spec') renderDocTab(content, 'spec.md', 'SPEC Document', model.state?.specAdherence);
   else if (model.inspectorTab === 'devplan') renderDocTab(content, 'devplan.md', 'DEVPLAN Document', model.state?.devplanAdherence);
   else if (model.inspectorTab === 'artifacts') renderArtifactsTab(content);
   else if (model.inspectorTab === 'logs') renderLogsTab(content);
   else if (model.inspectorTab === 'run') renderRunJsonTab(content);
+
+  if (content) content.scrollTop = savedScroll;
 }
 
 function renderAgentTab(content, a) {
@@ -599,12 +617,23 @@ function renderAgentTab(content, a) {
     </div>
     <h4>Active Tool Calls (${tools.length})</h4>
     <div class="sub-timeline-list">
-      ${tools.map(t => `
-        <div class="sub-tool-item">
-          <span>⚡ <b>${esc(t.toolName)}</b>: ${esc(t.action)}</span>
-          <span class="status-tag ${esc(t.status)}">${esc(t.status)}</span>
-        </div>
-      `).join('') || '<div class="empty-state">No tool calls observed.</div>'}
+      ${tools.map(t => {
+        const isToolExp = model.expandedToolItems.has(t.id);
+        return `
+          <div class="sub-tool-item ${isToolExp ? 'expanded open active' : ''}" data-toggle-toolitem="${esc(t.id)}" style="cursor:pointer; flex-direction:column; align-items:flex-start;">
+            <div style="display:flex; justify-content:space-between; width:100%;">
+              <span>⚡ <b>${esc(t.toolName)}</b>: ${esc(t.action)}</span>
+              <span class="status-tag ${esc(t.status)}">${esc(t.status)} ${isToolExp ? '▲' : '▼'}</span>
+            </div>
+            ${isToolExp ? `
+              <div class="sub-tool-details" style="margin-top:6px; width:100%; font-size:11px;">
+                ${t.input !== undefined ? `<div><b>Input:</b> <pre class="raw-box" style="max-height:120px; overflow:auto;">${esc(typeof t.input === 'string' ? t.input : JSON.stringify(t.input, null, 2))}</pre></div>` : ''}
+                ${t.output !== undefined ? `<div><b>Output:</b> <pre class="raw-box" style="max-height:120px; overflow:auto;">${esc(typeof t.output === 'string' ? t.output : JSON.stringify(t.output, null, 2))}</pre></div>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('') || '<div class="empty-state">No tool calls observed.</div>'}
     </div>
     <h4>Recent Telemetry Events (${ev.length})</h4>
     <pre class="raw-box">${esc(ev.slice(-8).map(e => `[${fmtTime(e.ts)}] ${e.type}: ${e.message}`).join('\n') || 'No events recorded.')}</pre>
@@ -756,6 +785,29 @@ function initGlobalEvents() {
       else model.expandedAgents.add(id);
       setPref('hermes.apb.dashboard.expandedAgents', [...model.expandedAgents]);
       renderSubagentDeck();
+      return;
+    }
+
+    // Toolbox Details Toggle
+    const toggleToolbox = e.target.closest('[data-toggle-toolbox]');
+    if (toggleToolbox) {
+      const id = toggleToolbox.dataset.toggleToolbox;
+      if (model.expandedToolBoxes.has(id)) model.expandedToolBoxes.delete(id);
+      else model.expandedToolBoxes.add(id);
+      setPref('hermes.apb.dashboard.expandedToolBoxes', [...model.expandedToolBoxes]);
+      renderSubagentDeck();
+      return;
+    }
+
+    // Tool Item Details Toggle
+    const toggleToolitem = e.target.closest('[data-toggle-toolitem]');
+    if (toggleToolitem) {
+      const id = toggleToolitem.dataset.toggleToolitem;
+      if (model.expandedToolItems.has(id)) model.expandedToolItems.delete(id);
+      else model.expandedToolItems.add(id);
+      setPref('hermes.apb.dashboard.expandedToolItems', [...model.expandedToolItems]);
+      renderSubagentDeck();
+      if (model.drawerOpen) renderInspectorDrawer();
       return;
     }
 

@@ -264,9 +264,25 @@ function renderSidebar() {
     btn.classList.toggle('active', tab === model.sidebarTab);
   });
 
-  $('agentsTree').classList.toggle('hidden', model.sidebarTab !== 'agents');
-  $('artifactsTree').classList.toggle('hidden', model.sidebarTab !== 'artifacts');
-  $('logsTree').classList.toggle('hidden', model.sidebarTab !== 'logs');
+  const isAgents = model.sidebarTab === 'agents';
+  const isArtifacts = model.sidebarTab === 'artifacts';
+  const isLogs = model.sidebarTab === 'logs';
+
+  const agentsTree = $('agentsTree');
+  if (agentsTree) {
+    agentsTree.classList.toggle('active', isAgents);
+    agentsTree.classList.toggle('hidden', !isAgents);
+  }
+  const artifactsTree = $('artifactsTree');
+  if (artifactsTree) {
+    artifactsTree.classList.toggle('active', isArtifacts);
+    artifactsTree.classList.toggle('hidden', !isArtifacts);
+  }
+  const logsTree = $('logsTree');
+  if (logsTree) {
+    logsTree.classList.toggle('active', isLogs);
+    logsTree.classList.toggle('hidden', !isLogs);
+  }
 
   const agentList = getAgentsList();
   $('agentCount').textContent = agentList.length;
@@ -491,7 +507,9 @@ function renderToolConsole() {
     });
 
     currentTools.forEach((t, index) => {
-      const isExpanded = model.expandedTools.has(t.id);
+      let cardEl = existingCards.get(t.id);
+      const isExpanded = model.expandedTools.has(t.id) || (cardEl && cardEl.classList.contains('expanded'));
+      if (isExpanded) model.expandedTools.add(t.id);
       
       let inputHtml = '—';
       if (t.input) {
@@ -523,11 +541,10 @@ function renderToolConsole() {
         </div>
       `;
 
-      let cardEl = existingCards.get(t.id);
       if (!cardEl) {
         const temp = document.createElement('div');
         temp.innerHTML = `
-          <div class="tool-card" data-tool-id="${esc(t.id)}">
+          <div class="tool-card ${isExpanded ? 'expanded' : ''}" data-tool-id="${esc(t.id)}">
             <div class="tool-card-head" data-toggle-tool-card="${esc(t.id)}">
               <div class="tool-name-group">
                 <span class="tool-pill">${esc(t.toolName)}</span>
@@ -553,6 +570,7 @@ function renderToolConsole() {
         }
       } else {
         // Update head info in place
+        cardEl.classList.toggle('expanded', isExpanded);
         const statusPill = cardEl.querySelector('.status-pill-sm');
         if (statusPill) {
           statusPill.className = `status-pill-sm ${esc(t.status)}`;
@@ -610,14 +628,42 @@ function renderToolConsole() {
   }
 
   if (model.consoleTab === 'raw') {
-    c.innerHTML = model.raw.slice(-30).reverse().map(x => `
-      <details style="margin-bottom:8px;background:oklch(0.09 0.02 260);padding:8px;border-radius:6px;border:1px solid var(--border-color)">
-        <summary style="cursor:pointer;font-family:var(--font-mono);color:var(--accent-cyan);font-weight:600">
-          ${esc(x.type)} @ ${fmt(x.ts)}
-        </summary>
-        <div class="json-tree" style="margin-top:8px"><pre class="code-box">${highlightJson(x.payload)}</pre></div>
-      </details>
-    `).join('') || '<div class="empty-state">No SSE raw events in stream cache</div>';
+    const openRawIds = new Set();
+    c.querySelectorAll('details[data-raw-id]').forEach(el => {
+      if (el.open) openRawIds.add(el.dataset.rawId);
+    });
+    if (model.expandedRaw) {
+      model.expandedRaw.forEach(id => openRawIds.add(id));
+    } else {
+      model.expandedRaw = new Set();
+    }
+
+    const rawList = model.raw.slice(-30).reverse();
+    if (rawList.length === 0) {
+      c.innerHTML = '<div class="empty-state">No SSE raw events in stream cache</div>';
+      return;
+    }
+
+    c.innerHTML = rawList.map((x, idx) => {
+      const rawId = x.id || `${x.ts}-${x.type}-${idx}`;
+      const isOpen = openRawIds.has(rawId);
+      if (isOpen) model.expandedRaw.add(rawId);
+      return `
+        <details data-raw-id="${esc(rawId)}" ${isOpen ? 'open' : ''} style="margin-bottom:8px;background:oklch(0.09 0.02 260);padding:8px;border-radius:6px;border:1px solid var(--border-color)">
+          <summary style="cursor:pointer;font-family:var(--font-mono);color:var(--accent-cyan);font-weight:600">
+            ${esc(x.type)} @ ${fmt(x.ts)}
+          </summary>
+          <div class="json-tree" style="margin-top:8px"><pre class="code-box">${highlightJson(x.payload)}</pre></div>
+        </details>
+      `;
+    }).join('');
+
+    c.querySelectorAll('details[data-raw-id]').forEach(el => {
+      el.ontoggle = () => {
+        if (el.open) model.expandedRaw.add(el.dataset.rawId);
+        else model.expandedRaw.delete(el.dataset.rawId);
+      };
+    });
     return;
   }
 

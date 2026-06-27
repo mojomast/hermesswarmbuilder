@@ -68,9 +68,23 @@ function reconcileList(container, items, options) {
 
     if (el) {
       existingMap.delete(key);
+      const wasExpanded = el.classList.contains('expanded');
+      const wasOpen = el.tagName === 'DETAILS' ? el.open : null;
+      const openDetails = Array.from(el.querySelectorAll('details')).filter(d => d.open);
+
+      if (wasExpanded) {
+        if (keyAttr === 'data-agent' && item.id) model.expanded.add(item.id);
+        else if (keyAttr === 'data-tool' && item.id) model.expandedTools.add(item.id);
+        else if (keyAttr === 'data-event' && item.id) model.expandedEvents.add(item.id);
+      }
+
       if (updateItem) {
         updateItem(el, item);
       }
+
+      if (wasExpanded) el.classList.add('expanded');
+      if (wasOpen !== null) el.open = wasOpen;
+      openDetails.forEach(d => d.open = true);
     } else {
       const html = renderItem(item);
       el = parseHTML(html);
@@ -234,8 +248,14 @@ function renderAgentStack(){
 }
 
 function updateAgentCard(el, a) {
-  const expanded = model.expanded.has(a.id);
+  if (el && el.classList.contains('expanded')) {
+    model.expanded.add(a.id);
+  }
+  const expanded = model.expanded.has(a.id) || (el && el.classList.contains('expanded'));
+  if (expanded) model.expanded.add(a.id);
   const tools = agentTools(a.id);
+
+  const openDetails = el ? Array.from(el.querySelectorAll('details')).filter(d => d.open) : [];
 
   el.className = `agent-card ${expanded?'expanded':''} ${a.status==='blocked'?'blocked':''}`;
   const summary = el.querySelector('.agent-summary');
@@ -286,6 +306,8 @@ function updateAgentCard(el, a) {
       rawBox.textContent = a.lastMessage || 'No recent logs.';
     }
   }
+
+  openDetails.forEach(d => d.open = true);
 }
 
 function agentCard(a){
@@ -305,9 +327,15 @@ function reconcileToolsList(container, tools) {
 }
 
 function updateToolRow(el, t) {
-  const expanded = model.expandedTools.has(t.id);
+  if (el && el.classList.contains('expanded')) {
+    model.expandedTools.add(t.id);
+  }
+  const expanded = model.expandedTools.has(t.id) || (el && el.classList.contains('expanded'));
+  if (expanded) model.expandedTools.add(t.id);
   const input = t.input===undefined?'':JSON.stringify(t.input,null,2);
   const output = t.output===undefined?'':typeof t.output==='string'?t.output:JSON.stringify(t.output,null,2);
+
+  const openDetails = el ? Array.from(el.querySelectorAll('details')).filter(d => d.open) : [];
 
   el.className = `tool-row ${expanded?'expanded':''} ${t.status==='error'?'level-error':''}`;
   const summary = el.querySelector('.tool-summary');
@@ -355,6 +383,8 @@ function updateToolRow(el, t) {
       pres[2].remove();
     }
   }
+
+  openDetails.forEach(d => d.open = true);
 }
 
 function toolRow(t){
@@ -496,7 +526,14 @@ function renderConsole(){
 }
 
 function updateEventRow(el, e) {
-  const expanded = model.expandedEvents.has(e.id);
+  if (el && el.classList.contains('expanded')) {
+    model.expandedEvents.add(e.id);
+  }
+  const expanded = model.expandedEvents.has(e.id) || (el && el.classList.contains('expanded'));
+  if (expanded) model.expandedEvents.add(e.id);
+
+  const openDetails = el ? Array.from(el.querySelectorAll('details')).filter(d => d.open) : [];
+
   el.className = `event-row level-${esc(e.level)} ${expanded?'expanded':''}`;
   const summary = el.querySelector('.event-summary');
   if (summary) {
@@ -515,6 +552,8 @@ function updateEventRow(el, e) {
   if (pre) {
     pre.textContent = JSON.stringify(e.raw||e, null, 2);
   }
+
+  openDetails.forEach(d => d.open = true);
 }
 
 function eventRow(e){
@@ -551,8 +590,14 @@ function initGlobalDelegation() {
     if (toggleAgentBtn && $('agentStack')?.contains(toggleAgentBtn)) {
       e.stopPropagation();
       const id = toggleAgentBtn.dataset.toggleAgent;
-      if (model.expanded.has(id)) model.expanded.delete(id);
-      else model.expanded.add(id);
+      const card = toggleAgentBtn.closest('.agent-card');
+      if (model.expanded.has(id)) {
+        model.expanded.delete(id);
+        if (card) card.classList.remove('expanded');
+      } else {
+        model.expanded.add(id);
+        if (card) card.classList.add('expanded');
+      }
       setPref('hermes.apb.dashboard.expandedAgents', [...model.expanded]);
       renderAgentStack();
       return;
@@ -569,8 +614,14 @@ function initGlobalDelegation() {
     if (toggleToolEl) {
       e.stopPropagation();
       const id = toggleToolEl.dataset.toggleTool;
-      if (model.expandedTools.has(id)) model.expandedTools.delete(id);
-      else model.expandedTools.add(id);
+      const row = toggleToolEl.closest('.tool-row');
+      if (model.expandedTools.has(id)) {
+        model.expandedTools.delete(id);
+        if (row) row.classList.remove('expanded');
+      } else {
+        model.expandedTools.add(id);
+        if (row) row.classList.add('expanded');
+      }
       renderAll();
       return;
     }
@@ -585,12 +636,16 @@ function initGlobalDelegation() {
     const eventEl = e.target.closest('[data-event]');
     if (eventEl) {
       const id = eventEl.dataset.event;
-      if (model.expandedEvents.has(id)) model.expandedEvents.delete(id);
-      else model.expandedEvents.add(id);
+      const row = eventEl.closest('.event-row');
+      if (model.expandedEvents.has(id)) {
+        model.expandedEvents.delete(id);
+        if (row) row.classList.remove('expanded');
+      } else {
+        model.expandedEvents.add(id);
+        if (row) row.classList.add('expanded');
+      }
       model.expandedEvents = new Set([...model.expandedEvents].slice(-80));
       setPref('hermes.apb.dashboard.expandedEvents', [...model.expandedEvents]);
-      const row = eventEl.closest('.event-row');
-      if (row) row.classList.toggle('expanded', model.expandedEvents.has(id));
       return;
     }
 

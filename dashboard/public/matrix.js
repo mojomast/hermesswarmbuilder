@@ -159,6 +159,9 @@ function showToolPopover(toolId, targetEl) {
   const pop = $('toolPopover');
   if (!t || !pop) return;
 
+  pop.dataset.toolId = toolId;
+  pop.currentTriggerEl = targetEl;
+
   const rect = targetEl.getBoundingClientRect();
   pop.style.left = `${Math.min(window.innerWidth - 400, Math.max(10, rect.left))}px`;
   pop.style.top = `${Math.min(window.innerHeight - 300, rect.bottom + 8)}px`;
@@ -179,7 +182,21 @@ function showToolPopover(toolId, targetEl) {
 
 function hideToolPopover() {
   const pop = $('toolPopover');
-  if (pop) pop.hidden = true;
+  if (pop) {
+    pop.hidden = true;
+    delete pop.dataset.toolId;
+    pop.currentTriggerEl = null;
+  }
+}
+
+function updateOpenToolPopover() {
+  const pop = $('toolPopover');
+  if (pop && !pop.hidden && pop.dataset.toolId) {
+    const toolId = pop.dataset.toolId;
+    if (pop.currentTriggerEl && document.body.contains(pop.currentTriggerEl)) {
+      showToolPopover(toolId, pop.currentTriggerEl);
+    }
+  }
 }
 
 // Rendering Functions
@@ -256,7 +273,20 @@ function reconcileContainer(container, items, getKey, keyAttr, renderHTML, updat
     let el = existingMap.get(key);
 
     if (el) {
+      const wasSelected = el.classList.contains('active-selected') || el.classList.contains('selected') || el.classList.contains('active');
+      const wasExpanded = el.classList.contains('expanded');
+      const wasOpen = el.tagName === 'DETAILS' ? el.open : null;
+      const openDetails = Array.from(el.querySelectorAll('details')).filter(d => d.open);
+
       updateDOM(el, item);
+
+      if (wasSelected) {
+        if (el.classList.contains('active-selected') || keyAttr === 'data-node-id') el.classList.add('active-selected');
+        else el.classList.add('selected');
+      }
+      if (wasExpanded) el.classList.add('expanded');
+      if (wasOpen !== null) el.open = wasOpen;
+      openDetails.forEach(d => d.open = true);
     } else {
       const temp = document.createElement('div');
       temp.innerHTML = renderHTML(item);
@@ -300,11 +330,17 @@ function createNodeCardHTML(node) {
 }
 
 function updateNodeCardDOM(el, node) {
-  const isSelected = node.id === model.selectedAgentId;
+  const isSelected = node.id === model.selectedAgentId || el.classList.contains('active-selected') || el.classList.contains('selected');
+  if (isSelected) {
+    model.selectedAgentId = node.id;
+  }
+  const isExpanded = el.classList.contains('expanded');
   const tools = [...model.toolCalls.values()].filter(t => (t.agentId || inferAgent(t.source)) === node.id);
   const activeTool = tools.find(t => t.status === 'running') || tools[tools.length - 1];
 
   el.classList.toggle('active-selected', isSelected);
+  if (isSelected) el.classList.add('selected');
+  if (isExpanded) el.classList.add('expanded');
   el.classList.toggle('status-blocked', node.status === 'blocked');
 
   const dot = el.querySelector('.dot');
@@ -429,6 +465,8 @@ function createTelemetryRowHTML(e) {
 }
 
 function updateTelemetryRowDOM(el, e) {
+  const isSelected = el.classList.contains('selected') || el.classList.contains('active');
+  const isExpanded = el.classList.contains('expanded');
   const tool = extractTool(e);
   const lvlClass = tool ? 'tool' : e.level;
   const lvlText = tool ? 'TOOL' : e.level.toUpperCase();
@@ -438,6 +476,12 @@ function updateTelemetryRowDOM(el, e) {
   } else {
     delete el.dataset.toolId;
   }
+
+  if (isSelected) {
+    if (el.classList.contains('selected')) el.classList.add('selected');
+    if (el.classList.contains('active')) el.classList.add('active');
+  }
+  if (isExpanded) el.classList.add('expanded');
 
   const timeEl = el.querySelector('.t-time');
   if (timeEl) {
@@ -587,6 +631,7 @@ function renderAll() {
     renderPulseStats();
     renderSwarmGrid();
     renderTelemetry();
+    updateOpenToolPopover();
     if (!$('inspectorDrawer').hidden) renderInspector(false);
   });
 }

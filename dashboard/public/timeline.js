@@ -54,6 +54,8 @@ let model = {
   agentFilter: pref('hermes.apb.dashboard.timelineAgentFilter', 'all'),
   sortOrder: pref('hermes.apb.dashboard.timelineSortOrder', 'asc'), // 'asc' = oldest first, 'desc' = newest first
   query: '',
+  expandedCards: new Set(pref('hermes.apb.dashboard.timelineExpandedCards', [])),
+  expandedEvents: new Set(pref('hermes.apb.dashboard.timelineExpandedEvents', [])),
   
   // Active Inspection context
   drawerOpen: false,
@@ -388,13 +390,29 @@ function renderWaterfallStream() {
       latencyBadge = `<span class="latency-badge ${speedClass}">${durMs}ms</span>`;
     }
 
+    const isExpanded = model.expandedCards.has(e.id);
+    const expandedClass = isExpanded ? ' expanded open active' : '';
+    const detailsHTML = isExpanded ? `
+      <div class="card-details-box details-drawer-body" style="margin-top:8px; padding:10px; background:rgba(0,0,0,0.25); border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+        ${tool ? `
+          <div class="kv"><span>tool name:</span> <strong>${esc(tool.toolName)}</strong></div>
+          <div class="kv"><span>status:</span> <strong>${esc(tool.status)}</strong></div>
+          ${tool.action ? `<div class="kv"><span>action:</span> <strong>${esc(tool.action)}</strong></div>` : ''}
+          ${tool.input !== undefined ? `<div class="kv"><span>input:</span> <pre class="raw-box" style="max-height:150px; overflow:auto;">${esc(typeof tool.input === 'string' ? tool.input : JSON.stringify(tool.input, null, 2))}</pre></div>` : ''}
+          ${tool.output !== undefined ? `<div class="kv"><span>output:</span> <pre class="raw-box" style="max-height:150px; overflow:auto;">${esc(typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2))}</pre></div>` : ''}
+          ${tool.error !== undefined ? `<div class="kv"><span>error:</span> <pre class="raw-box danger" style="max-height:150px; overflow:auto;">${esc(typeof tool.error === 'string' ? tool.error : JSON.stringify(tool.error, null, 2))}</pre></div>` : ''}
+        ` : ''}
+        <div class="kv"><span>raw payload:</span> <pre class="raw-box" style="max-height:150px; overflow:auto;">${esc(JSON.stringify(e.raw || e, null, 2))}</pre></div>
+      </div>
+    ` : '';
+
     let cardEl = existingCards.get(e.id);
     if (!cardEl) {
       const temp = document.createElement('div');
       temp.innerHTML = `
-        <article class="timeline-card ${cardTypeClass}" data-event-id="${esc(e.id)}">
+        <article class="timeline-card ${cardTypeClass}${expandedClass}" data-event-id="${esc(e.id)}">
           ${branchSvg}
-          <header class="card-header">
+          <header class="card-header" data-toggle-waterfall-card="${esc(e.id)}" style="cursor:pointer;">
             <div class="card-title-group">
               ${dot(e.level)}
               <span class="card-title">${esc(tool ? `Tool: ${tool.toolName}` : e.type)}</span>
@@ -404,9 +422,11 @@ function renderWaterfallStream() {
               ${latencyBadge}
               <span class="delta-badge">${formatDelta(deltaMs)}</span>
               <span class="time-stamp">${fmt(e.ts)}</span>
+              <button class="card-expand-btn btn-glass" style="padding:2px 6px; font-size:10px; margin-left:6px;" data-toggle-waterfall-card="${esc(e.id)}">${isExpanded ? '▲' : '▼'}</button>
             </div>
           </header>
-          <div class="card-message">${esc(e.message || tool?.action || 'Stream telemetry entry.')}</div>
+          <div class="card-message" data-toggle-waterfall-card="${esc(e.id)}" style="cursor:pointer;">${esc(e.message || tool?.action || 'Stream telemetry entry.')}</div>
+          ${detailsHTML}
           <footer class="card-meta-bar">
             <span>Source: <code>${esc(e.source)}</code></span>
             <button class="inspect-btn" data-inspect-event="${esc(e.id)}">Inspect Details</button>
@@ -422,7 +442,7 @@ function renderWaterfallStream() {
         };
       }
     } else {
-      cardEl.className = `timeline-card ${cardTypeClass}`;
+      cardEl.className = `timeline-card ${cardTypeClass}${expandedClass}`;
       const dotEl = cardEl.querySelector('.dot');
       if (dotEl) dotEl.className = `dot ${theme[e.level] || e.level || ''}`;
       const titleEl = cardEl.querySelector('.card-title');
@@ -431,10 +451,22 @@ function renderWaterfallStream() {
       if (agentEl) agentEl.textContent = e.agentId;
       const timeGroup = cardEl.querySelector('.card-time-group');
       if (timeGroup) {
-        timeGroup.innerHTML = `${latencyBadge}<span class="delta-badge">${formatDelta(deltaMs)}</span><span class="time-stamp">${fmt(e.ts)}</span>`;
+        timeGroup.innerHTML = `${latencyBadge}<span class="delta-badge">${formatDelta(deltaMs)}</span><span class="time-stamp">${fmt(e.ts)}</span><button class="card-expand-btn btn-glass" style="padding:2px 6px; font-size:10px; margin-left:6px;" data-toggle-waterfall-card="${esc(e.id)}">${isExpanded ? '▲' : '▼'}</button>`;
       }
       const msgEl = cardEl.querySelector('.card-message');
       if (msgEl) msgEl.textContent = e.message || tool?.action || 'Stream telemetry entry.';
+      
+      let detailsEl = cardEl.querySelector('.card-details-box');
+      if (isExpanded) {
+        if (detailsEl) {
+          detailsEl.outerHTML = detailsHTML;
+        } else {
+          const msgContainer = cardEl.querySelector('.card-message');
+          if (msgContainer) msgContainer.insertAdjacentHTML('afterend', detailsHTML);
+        }
+      } else if (detailsEl) {
+        detailsEl.remove();
+      }
     }
 
     if (container.children[index] !== cardEl) {
@@ -620,10 +652,14 @@ function openDrawerTab(tabName, payload = null) {
   model.drawerTab = tabName;
   setPref('hermes.apb.dashboard.timelineDrawerTab', tabName);
   if (payload) model.drawerPayload = payload;
+  model.drawerOpen = true;
   
   const drawer = $('inspectorDrawer');
   const backdrop = $('drawerBackdrop');
-  drawer.hidden = false;
+  if (drawer) {
+    drawer.hidden = false;
+    drawer.classList.add('open', 'active');
+  }
   if (backdrop) backdrop.hidden = false;
   
   document.querySelectorAll('[data-drawer-tab]').forEach(b => {
@@ -634,13 +670,19 @@ function openDrawerTab(tabName, payload = null) {
 }
 
 function closeDrawer() {
-  $('inspectorDrawer').hidden = true;
+  model.drawerOpen = false;
+  const drawer = $('inspectorDrawer');
+  if (drawer) {
+    drawer.hidden = true;
+    drawer.classList.remove('open', 'active');
+  }
   const backdrop = $('drawerBackdrop');
   if (backdrop) backdrop.hidden = true;
 }
 
 async function renderDrawerContent() {
   const content = $('drawerContent');
+  const savedScroll = content ? content.scrollTop : 0;
   const tab = model.drawerTab;
   $('drawerTitle').textContent = `Inspector · ${tab.toUpperCase()}`;
   
@@ -659,10 +701,17 @@ async function renderDrawerContent() {
         <pre class="raw-box">${esc(a.lastMessage || 'No recent log recorded.')}</pre>
         <h4 style="margin-top:12px;">Recent Events (${ev.length})</h4>
         <div style="display:grid; gap:6px;">
-          ${ev.map(e => `<div class="event-row"><div class="event-summary"><span>${fmt(e.ts)}</span> <b>${esc(e.type)}</b>: ${esc(e.message)}</div></div>`).join('')}
+          ${ev.map(e => {
+            const isExp = model.expandedEvents.has(e.id);
+            return `<div class="event-row ${isExp ? 'expanded open active' : ''}" data-toggle-event-row="${esc(e.id)}" style="cursor:pointer; padding:6px; border-radius:4px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05);">
+              <div class="event-summary"><span>${fmt(e.ts)}</span> <b>${esc(e.type)}</b>: ${esc(e.message)} <span style="float:right; font-size:10px;">${isExp ? '▲' : '▼'}</span></div>
+              ${isExp ? `<pre class="raw-box" style="margin-top:6px; font-size:11px; max-height:150px; overflow:auto;">${esc(JSON.stringify(e.raw || e, null, 2))}</pre>` : ''}
+            </div>`;
+          }).join('')}
         </div>
       </div>
     `;
+    if (content) content.scrollTop = savedScroll;
   } else if (tab === 'spec' || tab === 'devplan') {
     const file = tab === 'spec' ? 'spec.md' : 'devplan.md';
     const candidates = tab === 'spec' 
@@ -757,12 +806,20 @@ function md(src) {
 }
 
 function renderAll() {
+  const scrollables = [...document.querySelectorAll('.panel-scroll')].map(el => [el, el.scrollTop]);
   renderTop();
   renderMilestoneGraph();
   renderAgentFilterOptions();
   renderWaterfallStream();
   renderPerformanceInspector();
-  if (!($('inspectorDrawer').hidden)) renderDrawerContent();
+  if (model.drawerOpen || !($('inspectorDrawer').hidden)) {
+    const drawer = $('inspectorDrawer');
+    if (drawer) { drawer.hidden = false; drawer.classList.add('open', 'active'); }
+    renderDrawerContent();
+  }
+  requestAnimationFrame(() => {
+    for (const [el, top] of scrollables) el.scrollTop = top;
+  });
 }
 
 async function loadRunResources() {
@@ -874,6 +931,30 @@ $('followWaterfall').onclick = () => {
   $('followWaterfall').classList.toggle('active', model.followWaterfall);
   $('followWaterfall').textContent = model.followWaterfall ? 'Follow: ON' : 'Follow: OFF';
 };
+
+document.addEventListener('click', (ev) => {
+  const toggleWaterfallCard = ev.target.closest('[data-toggle-waterfall-card]');
+  if (toggleWaterfallCard) {
+    ev.stopPropagation();
+    const id = toggleWaterfallCard.dataset.toggleWaterfallCard;
+    if (model.expandedCards.has(id)) model.expandedCards.delete(id);
+    else model.expandedCards.add(id);
+    setPref('hermes.apb.dashboard.timelineExpandedCards', [...model.expandedCards]);
+    renderWaterfallStream();
+    return;
+  }
+
+  const toggleEventRow = ev.target.closest('[data-toggle-event-row]');
+  if (toggleEventRow) {
+    ev.stopPropagation();
+    const id = toggleEventRow.dataset.toggleEventRow;
+    if (model.expandedEvents.has(id)) model.expandedEvents.delete(id);
+    else model.expandedEvents.add(id);
+    setPref('hermes.apb.dashboard.timelineExpandedEvents', [...model.expandedEvents]);
+    renderDrawerContent();
+    return;
+  }
+});
 
 document.querySelectorAll('[data-open-drawer]').forEach(btn => {
   btn.onclick = () => openDrawerTab(btn.dataset.openDrawer);

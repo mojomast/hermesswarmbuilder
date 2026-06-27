@@ -515,7 +515,9 @@ button, input, select, textarea {
   padding: 10px;
 }
 
-.tree-pane.hidden { display: none; }
+.hidden { display: none !important; }
+.tree-pane { display: block; }
+.tree-pane.hidden { display: none !important; }
 .tree-pane.active { 
   display: flex; 
   flex-direction: column; 

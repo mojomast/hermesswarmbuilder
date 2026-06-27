@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HAPB · Autonomous Project Builder</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar" aria-live="polite">
+      <div class="brand" title="Hermes Autonomous Project Builder">HAPB</div>
+      <div id="topStatus" class="top-status">loading state…</div>
+      <div class="top-actions">
+        <input id="globalFilter" class="filter-input" placeholder="filter events/tools/logs…" aria-label="Global filter" />
+        <span id="streamState" class="chip">SSE connecting…</span>
+        <button id="refreshNow">Refresh</button>
+        <button id="pauseEvents">Pause</button>
+      </div>
+    </header>
+
+    <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
+
+    <main class="workspace">
+      <aside class="left-rail panel-scroll">
+        <section class="rail-section">
+          <header>Runs</header>
+          <div id="runsList" class="dense-list"></div>
+        </section>
+        <section class="rail-section grow">
+          <header>Agents</header>
+          <div id="agentIndex" class="dense-list"></div>
+        </section>
+        <section class="rail-section">
+          <header>Filters</header>
+          <div id="filterChips" class="filter-chips">
+            <button data-filter="all" class="active">all</button>
+            <button data-filter="tools">tools</button>
+            <button data-filter="errors">errors</button>
+            <button data-filter="artifacts">artifacts</button>
+            <button data-filter="active">active agents</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="activity-pane panel-scroll">
+        <section id="orchestratorDeck" class="orchestrator-deck"></section>
+        <div class="section-title"><span>Subagent Activity Stack</span><div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div></div>
+        <section id="agentStack" class="agent-stack"></section>
+      </section>
+
+      <aside class="inspector-pane">
+        <nav class="inspector-tabs" aria-label="Inspector tabs">
+          <button data-inspector="agent" class="active">Agent</button>
+          <button data-inspector="spec">SPEC</button>
+          <button data-inspector="devplan">DEVPLAN</button>
+          <button data-inspector="artifacts">Artifacts</button>
+          <button data-inspector="logs">Logs</button>
+          <button data-inspector="run">Run JSON</button>
+        </nav>
+        <div id="inspectorContent" class="inspector-content panel-scroll"></div>
+      </aside>
+    </main>
+
+    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize console" role="separator" aria-orientation="horizontal"></div>
+    <section class="bottom-console">
+      <nav class="console-tabs" aria-label="Console tabs">
+        <button data-console="events" class="active">Events</button>
+        <button data-console="tools">Tool Calls</button>
+        <button data-console="logs">Logs</button>
+        <button data-console="artifacts">Artifacts</button>
+        <button data-console="raw">Raw SSE</button>
+        <button id="followConsole" class="follow-toggle" title="Keep console pinned to bottom when already scrolled down">Follow: on</button>
+      </nav>
+      <div id="consoleContent" class="console-content panel-scroll"></div>
+    </section>
+
+    <aside id="detailDrawer" class="detail-drawer" hidden></aside>
+  </div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

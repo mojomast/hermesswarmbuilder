@@ -1,0 +1,13 @@
+{
+  "name": "autonomous-projects-dashboard",
+  "version": "0.1.0",
+  "description": "Read-only operational dashboard for Hermes autonomous project builder runs.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun src/server.ts",
+    "check": "bun build src/server.ts --target=bun --outfile=/tmp/autonomous-projects-dashboard-check.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

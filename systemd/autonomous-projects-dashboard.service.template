@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes Swarm Builder Dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{DASHBOARD_DIR}}
+ExecStart={{BUN_BIN}} {{DASHBOARD_DIR}}/src/server.ts
+Restart=on-failure
+RestartSec=3
+Environment=AUTONOMOUS_PROJECTS_DASHBOARD_PORT={{PORT}}
+Environment=AUTONOMOUS_PROJECTS_STATE_ROOT={{STATE_ROOT}}
+Environment=AUTONOMOUS_PROJECTS_DASHBOARD_ROOT={{DASHBOARD_DIR}}
+
+[Install]
+WantedBy=default.target

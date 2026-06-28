@@ -49,7 +49,12 @@ if [[ "$INSTALL_SERVICE" == "1" ]]; then
     -e "s#{{STATE_ROOT}}#$STATE_ROOT#g" \
     "$REPO_ROOT/systemd/autonomous-projects-dashboard.service.template" > "$HOME/.config/systemd/user/autonomous-projects-dashboard.service"
   systemctl --user daemon-reload
-  systemctl --user enable --now autonomous-projects-dashboard.service
+  systemctl --user enable autonomous-projects-dashboard.service
+  if systemctl --user is-active --quiet autonomous-projects-dashboard.service; then
+    systemctl --user restart autonomous-projects-dashboard.service
+  else
+    systemctl --user start autonomous-projects-dashboard.service
+  fi
 fi
 
 if [[ "$INSTALL_CRON" == "1" ]]; then

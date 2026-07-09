@@ -20,7 +20,7 @@ card = f"""
       <a class=\"card\" href=\"http://{host}:{port}/\">
         <h2>Autonomous Project Builder <span class=\"port\">:{port}</span></h2>
         <p>Live cockpit for local autonomous project selection, reviewed specs/devplans, subagent orchestration, blockers, artifacts, logs, and validated completion.</p>
-        <div class=\"meta\"><span class=\"pill\">midnight cron</span><span class=\"pill\">read-only monitor</span></div>
+        <div class=\"meta\"><span class=\"pill\">hourly cron</span><span class=\"pill\">steering cockpit</span></div>
       </a>
 """
 idx=s.rfind('</main>')

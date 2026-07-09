@@ -1,6 +1,6 @@
 # Hermes Swarm Builder
 
-Hermes Swarm Builder packages a local autonomous-project workflow for a Hermes host: a midnight runner, governed runner prompt, telemetry helper, read-only live dashboard, systemd/cron install scaffolding, and operational docs.
+Hermes Swarm Builder packages a local autonomous-project workflow for a Hermes host: an hourly non-overlapping runner, governed runner prompt, telemetry helper, live steering/observability dashboard, systemd/cron install scaffolding, and operational docs.
 
 The system lets a Hermes agent run a complete local build cycle later on a schedule:
 
@@ -34,7 +34,7 @@ Requirements and constraints:
 - Install telemetry.py at ~/.hermes/autonomous-projects/telemetry.py.
 - Install runner-prompt.md at ~/.hermes/autonomous-projects/runner-prompt.md.
 - Create/enable/start the user systemd service autonomous-projects-dashboard.service on port 9200.
-- Add the midnight cron entry for the runner, replacing any old autonomous-project-midnight-runner entry.
+- Add the hourly cron entry for the runner, replacing any old autonomous-project-midnight-runner entry. The runner skips launch when a project is still active and waits for the next hourly tick.
 - Do not start a full autonomous project run unless I explicitly ask after installation.
 - Do not push anything to GitHub.
 - Verify with curl -I http://127.0.0.1:9200/ and systemctl --user status autonomous-projects-dashboard.service --no-pager.
@@ -64,13 +64,13 @@ http://127.0.0.1:9200/
 ## What is included
 
 ```text
-dashboard/       Bun read-only live operations dashboard (5 dynamic views)
-runner/          Midnight runner that invokes `hermes chat` with telemetry env vars
+dashboard/       Bun live steering + operations dashboard (5 dynamic views)
+runner/          Hourly non-overlapping runner that invokes `hermes chat` with telemetry env vars
 telemetry/       Canonical Python telemetry writer for state/events/run mirrors
 prompts/         Governed autonomous-builder runner prompt
 systemd/         User service template
 scripts/         Installer, one-shot runner wrapper, web-hub card helper
-docs/            Architecture and operations notes
+docs/            Architecture, operations notes, and screenshots
 ```
 
 ## 🐝 The Builder Swarm: From Idea to Working Product
@@ -130,7 +130,7 @@ The installer copies source into this layout:
   autonomous-project-midnight-runner.ts
 ```
 
-The dashboard is read-only. It reads `state.json`, `events.jsonl`, run artifacts, and logs. It does not provide arbitrary shell execution.
+The dashboard is a local control plane. It reads `state.json`, efficiently tails `events.jsonl`, previews run artifacts/logs, and writes narrow steering commands (`control.json`, `queue.json`, `gates.json`, `commands.jsonl`, `audit.jsonl`). It does not provide arbitrary shell execution.
 
 ## Install manually
 
@@ -179,7 +179,7 @@ http://<host>:9200/
 
 ## Running one build manually
 
-The cron runs at midnight. To trigger a run manually after install:
+The cron runs once an hour and the runner exits without launching if a project is already active. To trigger a run manually after install:
 
 ```bash
 ~/.npm-global/bin/bun ~/.hermes/scripts/autonomous-project-midnight-runner.ts \
@@ -196,8 +196,13 @@ The dashboard should show a new run under `/api/state` and the run list.
 
 ## Dashboard behavior
 
+![Steering cockpit screenshot](docs/screenshots/steering-cockpit.png)
+
 The dashboard shows:
 
+- steering cockpit for pause/resume/hold/run-next-tick commands,
+- next-build queue with pinned user ideas and Hermes-generated tournament ideas,
+- active steering directives and acceptance gates,
 - top-level workflow phase strip,
 - run list,
 - agent/subagent list,
@@ -208,7 +213,31 @@ The dashboard shows:
 - artifact and log previews,
 - raw run JSON.
 
-Live updates use SSE from `/api/stream`. Artifact/log previews are cached client-side per run/file so live refreshes do not flash the preview back to `Loading...` while you are reading.
+Live updates use SSE from `/api/stream`. The server tails the event file instead of reparsing the full history on every tick, sends incremental event batches by cursor, redacts secret-shaped strings, and the frontend coalesces live renders so long-running tabs stay responsive. Artifact/log previews are cached client-side per run/file so live refreshes do not flash the preview back to `Loading...` while you are reading.
+
+## Steering cockpit
+
+The Studio view (`/`) includes a local-only project-management cockpit. It writes auditable JSON/JSONL control files under `~/.hermes/autonomous-projects`:
+
+```text
+control.json     desired mode, pause/stop/hold, active steering, pinned queue item
+queue.json       ranked project ideas from the user or Hermes idea tournaments
+gates.json       reusable acceptance gates with required evidence
+commands.jsonl   append-only operator commands
+audit.jsonl      append-only command/results audit trail
+```
+
+Use it to:
+
+- add/pin the next thing to build,
+- keep iterating an existing repo instead of creating a fresh project,
+- add acceptance gates before the next run,
+- pause at the next safe checkpoint,
+- hold new hourly runs,
+- resume when ready,
+- request a run on the next runner tick.
+
+Pinned queue items are exported to `idea.txt` for compatibility and are appended to the runner prompt as a hard selector override. If nothing is pinned, the runner prompt still uses tournament-style selection over Hermes-generated ideas and local inventory.
 
 ## Telemetry protocol
 
@@ -237,14 +266,17 @@ The helper normalizes state shape, keeps agents keyed by stable id, writes schem
 
 `runner/autonomous-project-midnight-runner.ts`:
 
-- creates a lock directory so overlapping runs do not start,
-- initializes run directories and state,
+- creates a lock directory so overlapping processes do not start,
+- checks state and dashboard control files first and skips launch while an existing project is active or new runs are held,
+- exports pinned queue items to the run as `idea.txt` and appends the steering snapshot to the prompt,
+- initializes run directories and state when idle,
 - invokes `hermes chat --verbose --accept-hooks --source autonomous-project-builder --max-turns 90 --toolsets terminal,file,web,delegation`,
 - passes telemetry env vars into the Hermes process,
 - streams stdout/stderr into run logs,
 - recognizes explicit `APB_TELEMETRY {json}` lines,
+- writes `gate-report.json` and `artifact-manifest.json` on successful completion,
 - records process start/end/error events,
-- avoids clobbering `state.agents` arrays over object state.
+- avoids clobbering `state.agents` arrays over object state and marks running agents completed after success.
 
 ## Current project-quality gates
 
@@ -274,7 +306,7 @@ You can edit `~/.hermes/autonomous-projects/runner-prompt.md` after install to s
 This repository was extracted from an active Hermes build session. The workflow evolved in stages:
 
 1. A dashboard scaffold was created under `~/.hermes/autonomous-projects-dashboard` to visualize autonomous runs without exposing an arbitrary browser shell.
-2. A midnight runner was created under `~/.hermes/scripts/autonomous-project-midnight-runner.ts` to start real autonomous-project work later via cron rather than immediately.
+2. An hourly non-overlapping runner was created under `~/.hermes/scripts/autonomous-project-midnight-runner.ts` to start real autonomous-project work later via cron rather than immediately.
 3. State files were standardized under `~/.hermes/autonomous-projects`: `state.json`, `events.jsonl`, `runs/`, `logs/`, and `artifacts/`.
 4. A Python telemetry helper was added to stop the workflow from relying on ad-hoc model-written JSON. It introduced canonical commands for phases, agents, tool calls, events, completion, redaction, and run mirroring.
 5. The dashboard frontend was patched to derive subagents from both `state.agents` and telemetry events, preserve scroll/focus during live updates, and cache artifact/log previews to prevent flashing.
@@ -285,7 +317,7 @@ This repository was extracted from an active Hermes build session. The workflow 
 ## Safety and privacy
 
 - Do not commit `~/.hermes/autonomous-projects/runs`, logs, artifacts, databases, `.env`, credentials, ROMs, or private generated files.
-- The dashboard is read-only and intentionally does not expose arbitrary terminal execution.
+- The dashboard writes only narrow local steering/control files and intentionally does not expose arbitrary terminal execution.
 - The runner should publish externally only after a completed/validated project if you explicitly wire that behavior.
 - Review generated projects before trusting or deploying them.
 

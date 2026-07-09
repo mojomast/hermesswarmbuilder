@@ -1,7 +1,7 @@
 {
   "name": "autonomous-projects-dashboard",
   "version": "0.1.0",
-  "description": "Read-only operational dashboard for Hermes autonomous project builder runs.",
+  "description": "Live steering and observability dashboard for Hermes autonomous project builder runs.",
   "type": "module",
   "private": true,
   "scripts": {

@@ -1,24 +1,54 @@
 # Autonomous Project Builder Dashboard
 
-Read-only, multi-view live monitoring system for Hermes autonomous project builder runs on the host machine.
+Live steering and observability system for Hermes autonomous project builder runs on the host machine.
 
 - **Service**: `autonomous-projects-dashboard.service`
 - **URL**: `http://<hermes-hostname-or-ip>:9200/` or `http://127.0.0.1:9200/`
 - **State root**: `~/.hermes/autonomous-projects`
 - **Runner**: `~/.hermes/scripts/autonomous-project-midnight-runner.ts`
 
-## Dynamic Dashboard Views & Real-time Switcher
-The dashboard features an integrated real-time **Dashboard View Switcher** in the top navigation bar, allowing users to toggle seamlessly between 4 distinct visualization layouts:
+## Screenshot
 
-1. **Classic Studio (`/`)**: Multi-pane overview featuring orchestrator status, subagent stack, event console, and resource inspectors.
-2. **Command Matrix (`/matrix.html`)**: Cyberpunk high-density observability grid featuring real-time pulse stats, swarm node status matrix, container queries, and tool telemetry tables.
-3. **Timeline Stream (`/timeline.html`)**: Chronological pipeline DAG and waterfall event stream with time deltas ($\Delta t$), SVG branch connectors, and bottleneck performance sparkbars.
-4. **Developer Console (`/console.html`)**: Terminal/IDE split view with true monospace font ligatures, syntax-highlighted JSON trees, glowing prompt cursors, and instant SPEC/DEVPLAN markdown modal overlays.
+![Steering cockpit](../docs/screenshots/steering-cockpit.png)
 
-The dashboard does not start builds. The midnight runner owns scheduled execution and writes state/events for this UI.
+## Dynamic dashboard views
 
-## Rendering Stability
+The top navigation switches between 5 views:
 
-Live views receive state, event, and heartbeat updates over SSE. Inspector and drawer panes should preserve their current DOM whenever the selected run, tab, artifact/log selection, and resource metadata have not changed. SPEC/DEVPLAN content is cached per run after loading so heartbeat refreshes do not flash the pane back to a loading state.
+1. **Studio (`/`)**: steering cockpit, orchestrator status, subagent stack, event console, and resource inspectors.
+2. **Command Matrix (`/matrix.html`)**: high-density observability grid with swarm node status and tool telemetry.
+3. **Timeline Stream (`/timeline.html`)**: chronological pipeline/event stream with time deltas and bottleneck cues.
+4. **Developer Console (`/console.html`)**: terminal/IDE-style event and artifact inspection.
+5. **Swarm Ops (`/ultimate.html`)**: expanded operational swarm view.
 
-When updating dashboard renderers, prefer keyed reconciliation or render keys over wholesale `innerHTML` replacement for panels with scroll state, previews, expanded rows, or async document loads.
+## Steering cockpit
+
+The Studio view is a narrow local control plane, not an arbitrary shell. It can:
+
+- add and pin next-build queue items,
+- preserve Hermes-generated tournament ideas as queue candidates,
+- add steering directives for current/next/global scope,
+- add acceptance gates with required evidence,
+- pause at a safe checkpoint,
+- hold or resume future hourly launches,
+- request a run on the next runner tick.
+
+The dashboard writes only auditable JSON/JSONL control files:
+
+```text
+control.json
+queue.json
+gates.json
+commands.jsonl
+audit.jsonl
+```
+
+Pinned queue items are exported to `idea.txt` for compatibility with the existing runner prompt and are appended to the launched prompt as a hard selector override.
+
+## Performance model
+
+Live views receive state, event, and heartbeat updates over SSE. The server now tails the event file rather than reparsing the full JSONL history every tick, supports `after` cursors, and redacts secret-shaped strings on output. The browser coalesces live renders, caps raw/tool buffers, prevents duplicated polling loops, and avoids refreshing artifact/log listings on every heartbeat.
+
+Inspector and drawer panes preserve their current DOM whenever the selected run, tab, artifact/log selection, and resource metadata have not changed. SPEC/DEVPLAN content is cached per run after loading so heartbeat refreshes do not flash the pane back to a loading state.
+
+When updating dashboard renderers, prefer keyed reconciliation, capped lists, render scheduling, or render keys over wholesale `innerHTML` replacement for panels with scroll state, previews, expanded rows, or async document loads.

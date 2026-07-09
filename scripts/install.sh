@@ -58,13 +58,13 @@ if [[ "$INSTALL_SERVICE" == "1" ]]; then
 fi
 
 if [[ "$INSTALL_CRON" == "1" ]]; then
-  CRON_LINE="0 0 * * * $BUN_BIN $SCRIPTS_DIR/autonomous-project-midnight-runner.ts >> $STATE_ROOT/logs/midnight-runner.log 2>&1"
+  CRON_LINE="0 * * * * $BUN_BIN $SCRIPTS_DIR/autonomous-project-midnight-runner.ts >> $STATE_ROOT/logs/midnight-runner.log 2>&1"
   TMP="$(mktemp)"
-  crontab -l 2>/dev/null | grep -vF "$SCRIPTS_DIR/autonomous-project-midnight-runner.ts" > "$TMP" || true
+  crontab -l 2>/dev/null | grep -vF "$SCRIPTS_DIR/autonomous-project-midnight-runner.ts" | grep -vF "Hermes Swarm Builder midnight workflow" | grep -vF "Hermes Swarm Builder hourly workflow" > "$TMP" || true
   {
     cat "$TMP"
     echo ""
-    echo "# Hermes Swarm Builder midnight workflow (non-overlapping; dashboard on :$PORT)"
+    echo "# Hermes Swarm Builder hourly workflow (non-overlapping; skips when a project is active; dashboard on :$PORT)"
     echo "$CRON_LINE"
   } | crontab -
   rm -f "$TMP"

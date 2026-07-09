@@ -11,6 +11,9 @@ const PUBLIC_ROOT = join(APP_ROOT, "public");
 const MAX_TEXT_BYTES = 1_500_000;
 const EVENT_TAIL_BYTES = Number(process.env.AUTONOMOUS_PROJECTS_EVENT_TAIL_BYTES || "3000000");
 const MAX_EVENTS_LIMIT = 1000;
+const EVENT_CACHE_MAX = Number(process.env.AUTONOMOUS_PROJECTS_EVENT_CACHE_MAX || "5000");
+type CachedEvent = { id: string; ts?: string; [key: string]: any };
+let eventCache = { size: -1, mtimeMs: -1, events: [] as CachedEvent[] };
 
 type StateName = "idle" | "inventory-scanning" | "selecting" | "repo-created" | "spec-drafting" | "spec-review" | "spec-approved" | "devplan-drafting" | "devplan-review" | "devplan-approved" | "building" | "blocked" | "deblocking" | "on-hold" | "completed" | "published";
 const states: StateName[] = ["idle", "inventory-scanning", "selecting", "repo-created", "spec-drafting", "spec-review", "spec-approved", "devplan-drafting", "devplan-review", "devplan-approved", "building", "blocked", "deblocking", "on-hold", "completed", "published"];
@@ -29,6 +32,7 @@ const paths = {
   gates: join(STATE_ROOT, "gates.json"),
   commands: join(STATE_ROOT, "commands.jsonl"),
   audit: join(STATE_ROOT, "audit.jsonl"),
+  iterations: join(STATE_ROOT, "iterations.json"),
   idea: join(STATE_ROOT, "idea.txt"),
 };
 
@@ -107,19 +111,28 @@ function readTailUtf8(path: string, maxBytes = EVENT_TAIL_BYTES) {
     return body;
   } finally { closeSync(fd); }
 }
+function loadEventCache() {
+  if (!existsSync(paths.events)) { eventCache = { size: 0, mtimeMs: 0, events: [] }; return eventCache.events; }
+  const st = statSync(paths.events);
+  if (eventCache.size === st.size && eventCache.mtimeMs === st.mtimeMs) return eventCache.events;
+  const parsed: CachedEvent[] = [];
+  for (const line of readTailUtf8(paths.events).split(/\r?\n/).filter(Boolean)) {
+    try {
+      const e = sanitize(JSON.parse(line)) as CachedEvent;
+      if (!e.id) e.id = `evt-cache-${parsed.length}-${e.ts || "unknown"}`;
+      parsed.push(e);
+    } catch {}
+  }
+  eventCache = { size: st.size, mtimeMs: st.mtimeMs, events: parsed.slice(-EVENT_CACHE_MAX) };
+  return eventCache.events;
+}
 function readEvents(limit = 200, after?: string | null) {
   const wanted = clampLimit(limit);
-  const lines = readTailUtf8(paths.events).split(/\r?\n/).filter(Boolean);
-  const parsed: any[] = [];
-  for (const line of lines) {
-    try { parsed.push(sanitize(JSON.parse(line))); } catch {}
-  }
-  let sliced = parsed;
-  if (after) {
-    const idx = parsed.findIndex((e: any) => e?.id === after);
-    sliced = idx >= 0 ? parsed.slice(idx + 1) : [];
-  }
-  return sliced.slice(-wanted);
+  const parsed = loadEventCache();
+  if (!after) return parsed.slice(-wanted);
+  const idx = parsed.findIndex((e: any) => e?.id === after);
+  if (idx >= 0) return parsed.slice(idx + 1).slice(-wanted);
+  return parsed.slice(-wanted);
 }
 function listDir(path: string, recursive = false, base = path): any[] {
   if (!existsSync(path)) return [];
@@ -139,6 +152,86 @@ function listRuns() {
     return { id: entry.name, status: run.status || run.state || "unknown", startedAt: run.startedAt, completedAt: run.completedAt, selectedProject: run.selectedProject?.name || run.selectedProject || run.currentProject || null, repoPath: run.repoPath || null, qualityGate: run.qualityGate || run.finalValidation || null, modifiedAt: entry.modifiedAt };
   });
 }
+
+function runEvidence(runId: string) {
+  const runRoot = safeJoin(STATE_ROOT, "runs", runId);
+  const run = safeReadJson(join(runRoot, "run.json"), { id: runId });
+  const gateReport = safeReadJson(join(runRoot, "artifacts", "gate-report.json"), null);
+  const manifest = safeReadJson(join(runRoot, "artifacts", "artifact-manifest.json"), null);
+  const screenshotManifest = safeReadJson(join(runRoot, "artifacts", "screenshot-manifest.json"), null);
+  const artifacts = existsSync(join(runRoot, "artifacts")) ? listDir(join(runRoot, "artifacts"), true).filter((x) => x.kind === "file") : [];
+  return { run, gateReport, manifest, screenshotManifest, artifacts };
+}
+function inferObjective(run: any, gateReport: any, control: any, queue: any) {
+  const pinned = queue.items.find((x: any) => x.id === control.pinnedQueueItemId) || queue.items.find((x: any) => x.status === "pinned");
+  return run.objective || run.task || run.selectedProject?.objective || gateReport?.objective || (run.id === control.currentObjective?.runId ? control.currentObjective?.text : null) || pinned?.objective || run.selectedProject?.name || run.currentProject || "Autonomous project iteration";
+}
+function listIterations() {
+  const control = readControl(); const queue = readQueue();
+  const stored = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
+  const lineageByRun = new Map((stored.items || []).filter((x: any) => x?.runId).map((x: any) => [x.runId, x]));
+  return listRuns().slice(0, 80).map((r: any, index: number) => {
+    const evidence = runEvidence(r.id);
+    const lineage = lineageByRun.get(r.id) || {};
+    return {
+      schemaVersion: "apb.iteration-node.v1",
+      id: lineage.id || `iter-${r.id}`,
+      iterationNumber: lineage.iterationNumber ?? index + 1,
+      runId: r.id,
+      parentIterationId: lineage.parentIterationId || null,
+      forkedFromIterationId: lineage.forkedFromIterationId || null,
+      mode: lineage.mode || "run",
+      objective: lineage.objective || inferObjective(evidence.run, evidence.gateReport, control, queue),
+      steeringText: lineage.steeringText || evidence.run.steeringText || null,
+      status: r.status,
+      startedAt: r.startedAt,
+      completedAt: r.completedAt,
+      project: evidence.gateReport?.project || r.selectedProject || evidence.run.currentProject || null,
+      repoPath: evidence.gateReport?.repoPath || r.repoPath || evidence.run.repoPath || null,
+      commit: evidence.gateReport?.commit || evidence.run.commit || null,
+      gateStatus: evidence.gateReport?.status || evidence.run.qualityGate?.status || null,
+      artifactCount: evidence.artifacts.length,
+      screenshots: evidence.screenshotManifest?.screenshots || evidence.screenshotManifest?.items || [],
+      acceptedFeatures: lineage.acceptedFeatures || [],
+      rejectedFeatures: lineage.rejectedFeatures || [],
+      testResults: lineage.testResults || evidence.gateReport?.commands || [],
+      acceptanceGateResults: lineage.acceptanceGateResults || evidence.gateReport?.acceptance || {},
+      nextRecommendedDirection: lineage.nextRecommendedDirection || evidence.run.nextRecommendedDirection || null
+    };
+  });
+}
+function readOptionalJson(path: string, fallback: any = null) { return safeReadJson(path, fallback); }
+function iterationDetail(iter: any) {
+  const runRoot = safeJoin(STATE_ROOT, "runs", iter.runId);
+  const artifactsRoot = safeJoin(runRoot, "artifacts");
+  const readArtifactJson = (rel: string, fallback: any) => readOptionalJson(safeJoin(artifactsRoot, ...rel.split("/").filter(Boolean)), fallback);
+  const variantFiles = existsSync(join(artifactsRoot, "variants")) ? listDir(join(artifactsRoot, "variants"), true).filter((x) => x.kind === "file" && x.name.endsWith(".json")) : [];
+  const evaluationFiles = existsSync(join(artifactsRoot, "evaluations")) ? listDir(join(artifactsRoot, "evaluations"), true).filter((x) => x.kind === "file" && x.name.endsWith(".json")) : [];
+  return {
+    ...iter,
+    run: safeReadJson(join(runRoot, "run.json"), { id: iter.runId }),
+    iterationState: readOptionalJson(join(runRoot, "iteration-state.json"), null),
+    iterationArtifact: readArtifactJson("iterations/iteration.json", null),
+    sourceEvidence: readArtifactJson("source-evidence.json", null),
+    variants: variantFiles.map((f) => readArtifactJson(`variants/${f.name}`, { name: f.name })),
+    evaluations: evaluationFiles.map((f) => readArtifactJson(`evaluations/${f.name}`, { name: f.name })),
+    synthesis: readArtifactJson("synthesis/synthesis.json", readArtifactJson("mashup/mashup-report.json", null)),
+    gateDecisions: readArtifactJson("gate-decisions.json", []),
+    artifacts: existsSync(artifactsRoot) ? listDir(artifactsRoot, true).filter((x) => x.kind === "file") : [],
+    logs: existsSync(join(runRoot, "logs")) ? listDir(join(runRoot, "logs")) : []
+  };
+}
+function upsertIterationFromRequest(req: any, status = "requested") {
+  const doc = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
+  if (!Array.isArray(doc.items)) doc.items = [];
+  const id = req.sourceIterationId || (req.sourceRunId ? `iter-${req.sourceRunId}` : uid("iter"));
+  const old = doc.items.find((x: any) => x.id === id);
+  const row = { ...(old || {}), id, runId: req.sourceRunId || old?.runId || null, parentIterationId: req.parentIterationId || old?.parentIterationId || null, forkedFromIterationId: req.type === "fork" ? (req.sourceIterationId || old?.id || null) : old?.forkedFromIterationId || null, mode: req.type || old?.mode || "continue", objective: req.objective || old?.objective || "Continue autonomous iteration", steeringText: req.changeText || req.notes || old?.steeringText || null, status, updatedAt: now() };
+  if (old) Object.assign(old, row); else doc.items.unshift(row);
+  doc.updatedAt = now(); writeJson(paths.iterations, doc);
+  return row;
+}
+
 function tailFile(path: string, lines = 400) {
   const body = readTailUtf8(path, MAX_TEXT_BYTES);
   return body.split(/\r?\n/).slice(-lines).join("\n");
@@ -159,7 +252,21 @@ async function staticFile(pathname: string) {
 }
 
 function defaultControl() {
-  return { schemaVersion: "apb.control.v1", updatedAt: now(), desiredMode: "running", runAdmission: "enabled", pause: { requested: false, mode: "checkpoint", reason: null }, stop: { requested: false, mode: null, reason: null }, activeSteering: [], pinnedQueueItemId: null, requestedRunNow: false, safety: { requireApprovalBeforePublish: true, requireApprovalBeforePush: true, allowDestructiveGit: false, maxRunHours: 24 } };
+  return {
+    schemaVersion: "apb.control.v1",
+    updatedAt: now(),
+    desiredMode: "running",
+    runAdmission: "enabled",
+    pause: { requested: false, mode: "checkpoint", reason: null },
+    stop: { requested: false, mode: null, reason: null },
+    activeSteering: [],
+    pinnedQueueItemId: null,
+    requestedRunNow: false,
+    currentObjective: null,
+    nextRunRequest: null,
+    autoIteration: { enabled: false, maxIterations: 3, maxVariantsPerIteration: 3, maxParallelVariants: 3, maxAcceptedFeatures: 4, maxVisualMotifChanges: 1, maxNewSections: 1, stopAfterNoImprovement: 1, minImprovementScore: 0.05 },
+    safety: { requireApprovalBeforePublish: true, requireApprovalBeforePush: true, allowDestructiveGit: false, maxRunHours: 24 }
+  };
 }
 function defaultQueue() { return { schemaVersion: "apb.queue.v1", updatedAt: now(), items: [] as any[] }; }
 function defaultGates() { return { schemaVersion: "apb.gates.v1", updatedAt: now(), gates: [] as any[] }; }
@@ -195,6 +302,16 @@ async function handleCommand(req: Request) {
   if (["resume", "unhold"].includes(type)) { control.pause = { requested: false, mode: "checkpoint", reason: null }; control.stop = { requested: false, mode: null, reason: null }; control.runAdmission = "enabled"; writeControl(control); return json(commandAck(command, { effective: "immediate" })); }
   if (type === "stop") { control.stop = { requested: true, mode: payload.mode || "graceful", requestedBy: actor, requestedAt: now(), reason: payload.reason || null }; writeControl(control); return json(commandAck(command, { effective: "next_checkpoint" })); }
   if (type === "steer") { const steer = { id: uid("steer"), scope: payload.scope || "next_run", priority: payload.priority || "required", text: payload.text || payload.objective || "", createdBy: actor, createdAt: now(), expires: payload.expires || { type: "until_removed" } }; control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20); writeControl(control); return json(commandAck(command, { steeringId: steer.id })); }
+  if (type === "remove-steering") { const id = payload.id || payload.steeringId; control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
+  if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
+  if (["start-next-iteration", "continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) {
+    const reqType = type === "fork-from-iteration" ? "fork" : type === "continue-from-iteration" ? "continue" : type === "use-as-next-direction" ? "use-as-next-direction" : "start_next_iteration";
+    const req = { id: uid("req"), type: reqType, status: "pending", sourceRunId: payload.runId || payload.sourceRunId || null, sourceIterationId: payload.iterationId || payload.sourceIterationId || null, queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration };
+    control.nextRunRequest = req; control.requestedRunNow = true; if (req.objective) control.currentObjective = { text: req.objective, source: reqType, queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
+    upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { nextRunRequest: req, effective: "next_runner_tick" }));
+  }
+  if (type === "gate-decision") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.decisions = [{ id: uid("decision"), runId: payload.runId || null, status: payload.status || "needs-evidence", decision: payload.decision || payload.status || "noted", evidenceArtifacts: payload.evidenceArtifacts || [], notes: payload.notes || "", decidedAt: now(), decidedBy: actor }, ...(gate.decisions || [])].slice(0, 20); gate.status = payload.status || gate.status || "pending"; gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
   if (type === "run-now") { control.requestedRunNow = true; writeControl(control); return json(commandAck(command, { effective: "next_runner_tick" })); }
   if (type === "add-queue-item") { const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective: payload.objective || "", context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }
   if (type === "pin-queue-item") { const id = payload.id || payload.itemId; for (const item of queue.items) item.status = item.id === id ? "pinned" : (item.status === "pinned" ? "queued" : item.status); control.pinnedQueueItemId = id; writeQueue(queue); writeControl(control); const item = queue.items.find((x: any) => x.id === id); if (item) writeFileSync(paths.idea, queueItemText(item)); return json(commandAck(command, { pinnedQueueItemId: id, exportedIdeaTxt: !!item })); }
@@ -210,10 +327,13 @@ async function route(req: Request): Promise<Response> {
     if (url.pathname === "/api/state") return json(readState());
     if (url.pathname === "/api/capabilities") return json({ browserTerminal: false, sse: true, readOnly: false, steeringCockpit: true, stateRoot: STATE_ROOT });
     if (url.pathname === "/api/states") return json({ states });
-    if (url.pathname === "/api/events") return json(readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after")));
+    if (url.pathname === "/api/events") return json(readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after") || url.searchParams.get("lastEventId")));
     if (url.pathname === "/api/runs") return json(listRuns());
+    if (url.pathname === "/api/iterations") return json({ schemaVersion: "apb.iterations.v1", items: listIterations() });
+    const iterationMatch = url.pathname.match(/^\/api\/iterations\/([^/]+)$/);
+    if (iterationMatch) { const iter = listIterations().find((x: any) => x.id === decodeURIComponent(iterationMatch[1]) || x.runId === decodeURIComponent(iterationMatch[1])); if (!iter) return notFound("iteration not found"); return json(iterationDetail(iter)); }
     if (url.pathname === "/api/control") return req.method === "GET" ? json(readControl()) : handleCommand(req);
-    if (url.pathname === "/api/queue") return req.method === "GET" ? json(readQueue()) : handleCommand(new Request(req, { method: "POST" }));
+    if (url.pathname === "/api/queue") return req.method === "GET" ? json(readQueue()) : handleCommand(req);
     if (url.pathname === "/api/gates") return req.method === "GET" ? json(readGates()) : handleCommand(req);
     if (url.pathname === "/api/audit") return json(readAudit(Number(url.searchParams.get("limit") || "100")));
     if (url.pathname === "/api/commands" && req.method === "POST") return handleCommand(req);
@@ -243,11 +363,11 @@ async function route(req: Request): Promise<Response> {
     if (url.pathname === "/api/stream") {
       let timer: Timer | undefined;
       const lastHeader = req.headers.get("last-event-id");
-      let lastId: string | null = lastHeader || null;
+      let lastId: string | null = lastHeader || url.searchParams.get("after") || url.searchParams.get("lastEventId");
       const stream = new ReadableStream({
         start(controller) {
           const enc = new TextEncoder();
-          const send = (event: string, payload: any, id?: string) => controller.enqueue(enc.encode(`${id ? `id: ${id}\n` : ""}event: ${event}\ndata: ${JSON.stringify(sanitize(payload))}\n\n`));
+          const send = (event: string, payload: any, id?: string) => { try { controller.enqueue(enc.encode(`${id ? `id: ${id}\n` : ""}event: ${event}\ndata: ${JSON.stringify(sanitize(payload))}\n\n`)); } catch { if (timer) clearInterval(timer); } };
           const initial = readEvents(50, lastId);
           if (initial.length) lastId = initial[initial.length - 1].id || lastId;
           send("state", readState()); send("events", initial, lastId || undefined);

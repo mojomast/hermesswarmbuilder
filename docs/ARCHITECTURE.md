@@ -20,6 +20,8 @@ Hermes Swarm Builder has five bounded contexts.
 
 The file name is retained for compatibility, but the installer schedules it hourly. It does not decide project content itself; it passes dashboard steering, queue, gate, and prompt context to the Hermes agent.
 
+When `control.nextRunRequest` or `control.autoIteration.enabled` is present, the runner now creates an explicit bounded iteration scaffold before invoking Hermes: `iteration-state.json`, `artifacts/iterations/iteration.json`, `artifacts/source-evidence.json`, and `artifacts/gate-decisions.json`. The appended prompt contract requires parallel variants, evaluator artifacts, synthesis rationale, and gate-decision evidence while preserving the same safe runner lifecycle.
+
 ## 2. Steering Control Plane
 
 The dashboard writes narrow, auditable local control files under `~/.hermes/autonomous-projects`:

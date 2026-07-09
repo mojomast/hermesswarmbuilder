@@ -6,7 +6,8 @@ import { spawnSync } from 'node:child_process';
 
 const repo = resolve(new URL('..', import.meta.url).pathname);
 const home = mkdtempSync(join(tmpdir(), 'hsb-runner-smoke-home-'));
-const root = join(home, '.hermes', 'autonomous-projects');
+const root = join(home, 'custom-state-root');
+const defaultRoot = join(home, '.hermes', 'autonomous-projects');
 const target = join(home, 'fixture-repo');
 mkdirSync(root, { recursive: true });
 mkdirSync(target, { recursive: true });
@@ -21,11 +22,12 @@ writeFileSync(join(root, 'control.json'), JSON.stringify({ schemaVersion: 'apb.c
 writeFileSync(join(root, 'queue.json'), JSON.stringify({ schemaVersion: 'apb.queue.v1', items: [] }, null, 2));
 writeFileSync(join(root, 'gates.json'), JSON.stringify({ schemaVersion: 'apb.gates.v1', gates: [] }, null, 2));
 try {
-  const res = spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd: repo, env: { ...process.env, HOME: home, HERMES_BIN: join(home, 'missing-hermes') }, encoding: 'utf8' });
+  const res = spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd: repo, env: { ...process.env, HOME: home, AUTONOMOUS_PROJECT_STATE_ROOT: root, HERMES_BIN: join(home, 'missing-hermes') }, encoding: 'utf8' });
   if (res.status !== 0) throw new Error(`runner exited ${res.status}: ${res.stderr || res.stdout}`);
   const runsRoot = join(root, 'runs');
   const runs = readdirSync(runsRoot);
   if (!runs.length) throw new Error('runner did not create a run');
+  if (existsSync(join(defaultRoot, 'runs'))) throw new Error('runner ignored AUTONOMOUS_PROJECT_STATE_ROOT and wrote to default HOME state root');
   const runRoot = join(runsRoot, runs[0]);
   for (const rel of ['iteration-state.json', 'artifacts/iterations/iteration.json', 'artifacts/source-evidence.json', 'artifacts/gate-decisions.json']) {
     if (!existsSync(join(runRoot, rel))) throw new Error(`missing scaffold artifact ${rel}`);

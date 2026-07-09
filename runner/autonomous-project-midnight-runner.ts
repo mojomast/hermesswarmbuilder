@@ -4,7 +4,7 @@ import { homedir } from "os";
 import { isAbsolute, join } from "path";
 
 const HOME = homedir();
-const ROOT = join(HOME, ".hermes", "autonomous-projects");
+const ROOT = process.env.AUTONOMOUS_PROJECT_STATE_ROOT || process.env.AUTONOMOUS_PROJECTS_STATE_ROOT || join(HOME, ".hermes", "autonomous-projects");
 const RUNS = join(ROOT, "runs");
 const LOGS = join(ROOT, "logs");
 const LOCK = join(ROOT, "autonomous-project.lock");
@@ -226,10 +226,10 @@ async function ensureCommitted(path:string, message:string){
   const rev=await gitCmd(path,["rev-parse","HEAD"]); if(rev.exitCode!==0) throw new Error(`git rev-parse failed: ${rev.stderr||rev.stdout}`); return rev.stdout.trim();
 }
 function parseCommand(x:any): string[] | null { if(Array.isArray(x)) return x.map(String); if(typeof x==="string") return x.trim()?x.trim().split(/\s+/):null; return null; }
-function validationCommands(req:any, repoRoot:string): string[][] {
+function validationCommands(req:any, repoRoot:string, baseCommit:string): string[][] {
   const raw=req.validationCommands||req.commands; const xs=Array.isArray(raw)?raw:[]; const cmds=xs.map(parseCommand).filter(Boolean) as string[][];
-  cmds.push(["git","diff","--check","HEAD~1","HEAD"]);
-  if(existsSync(join(repoRoot,"package.json"))){ const pkg=readJson(join(repoRoot,"package.json"),{}); if(pkg.scripts?.test) cmds.push(["npm","test","--","--watch=false"]); if(pkg.scripts?.build) cmds.push(["npm","run","build"]); }
+  cmds.push(["git","diff","--check",baseCommit,"HEAD"]);
+  if(existsSync(join(repoRoot,"package.json"))){ const pkg=readJson(join(repoRoot,"package.json"),{}); if(pkg.scripts?.test) cmds.push(["npm","test"]); if(pkg.scripts?.build) cmds.push(["npm","run","build"]); }
   return cmds;
 }
 async function runValidations(cwd:string, cmds:string[][]){
@@ -238,16 +238,16 @@ async function runValidations(cwd:string, cmds:string[][]){
 async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>Promise<any>){
   const results:any[]=[]; let next=0; const workers=Array.from({length:Math.max(1,Math.min(limit,items.length))},async()=>{ while(next<items.length){ const i=next++; try{ results[i]=await fn(items[i],i); }catch(err:any){ results[i]={error:err?.message||String(err)}; } } }); await Promise.all(workers); return results;
 }
-async function streamHermes(runId:string, agentId:string, cwd:string, query:string, stdoutPath:string, stderrPath:string){
+async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:string, query:string, stdoutPath:string, stderrPath:string, extraEnv:Record<string,string>={}){
   writeFileSync(stdoutPath,""); writeFileSync(stderrPath,"");
-  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--source","autonomous-project-builder","--max-turns","35","--toolsets","terminal,file,web","--query",query],{cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId},stdout:"pipe",stderr:"pipe"});
+  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--source","autonomous-project-builder","--max-turns","35","--toolsets","terminal,file,web","--query",query],{cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_RUN_ROOT:runRoot,AUTONOMOUS_PROJECT_STATE:STATE,AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"),AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId,...extraEnv},stdout:"pipe",stderr:"pipe"});
   const pipe=async(stream:ReadableStream<Uint8Array>|null,path:string,kind:string)=>{ if(!stream)return; const dec=new TextDecoder(); for await(const chunk of stream){ const text=dec.decode(chunk); appendFileSync(path,text); for(const rawLine of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(-5)){ const line=redact(rawLine); if(line.startsWith("APB_TELEMETRY ")){ try{const payload=JSON.parse(line.slice("APB_TELEMETRY ".length)); event(payload.level||"info",payload.source||agentId,payload.type||"event",payload.message||"telemetry",{...(payload.data||{}),runId,agentId});}catch{} } else event(kind==="stderr"?"warn":"info",agentId,"agent-message",line,{runId,agentId,logPath:path,stream:kind}); } updateAgent(runId,agentId,{status:"running",lastMessage:redact(text.slice(-2000)),logPath:stdoutPath}); } };
   await Promise.all([pipe(proc.stdout,stdoutPath,"stdout"),pipe(proc.stderr,stderrPath,"stderr")]); return proc.exited;
 }
 function variantPrompt(req:any, v:WorktreeVariant, runRoot:string, baseCommit:string){ return `You are ${v.id}, one bounded Hermes Autonomous Project Builder variant agent.\nObjective: ${req.objective}\nChange request: ${req.changeText||"(none)"}\nRepo worktree: ${v.path}\nBase commit: ${baseCommit}\nRules: make one focused, shippable alternative; no unrelated features; no tech-stack churn; keep generated artifacts/logs/build output out of git. Commit your source/test/doc/config changes on this branch.\nBefore exit, write JSON to ${join(runRoot,"artifacts","variants",`${v.id}.json`)} with schemaVersion apb.variant.v1, variantId, title, claim, objectiveMapping, changes, risks, evidence, validationNotes. The runner will write ${v.id}.diff. Do not write outside the worktree except that artifact JSON.`; }
 function evaluatorPrompt(req:any, v:WorktreeVariant, runRoot:string){ return `You are evaluator for ${v.id}. Read ${join(runRoot,"artifacts","variants",`${v.id}.json`)} and ${join(runRoot,"artifacts","variants",`${v.id}.diff`)}. Score objectiveFit, userValue, visualQuality, implementationQuality, accessibility, performance from 0-100 and total 0-100. Hard-reject unrelated features, tech-stack churn, missing tests/evidence. Write ${join(runRoot,"artifacts","evaluations",`evaluation-${v.id}.json`)} with schemaVersion apb.evaluation.v1, variantId, scores, hardGateViolations, recommendation accept|reject|partial, rationale, evidenceArtifacts.`; }
 function readRequiredJson(path:string){ if(!existsSync(path)) throw new Error(`missing required JSON artifact: ${path}`); return readJson(path,null); }
-function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation).sort((a,b)=>Number(b.evaluation?.scores?.total||b.evaluation?.score||0)-Number(a.evaluation?.scores?.total||a.evaluation?.score||0))[0]||null; }
+function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation?.hardGateViolations?.length&&["accept","partial"].includes(String(v.evaluation?.recommendation||"accept"))&&Number.isFinite(Number(v.evaluation?.scores?.total||v.evaluation?.score))).sort((a,b)=>Number(b.evaluation?.scores?.total||b.evaluation?.score||0)-Number(a.evaluation?.scores?.total||a.evaluation?.score||0))[0]||null; }
 async function runManagedIterationLoop(runId:string, runRoot:string, req:any, iterationScaffold:any){
   try{
     const repo=await validateIterationRepo(req); const art=join(runRoot,"artifacts"); const wtRoot=join(runRoot,"worktrees"); mkdirSync(wtRoot,{recursive:true});
@@ -255,10 +255,10 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     writeRunJson(runRoot,{runId,status:"building",phase:"variant-generation",repoPath:repo.repoRoot,baseCommit:repo.baseCommit});
     const variants:WorktreeVariant[]=Array.from({length:req.limits.maxVariantsPerIteration},(_,i)=>({id:`variant-${i+1}`,index:i+1,path:join(wtRoot,`variant-${i+1}`),branch:`apb/${safeBranchPart(runId)}/variant-${i+1}`}));
     for(const v of variants){ await createWorktree(repo.repoRoot,v.path,v.branch,repo.baseCommit); event("info",v.id,"tool-call-end",`Created worktree ${v.branch}`,{runId,agentId:v.id,toolName:"git worktree"}); }
-    const cmds=validationCommands(req,repo.repoRoot);
+    const cmds=validationCommands(req,repo.repoRoot,repo.baseCommit);
     await runBounded(variants,req.limits.maxParallelVariants,async(v)=>{
       updateAgent(runId,v.id,{label:`Variant ${v.index}`,role:"bounded variant generator",status:"running",currentPhase:"variant-generation",currentTask:req.objective,logPath:join(runRoot,"logs",`${v.id}.stdout.log`)});
-      const code=await streamHermes(runId,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`));
+      const code=await streamHermes(runId,runRoot,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0){ v.status="failed"; updateAgent(runId,v.id,{status:"blocked",lastMessage:`Hermes exited ${code}`}); return; }
       v.commit=await ensureCommitted(v.path,`APB ${runId} ${v.id}`); const diff=await gitCmd(v.path,["diff",repo.baseCommit,"HEAD"]); writeFileSync(join(art,"variants",`${v.id}.diff`),diff.stdout); v.diffPath=`artifacts/variants/${v.id}.diff`;
       v.validation=await runValidations(v.path,cmds); const jsonPath=join(art,"variants",`${v.id}.json`); if(!existsSync(jsonPath)) writeFileSync(jsonPath,JSON.stringify({schemaVersion:"apb.variant.v1",variantId:v.id,status:"generated-by-runner",branch:v.branch,commit:v.commit,diffPath:v.diffPath,changes:[],evidence:[],warning:"variant agent did not write JSON; runner synthesized minimal record"},null,2));
@@ -266,7 +266,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     });
     await runBounded(variants,Math.min(3,req.limits.maxParallelVariants),async(v)=>{
       updateAgent(runId,`evaluator-${v.index}`,{label:`Evaluator ${v.index}`,role:"variant evaluator",status:"running",currentPhase:"evaluation",currentTask:`Evaluate ${v.id}`});
-      let code=0; if(v.status!=="failed") code=await streamHermes(runId,`evaluator-${v.index}`,repo.repoRoot,evaluatorPrompt(req,v,runRoot),join(runRoot,"logs",`evaluator-${v.id}.stdout.log`),join(runRoot,"logs",`evaluator-${v.id}.stderr.log`));
+      let code=0; if(v.status!=="failed") code=await streamHermes(runId,runRoot,`evaluator-${v.index}`,v.path,evaluatorPrompt(req,v,runRoot),join(runRoot,"logs",`evaluator-${v.id}.stdout.log`),join(runRoot,"logs",`evaluator-${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       const p=join(art,"evaluations",`evaluation-${v.id}.json`); if(!existsSync(p)){ const passed=v.status==="valid"; writeFileSync(p,JSON.stringify({schemaVersion:"apb.evaluation.v1",variantId:v.id,scores:{objectiveFit:passed?70:0,userValue:passed?65:0,visualQuality:50,implementationQuality:passed?70:0,accessibility:50,performance:50,total:passed?62:0},hardGateViolations:passed?[]:[v.status||"failed"],recommendation:passed?"partial":"reject",rationale:code===0?"Runner synthesized evaluation because evaluator did not write JSON.":`Evaluator unavailable/exited ${code}.`},null,2)); }
       v.evaluation=readJson(p,{}); updateAgent(runId,`evaluator-${v.index}`,{status:"completed",currentArtifact:`artifacts/evaluations/evaluation-${v.id}.json`});
     });

@@ -124,6 +124,38 @@ print(json.dumps({k:s.get(k) for k in ['currentRunId','status','phase','task','l
 PY
 ```
 
+
+## Cleanup and browser validation gates
+
+Before accepting a generated web/browser project, require evidence for cleanup and visual/browser quality. These gates keep the Builder from shipping impressive-looking but unverified slop.
+
+Required evidence for UI projects:
+
+- dependency install/build/test commands that passed,
+- Playwright or browser smoke coverage when the project has a UI,
+- generated artifact cleanup,
+- no committed `node_modules`, build output, screenshots, videos, traces, run logs, temp worktrees, `.db`, `.npy`, `.pt`, or secret files,
+- `git status --short` clean except intended source/docs/test/config changes before committing.
+
+Useful operator checks:
+
+```bash
+git status --short
+git diff --stat
+git worktree list
+git worktree prune
+```
+
+Suggested browser gate evidence:
+
+```bash
+npm test            # or bun test / pnpm test, depending on the project
+npm run build
+npx playwright test # when Playwright is configured
+```
+
+Treat `npx playwright install --with-deps` as an operator-controlled setup step. Browser binaries, traces, screenshots, videos, and Playwright caches are runtime/generated evidence; list them in artifacts when useful, but do not commit them as source unless they are intentionally curated documentation assets.
+
 ## Common issues
 
 ### Dashboard does not load

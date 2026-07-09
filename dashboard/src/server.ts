@@ -170,25 +170,31 @@ function listIterations() {
   const control = readControl(); const queue = readQueue();
   const stored = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
   const lineageByRun = new Map((stored.items || []).filter((x: any) => x?.runId).map((x: any) => [x.runId, x]));
-  return listRuns().slice(0, 80).map((r: any, index: number) => {
+  const runNodes = listRuns().slice(0, 80).map((r: any, index: number) => {
     const evidence = runEvidence(r.id);
-    const lineage = lineageByRun.get(r.id) || {};
+    const runRoot = safeJoin(STATE_ROOT, "runs", r.id);
+    const iterationState = safeReadJson(join(runRoot, "iteration-state.json"), {});
+    const iterationArtifact = safeReadJson(join(runRoot, "artifacts", "iterations", "iteration.json"), {});
+    const lineage = { ...iterationArtifact, ...iterationState, ...(lineageByRun.get(r.id) || {}) };
     return {
       schemaVersion: "apb.iteration-node.v1",
       id: lineage.id || `iter-${r.id}`,
       iterationNumber: lineage.iterationNumber ?? index + 1,
       runId: r.id,
+      sourceRunId: lineage.sourceRunId || evidence.run.sourceRunId || null,
       parentIterationId: lineage.parentIterationId || null,
       forkedFromIterationId: lineage.forkedFromIterationId || null,
-      mode: lineage.mode || "run",
+      mode: lineage.mode || evidence.run.iterationKind || "run",
       objective: lineage.objective || inferObjective(evidence.run, evidence.gateReport, control, queue),
       steeringText: lineage.steeringText || evidence.run.steeringText || null,
-      status: r.status,
-      startedAt: r.startedAt,
-      completedAt: r.completedAt,
+      status: lineage.status || r.status,
+      startedAt: r.startedAt || lineage.createdAt,
+      completedAt: r.completedAt || lineage.completedAt,
       project: evidence.gateReport?.project || r.selectedProject || evidence.run.currentProject || null,
-      repoPath: evidence.gateReport?.repoPath || r.repoPath || evidence.run.repoPath || null,
-      commit: evidence.gateReport?.commit || evidence.run.commit || null,
+      repoPath: lineage.repoPath || evidence.gateReport?.repoPath || r.repoPath || evidence.run.repoPath || null,
+      baseRef: lineage.baseRef || null,
+      commit: evidence.gateReport?.commit || lineage.mashupCommit || evidence.run.commit || null,
+      branch: evidence.gateReport?.branch || lineage.mashupBranch || evidence.run.branch || null,
       gateStatus: evidence.gateReport?.status || evidence.run.qualityGate?.status || null,
       artifactCount: evidence.artifacts.length,
       screenshots: evidence.screenshotManifest?.screenshots || evidence.screenshotManifest?.items || [],
@@ -196,9 +202,31 @@ function listIterations() {
       rejectedFeatures: lineage.rejectedFeatures || [],
       testResults: lineage.testResults || evidence.gateReport?.commands || [],
       acceptanceGateResults: lineage.acceptanceGateResults || evidence.gateReport?.acceptance || {},
-      nextRecommendedDirection: lineage.nextRecommendedDirection || evidence.run.nextRecommendedDirection || null
+      nextRecommendedDirection: lineage.nextRecommendedDirection || evidence.run.nextRecommendedDirection || null,
+      updatedAt: lineage.updatedAt || evidence.run.updatedAt || r.modifiedAt
     };
   });
+  const runIds = new Set(runNodes.map((x: any) => x.runId).filter(Boolean));
+  const pending = (stored.items || []).filter((x: any) => !x.runId || !runIds.has(x.runId)).map((x: any) => ({
+    schemaVersion: "apb.iteration-node.v1",
+    id: x.id || uid("iter"),
+    runId: x.runId || null,
+    sourceRunId: x.sourceRunId || null,
+    parentIterationId: x.parentIterationId || null,
+    forkedFromIterationId: x.forkedFromIterationId || null,
+    mode: x.mode || "requested",
+    objective: x.objective || "Requested autonomous iteration",
+    steeringText: x.steeringText || null,
+    status: x.status || "requested",
+    repoPath: x.repoPath || null,
+    artifactCount: 0,
+    acceptedFeatures: x.acceptedFeatures || [],
+    rejectedFeatures: x.rejectedFeatures || [],
+    testResults: [],
+    acceptanceGateResults: {},
+    updatedAt: x.updatedAt || null
+  }));
+  return [...pending, ...runNodes];
 }
 function readOptionalJson(path: string, fallback: any = null) { return safeReadJson(path, fallback); }
 type ArtifactLoadWarning = { path: string; reason: "missing" | "parse-error" | "too-large"; message?: string };
@@ -287,7 +315,10 @@ function makeCommand(body: any, actor: string, type: string, payload: any) {
 }
 function normalizeIterationRequestPayload(type: string, payload: any, control: any, actor: string) {
   const reqType = type === "fork-from-iteration" ? "fork" : type === "continue-from-iteration" ? "continue" : type === "use-as-next-direction" ? "use-as-next-direction" : "start_next_iteration";
-  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId: payload.runId || payload.sourceRunId || null, sourceIterationId: payload.iterationId || payload.sourceIterationId || null, repoPath: payload.repoPath || payload.baseRepoPath || null, baseRef: payload.baseRef || payload.baseCommit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationCommands: payload.validationCommands || payload.commands || null, expectedArtifacts: ["artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json"] };
+  const sourceRunId = payload.sourceRunId || payload.runId || null;
+  const sourceIterationIdRaw = payload.sourceIterationId || payload.iterationId || null;
+  const sourceIter = listIterations().find((x: any) => x.id === sourceIterationIdRaw || x.runId === sourceRunId);
+  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationCommands: payload.validationCommands || payload.commands || null, expectedArtifacts: ["artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json"] };
 }
 function appendRunGateDecision(runId: string, decision: any) {
   const path = safeJoin(STATE_ROOT, "runs", runId, "artifacts", "gate-decisions.json");
@@ -299,9 +330,9 @@ function appendRunGateDecision(runId: string, decision: any) {
 function upsertIterationFromRequest(req: any, status = "requested") {
   const doc = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
   if (!Array.isArray(doc.items)) doc.items = [];
-  const id = req.sourceIterationId || (req.sourceRunId ? `iter-${req.sourceRunId}` : uid("iter"));
+  const id = req.id || uid("iter");
   const old = doc.items.find((x: any) => x.id === id);
-  const row = { ...(old || {}), id, runId: req.sourceRunId || old?.runId || null, parentIterationId: req.parentIterationId || old?.parentIterationId || null, forkedFromIterationId: req.type === "fork" ? (req.sourceIterationId || old?.id || null) : old?.forkedFromIterationId || null, mode: req.type || old?.mode || "continue", objective: req.objective || old?.objective || "Continue autonomous iteration", steeringText: req.changeText || req.notes || old?.steeringText || null, status, updatedAt: now() };
+  const row = { ...(old || {}), id, runId: req.resultRunId || old?.runId || null, sourceRunId: req.sourceRunId || old?.sourceRunId || null, parentIterationId: req.type === "continue" ? (req.sourceIterationId || null) : old?.parentIterationId || null, forkedFromIterationId: req.type === "fork" ? (req.sourceIterationId || null) : old?.forkedFromIterationId || null, mode: req.type || old?.mode || "continue", objective: req.objective || old?.objective || "Continue autonomous iteration", steeringText: req.changeText || req.notes || old?.steeringText || null, repoPath: req.repoPath || old?.repoPath || null, status, updatedAt: now() };
   if (old) Object.assign(old, row); else doc.items.unshift(row);
   doc.updatedAt = now(); writeJson(paths.iterations, doc);
   return row;

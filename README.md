@@ -53,6 +53,8 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
 
 Future agents should treat `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, and `artifact-manifest.json` as the minimum resume set.
 
+See `docs/OPERATIONS.md#cleanup-and-browser-validation-gates` for cleanup and Playwright/browser gate evidence before accepting generated UI projects.
+
 ## Quick install prompt for a Hermes agent
 
 Copy this prompt into a Hermes agent on the target machine:

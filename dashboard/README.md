@@ -76,3 +76,18 @@ GET /api/iterations/:id
 ```
 
 Detailed iteration responses include run state, iteration state, source evidence, variants, evaluations, synthesis/mashup output, gate decisions, artifact listings, log listings, load warnings, and a redaction marker.
+
+The flagship dashboard workflow is the Hermes Unique Showcase Website catalogue loop. Mission Control starts/pauses/stops it, shows generation progress, and lets an operator continue, fork, or promote accepted features as the next direction. The API command is `start-showcase-loop`; the bounded runner enforces variant, parallelism, accepted-feature, motif, and new-section caps.
+
+## Iteration detail product view
+
+The iteration inspector should stay evidence-first and lightweight:
+
+- variant cards summarize the claim, changed files, diff availability, and links to evidence;
+- evaluator tables compare rubric totals and hard-gate failures;
+- synthesis panels separate accepted features from rejected features with rationale;
+- gate matrices show pass/fail/needs-evidence status and evidence URLs;
+- source ancestry shows source run, source iteration, base ref, mashup branch, and accepted commit;
+- controls issue declarative commands only: continue, fork, use accepted direction, attach evidence, or record a gate decision.
+
+Avoid dumping giant raw payloads into the DOM. Prefer capped summaries, lazy raw JSON expansion, and artifact links so long-running dashboard tabs remain usable.

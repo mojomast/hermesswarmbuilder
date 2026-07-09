@@ -286,6 +286,20 @@ Use it to:
 
 Pinned queue items are exported to `idea.txt` for compatibility and are appended to the runner prompt as a hard selector override. If nothing is pinned, the runner prompt still uses tournament-style selection over Hermes-generated ideas and local inventory.
 
+### Showcase loop quick start
+
+The flagship productized workflow is the **Hermes Unique Showcase Website** loop: a same-repo catalogue of bounded generations that makes Hermes' dashboard, Becomussy/governed memory, self-improvement loops, subagent swarms, evidence gates, screenshots, and iteration history visible as a polished website instead of another generic agent wrapper.
+
+From the dashboard, use **Run 10-generation showcase loop**. From the API:
+
+```bash
+curl -X POST http://127.0.0.1:9200/api/commands \
+  -H 'content-type: application/json' \
+  -d '{"type":"start-showcase-loop","payload":{"repoPath":"/home/mojo/autonomous-projects/hermes-showcase-site","targetGenerations":10}}'
+```
+
+Each generation is capped by the runner: 1-5 variants, 1-5 parallel variant agents, 1-4 accepted features, at most one visual motif change, at most one new section, and no unrelated feature or tech-stack churn. The runner requires a clean target git repo unless the request explicitly allows dirty state. Completed generations are exposed through `/api/iterations` and can be continued, forked, or promoted as the next direction.
+
 ## Telemetry protocol
 
 `telemetry.py` is the canonical writer. It updates:
@@ -317,11 +331,12 @@ The helper normalizes state shape, keeps agents keyed by stable id, writes schem
 - checks state and dashboard control files first and skips launch while an existing project is active or new runs are held,
 - exports pinned queue items to the run as `idea.txt` and appends the steering snapshot to the prompt,
 - initializes run directories and state when idle,
-- invokes `hermes chat --verbose --accept-hooks --source autonomous-project-builder --max-turns 90 --toolsets terminal,file,web,delegation`,
-- passes telemetry env vars into the Hermes process,
+- invokes `hermes chat --verbose --accept-hooks --source autonomous-project-builder --max-turns 90 --toolsets terminal,file,web,delegation` for classic fresh-build runs,
+- when `control.nextRunRequest` or `control.autoIteration.enabled` exists, validates the target git repo, resolves a clean base commit, creates bounded variant worktrees under `runs/<run-id>/worktrees/`, launches capped variant agents, captures variant diffs/metadata, runs evaluator agents, synthesizes an accepted mashup, and writes the iteration/gate artifacts,
+- passes telemetry env vars into every Hermes process,
 - streams stdout/stderr into run logs,
 - recognizes explicit `APB_TELEMETRY {json}` lines,
-- writes `gate-report.json` and `artifact-manifest.json` on successful completion,
+- writes `gate-report.json`, `artifact-manifest.json`, synthesis, and gate decisions on successful managed completion,
 - records process start/end/error events,
 - avoids clobbering `state.agents` arrays over object state and marks running agents completed after success.
 
@@ -337,16 +352,9 @@ The packaged runner prompt has strong gates to avoid weak AI slop:
 - require generated runtime artifacts to stay out of commits,
 - require safe local-only defaults.
 
-The current steering directive in `prompts/runner-prompt.md` asks the next run to select a local game foundation and build a browser game system with:
+The current product direction is the Hermes Unique Showcase Website: build a memorable local showcase that demonstrates why this Hermes instance is different from generic AI-agent slop. It should surface the dashboard, Swarm Builder, Becomussy as a governed memory/self-model substrate, self-improvement loops, subagent swarms, evidence gates, Playwright/screenshot gates, visible generation history, resume/fork controls, and measured product-quality iteration.
 
-- web interface,
-- full in-app help,
-- level/scenario editor,
-- 3D graphics layer,
-- local level persistence,
-- tests for editor, serialization, renderer-safe state, and gameplay integration.
-
-You can edit `~/.hermes/autonomous-projects/runner-prompt.md` after install to steer the next run.
+You can steer the next run from the dashboard queue/control APIs or by editing `~/.hermes/autonomous-projects/runner-prompt.md` after install.
 
 ## How this was made
 
@@ -358,8 +366,9 @@ This repository was extracted from an active Hermes build session. The workflow 
 4. A Python telemetry helper was added to stop the workflow from relying on ad-hoc model-written JSON. It introduced canonical commands for phases, agents, tool calls, events, completion, redaction, and run mirroring.
 5. The dashboard frontend was patched to derive subagents from both `state.agents` and telemetry events, preserve scroll/focus during live updates, and cache artifact/log previews to prevent flashing.
 6. The runner prompt was strengthened after early runs produced specs/devplans that were too small. It now requires ambitious project selection, substantial docs, reviewed gates, tests, and measurable validation.
-7. The prompt was further steered toward game-based builds with web interface, help, level editor, and 3D graphics after the user requested that direction.
-8. This repository was packaged from the source-only pieces, excluding runtime state, logs, generated artifacts, credentials, and local project outputs.
+7. The dashboard grew from observability into Mission Control: queue pinning, steering directives, gate decisions, iteration detail, resume/fork/use-as-direction commands, and cursor-safe event streaming.
+8. The runner added a managed worktree loop for bounded creative iteration: parallel variants, evaluator artifacts, synthesis/mashup, gate decisions, and continuous showcase-catalogue generation.
+9. This repository was packaged from the source-only pieces, excluding runtime state, logs, generated artifacts, credentials, and local project outputs.
 
 ## Safety and privacy
 

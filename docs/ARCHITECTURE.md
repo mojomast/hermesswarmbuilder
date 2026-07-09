@@ -20,7 +20,7 @@ Hermes Swarm Builder has five bounded contexts.
 
 The file name is retained for compatibility, but the installer schedules it hourly. It does not decide project content itself; it passes dashboard steering, queue, gate, and prompt context to the Hermes agent.
 
-When `control.nextRunRequest` or `control.autoIteration.enabled` is present, the runner now creates an explicit bounded iteration scaffold before invoking Hermes: `iteration-state.json`, `artifacts/iterations/iteration.json`, `artifacts/source-evidence.json`, and `artifacts/gate-decisions.json`. The appended prompt contract requires parallel variants, evaluator artifacts, synthesis rationale, and gate-decision evidence while preserving the same safe runner lifecycle.
+When `control.nextRunRequest` or `control.autoIteration.enabled` is present, the runner switches from the classic single-agent fresh-build path to the managed worktree loop. It validates the target repo, requires a clean git status unless explicitly allowed, resolves the base ref, creates run-local worktrees/branches for `variant-N` and `mashup`, launches bounded Hermes sessions, captures each variant's diff and JSON claim, launches evaluator sessions, synthesizes the winning direction, records gate decisions, and updates iteration lineage. The prompt contract still exists, but side effects are now owned by the runner rather than left entirely to one generic agent session.
 
 ## 2. Steering Control Plane
 
@@ -117,6 +117,21 @@ operator cockpit / cron / manual trigger
           -> Bun dashboard APIs/SSE
             -> browser dashboard projection
 ```
+
+## Managed worktree loop
+
+The managed loop is deliberately bounded and reversible:
+
+1. **Preflight**: `repoPath` must be absolute, exist, be a git repo, resolve `baseRef`, and be clean unless `allowDirty` is true.
+2. **Branching**: run-local worktrees live under `runs/<run-id>/worktrees/`; source branches use `apb/<runId>/variant-N` and `apb/<runId>/mashup`.
+3. **Divergence**: the runner launches up to `maxParallelVariants` Hermes variant agents, never exceeding the configured variant cap.
+4. **Evidence capture**: each variant must write `artifacts/variants/<variant-id>.json`; the runner captures `artifacts/variants/<variant-id>.diff` from git.
+5. **Evaluation**: evaluator agents write `artifacts/evaluations/evaluation-<variant-id>.json` with rubric scores, hard-gate notes, and evidence references.
+6. **Synthesis**: the runner chooses the best acceptable evidence-backed direction, creates the mashup worktree, cherry-picks or integrates the accepted change, and writes `artifacts/synthesis/synthesis.json`.
+7. **Gate closeout**: final checks produce `artifacts/gate-decisions.json`, `artifacts/gate-report.json`, and `artifacts/artifact-manifest.json`.
+8. **Lineage**: accepted commit/branch/source evidence update `iterations.json` and, in showcase-loop mode, queue the next generation until the target count or stop condition is reached.
+
+Generated worktrees, run logs, screenshots, browser traces, build output, databases, and model artifacts are runtime evidence. They belong under the run root or generated project artifacts, not in this repository unless intentionally curated as documentation assets.
 
 ## Iteration/resume data flow
 

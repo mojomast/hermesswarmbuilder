@@ -49,6 +49,8 @@ Recommended defaults: `N=3` generations for ordinary product work; `N=10` for ex
 
 Showcase-catalogue mode repeats this loop up to 10 times against the same repo. Every generation must be comparable: same objective family, same validation commands, and lineage from prior mashup commit to next base ref. The catalogue is useful only if generations remain meaningfully different but bounded; do not use it as permission for unrelated feature pileups.
 
+For the Hermes Unique Showcase Website, each generation should improve how the site explains or demonstrates this Hermes instance: dashboard control, Swarm Builder/autonomous project building, Becomussy as governed memory and becoming substrate, self-improvement loops, subagent swarms, evidence gates, Playwright/screenshot gates, visible iteration history, and resume/fork controls. Reject variants that merely add generic AI-agent marketing copy without evidence, specificity, or product polish.
+
 Stop conditions are: target generation reached, dashboard stop/hold/pause, failed validation/gate, dirty target repo preflight, no valid evaluated variant, or plateau/regression evidence.
 
 ## Loop architecture

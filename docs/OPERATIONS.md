@@ -60,6 +60,13 @@ Use **Run 10-generation showcase loop** when the goal is to browse a catalogue o
 
 The runner performs one bounded worktree generation, writes variant/evaluation/synthesis/gate artifacts, then queues the next generation from the accepted mashup commit. It self-spawns the next runner tick after a safe delay, so the loop continues without waiting for the hourly cron while still respecting the single-run lock.
 
+Preflight expectations:
+
+- `repoPath` is absolute and points at a git repo.
+- The repo is clean before launch. Commit, stash, or intentionally discard local/generated files first; do not rely on the runner to guess.
+- `baseRef` resolves, usually `HEAD` or the previous accepted mashup commit.
+- Runtime worktrees are created under the run root, not inside the source repo.
+
 Operator controls:
 
 - **Pause loop**: pause at the next checkpoint without deleting loop configuration.
@@ -126,9 +133,21 @@ curl -X POST http://127.0.0.1:9200/api/commands \
 ### Inspect iteration lineage
 
 ```bash
-curl http://127.0.0.1:9200/api/iterations
-curl http://127.0.0.1:9200/api/iterations/ITERATION_ID
+curl -sS -o /tmp/apb-iterations.json http://127.0.0.1:9200/api/iterations
+curl -sS -o /tmp/apb-iteration-detail.json http://127.0.0.1:9200/api/iterations/ITERATION_ID
 ```
+
+Do not pipe downloaded dashboard JSON directly into shell or language interpreters. Save it to a file first, then inspect it with a trusted tool.
+
+Useful fields in the detail response:
+
+- `iterationState`: objective, source run, base ref, generation limits, and status.
+- `variants`: variant JSON claims plus captured diffs.
+- `evaluations`: scores, hard-gate findings, and evaluator rationale.
+- `synthesis`: accepted/rejected features and mashup lineage.
+- `gateDecisions`: pass/fail/needs-evidence decisions and links.
+- `sourceEvidence`: resume/fork ancestry.
+- `artifacts` / `logs`: bounded listings for deeper inspection.
 
 ### Future agent cannot resume
 
@@ -206,6 +225,10 @@ The runner uses `~/.hermes/autonomous-projects/autonomous-project.lock`. If a pr
 
 The browser caches previews per run/file in memory to avoid flashing during SSE updates. Refresh the page to clear the in-memory preview cache.
 
+### Managed loop blocks immediately
+
+Check the run's `artifacts/gate-decisions.json`, `run.json`, and runner log. Common causes are dirty target repo, missing git repo, invalid base ref, existing stale worktree path, no valid variant artifact, or failed validation command. Fix the target repo or gate evidence, then issue `continue-from-iteration` or restart the showcase loop.
+
 ### A generated project is too weak
 
-Use the Steering Cockpit to add stricter gates and pin an improvement pass for the same repo. You can also edit `~/.hermes/autonomous-projects/runner-prompt.md` for global policy changes.
+Use the Steering Cockpit to add stricter gates and pin an improvement pass for the same repo. For the showcase site, prefer another bounded generation or fork with a specific taste/quality directive rather than broad prompt churn. You can also edit `~/.hermes/autonomous-projects/runner-prompt.md` for global policy changes.

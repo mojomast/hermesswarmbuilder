@@ -134,6 +134,8 @@ function writeIterationScaffold(runId:string, runRoot:string, req:any) {
     steeringText:req.changeText||"",
     repoPath:req.repoPath||null,
     baseRef:req.baseRef||"HEAD",
+    generation:req.generation||1,
+    targetGenerations:req.targetGenerations||req.limits?.maxIterations||10,
     limits:req.limits,
     requiredArtifacts:["variants/*.json","evaluations/*.json","synthesis/synthesis.json","gate-decisions.json"],
     loopContract:{
@@ -356,7 +358,7 @@ async function main(){
     if (iterationRequest) iterationScaffold = writeIterationScaffold(runId, runRoot, iterationRequest);
     if (control.nextRunRequest?.status === "pending") { control.nextRunRequest = { ...control.nextRunRequest, status:"running", claimedByRunId:runId, claimedAt:now() }; control.requestedRunNow=false; writeControl(control); }
     s = { ...s, schemaVersion:"apb.state.v1", currentRunId:runId, status:"inventory-scanning", phase:"inventory-scanning", startedAt:run.startedAt, completedAt:null, selectedProject:null, block:null, hold:null, currentTask:iterationRequest?"Bounded iteration workflow starting through Hermes CLI":"Scheduled workflow starting through Hermes CLI", task:iterationRequest?iterationRequest.objective:"Scheduled workflow starting through Hermes CLI", lastAction:iterationRequest?"Hourly runner created a bounded iteration run and is invoking Hermes workflow.":"Hourly runner created a new run and is invoking Hermes workflow.", iteration:iterationScaffold, agents:{orchestrator:{id:"orchestrator",label:"Main Orchestrator",role:"scheduled workflow orchestrator",status:"running",currentPhase:"inventory-scanning",currentTask:"Scan local build inventory and select candidate",lastMessage:"Hermes CLI process launched by hourly runner.",startedAt:now(),updatedAt:now(),logPath:join(runRoot,"logs","hermes.stdout.log")}} };
-    writeState(s); event("info","system","state-change",s.lastAction,{runId, iteration: iterationScaffold?.id}); if (iterationScaffold) { const rr=readJson(join(runRoot,"run.json"),{}); Object.assign(rr,{iterationId:iterationScaffold.id,iterationKind:iterationRequest.type,parentIterationId:iterationRequest.sourceIterationId||null,sourceRunId:iterationRequest.sourceRunId||null,repoPath:iterationRequest.repoPath||rr.repoPath||null,objective:iterationRequest.objective}); writeFileSync(join(runRoot,"run.json"),JSON.stringify(rr,null,2)); } log(`starting run ${runId}`);
+    writeState(s); event("info","system","state-change",s.lastAction,{runId, iteration: iterationScaffold?.id}); if (iterationScaffold) { const rr=readJson(join(runRoot,"run.json"),{}); Object.assign(rr,{iterationId:iterationScaffold.id,iterationKind:iterationRequest.type,generation:iterationRequest.generation||null,targetGenerations:iterationRequest.targetGenerations||null,parentIterationId:iterationRequest.sourceIterationId||null,sourceRunId:iterationRequest.sourceRunId||null,repoPath:iterationRequest.repoPath||rr.repoPath||null,objective:iterationRequest.objective}); writeFileSync(join(runRoot,"run.json"),JSON.stringify(rr,null,2)); } log(`starting run ${runId}`);
     if (!existsSync(HERMES) || !existsSync(PROMPT) || !existsSync(TELEMETRY)) {
       s.status="blocked"; s.block={reason:"Hermes binary, runner prompt, or telemetry helper missing",since:now(),owner:"midnight-runner",suggestedAction:`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`}; s.lastAction="Scheduled workflow blocked before launch."; writeState(s); event("error","system","block",s.lastAction,{...s.block,runId,agentId:"orchestrator"}); return;
     }

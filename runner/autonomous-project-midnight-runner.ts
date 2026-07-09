@@ -48,7 +48,7 @@ function normalizeState(s:any): any {
 function readJson(path:string, fallback:any): any { try { return JSON.parse(readFileSync(path,"utf8")); } catch { return fallback; } }
 function readState(): any { return normalizeState(readJson(STATE,{ currentRunId:null, status:"idle", updatedAt:now(), agents:{} })); }
 function writeState(s:any){ s=normalizeState(s); s.updatedAt=now(); s.timezone=TZ; writeFileSync(STATE, JSON.stringify(s,null,2)); }
-function defaultControl(): any { return { schemaVersion:"apb.control.v1", runAdmission:"enabled", pause:{requested:false}, stop:{requested:false}, activeSteering:[], pinnedQueueItemId:null, currentObjective:null, nextRunRequest:null, requestedRunNow:false, autoIteration:{enabled:false,maxIterations:3,maxVariantsPerIteration:3,maxParallelVariants:3,maxAcceptedFeatures:4,maxVisualMotifChanges:1,maxNewSections:1,stopAfterNoImprovement:1,minImprovementScore:0.05} }; }
+function defaultControl(): any { return { schemaVersion:"apb.control.v1", runAdmission:"enabled", pause:{requested:false}, stop:{requested:false}, activeSteering:[], pinnedQueueItemId:null, currentObjective:null, nextRunRequest:null, requestedRunNow:false, autoIteration:{enabled:false,mode:"manual",targetGenerations:10,completedGenerations:0,currentGeneration:0,repoPath:null,objective:null,maxIterations:10,maxVariantsPerIteration:3,maxParallelVariants:3,maxAcceptedFeatures:4,maxVisualMotifChanges:1,maxNewSections:1,stopAfterNoImprovement:1,minImprovementScore:0.05,lastRunId:null,lastIterationId:null,lastCommit:null,lastBranch:null,startedAt:null,completedAt:null,stoppedAt:null,stopReason:null} }; }
 function writeControl(c:any){ c.schemaVersion="apb.control.v1"; c.updatedAt=now(); writeFileSync(CONTROL, JSON.stringify(c,null,2)); }
 function readControl(): any { return { ...defaultControl(), ...readJson(CONTROL,{}) }; }
 function readQueue(): any { const q=readJson(QUEUE,{schemaVersion:"apb.queue.v1",items:[]}); if(!Array.isArray(q.items)) q.items=[]; return q; }
@@ -92,7 +92,7 @@ function resolveIterationRequest(control:any, state:any, queue:any): any | null 
   const auto=control.autoIteration?.enabled ? control.autoIteration : null;
   const source=req||auto;
   if(!source) return null;
-  const repoPath=source.repoPath||source.baseRepoPath||pinned?.target?.preferredRepo||state.repoPath||null;
+  const repoPath=source.repoPath||source.baseRepoPath||control.autoIteration?.repoPath||pinned?.target?.preferredRepo||state.repoPath||"/home/mojo/autonomous-projects/hermes-showcase-site";
   const objective=source.objective||source.text||control.currentObjective?.text||pinned?.objective||"Continue bounded autonomous product iteration";
   return {
     id: source.id||`auto-${Date.now()}`,
@@ -105,7 +105,7 @@ function resolveIterationRequest(control:any, state:any, queue:any): any | null 
     objective,
     changeText: source.changeText||source.change||source.directive||"",
     limits:{
-      maxIterations:clampInt(source.limits?.maxIterations||source.maxIterations||control.autoIteration?.maxIterations,1,1,3),
+      maxIterations:clampInt(source.limits?.maxIterations||source.maxIterations||source.targetGenerations||control.autoIteration?.targetGenerations||control.autoIteration?.maxIterations,10,1,10),
       maxVariantsPerIteration:clampInt(source.limits?.maxVariantsPerIteration||source.variantCount||control.autoIteration?.maxVariantsPerIteration,3,1,5),
       maxParallelVariants:clampInt(source.limits?.maxParallelVariants||source.maxParallelVariants||control.autoIteration?.maxParallelVariants,3,1,5),
       maxAcceptedFeatures:clampInt(source.limits?.maxAcceptedFeatures||control.autoIteration?.maxAcceptedFeatures,4,1,4),
@@ -114,7 +114,9 @@ function resolveIterationRequest(control:any, state:any, queue:any): any | null 
       stopAfterNoImprovement:clampInt(source.limits?.stopAfterNoImprovement||control.autoIteration?.stopAfterNoImprovement,1,1,3)
     },
     validationCommands: source.validationCommands || source.commands || pinned?.target?.validationCommands || null,
-    allowDirty: source.allowDirty === true || source.allowDirtyRepo === true || source.limits?.allowDirty === true
+    allowDirty: source.allowDirty === true || source.allowDirtyRepo === true || source.limits?.allowDirty === true,
+    generation: clampInt(source.generation||source.currentGeneration||control.autoIteration?.currentGeneration,1,1,10),
+    targetGenerations: clampInt(source.targetGenerations||source.limits?.targetGenerations||control.autoIteration?.targetGenerations||control.autoIteration?.maxIterations,10,1,10)
   };
 }
 function writeIterationScaffold(runId:string, runRoot:string, req:any) {
@@ -248,6 +250,40 @@ function variantPrompt(req:any, v:WorktreeVariant, runRoot:string, baseCommit:st
 function evaluatorPrompt(req:any, v:WorktreeVariant, runRoot:string){ return `You are evaluator for ${v.id}. Read ${join(runRoot,"artifacts","variants",`${v.id}.json`)} and ${join(runRoot,"artifacts","variants",`${v.id}.diff`)}. Score objectiveFit, userValue, visualQuality, implementationQuality, accessibility, performance from 0-100 and total 0-100. Hard-reject unrelated features, tech-stack churn, missing tests/evidence. Write ${join(runRoot,"artifacts","evaluations",`evaluation-${v.id}.json`)} with schemaVersion apb.evaluation.v1, variantId, scores, hardGateViolations, recommendation accept|reject|partial, rationale, evidenceArtifacts.`; }
 function readRequiredJson(path:string){ if(!existsSync(path)) throw new Error(`missing required JSON artifact: ${path}`); return readJson(path,null); }
 function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation?.hardGateViolations?.length&&["accept","partial"].includes(String(v.evaluation?.recommendation||"accept"))&&Number.isFinite(Number(v.evaluation?.scores?.total||v.evaluation?.score))).sort((a,b)=>Number(b.evaluation?.scores?.total||b.evaluation?.score||0)-Number(a.evaluation?.scores?.total||a.evaluation?.score||0))[0]||null; }
+function shouldContinueAutoIteration(control:any): boolean {
+  const auto=control.autoIteration||{};
+  if(!auto.enabled || !["continuous","showcase-loop"].includes(String(auto.mode||""))) return false;
+  if(control.stop?.requested || control.pause?.requested || control.runAdmission==="paused") return false;
+  const target=clampInt(auto.targetGenerations||auto.maxIterations,10,1,10);
+  const completed=clampInt(auto.completedGenerations||0,0,0,target);
+  return completed < target;
+}
+function scheduleContinuationRunner(){
+  try{
+    const logPath=join(LOGS,`continuous-runner-${Date.now()}.log`);
+    Bun.spawn(["bash","-lc",`sleep 2; ${JSON.stringify(process.execPath)} ${JSON.stringify(import.meta.path)} >> ${JSON.stringify(logPath)} 2>&1`],{cwd:HOME,env:{...process.env},stdout:"ignore",stderr:"ignore"});
+  }catch(err:any){ log(`failed to spawn continuous follow-up runner: ${err?.message||err}`); }
+}
+function scheduleNextAutoIteration(previousRunId:string, result:any): boolean {
+  const control=readControl();
+  const auto=control.autoIteration||{};
+  if(!shouldContinueAutoIteration(control)) return false;
+  const target=clampInt(auto.targetGenerations||auto.maxIterations,10,1,10);
+  const completed=Math.min(target, clampInt(auto.completedGenerations||0,0,0,target)+1);
+  const repoPath=result?.repoPath||auto.repoPath||"/home/mojo/autonomous-projects/hermes-showcase-site";
+  const objective=auto.objective||control.currentObjective?.text||result?.objective||"Continue improving the Hermes Unique Showcase Website as a catalogue of generations";
+  control.autoIteration={...auto,enabled:completed<target,mode:auto.mode||"showcase-loop",targetGenerations:target,maxIterations:target,completedGenerations:completed,currentGeneration:completed<target?completed+1:completed,repoPath,objective,lastRunId:previousRunId,lastIterationId:result?.iterationId||auto.lastIterationId||null,lastCommit:result?.commit||auto.lastCommit||null,lastBranch:result?.branch||auto.lastBranch||null,updatedAt:now(),completedAt:completed>=target?now():auto.completedAt||null,stopReason:completed>=target?"target-generations-reached":null};
+  if(completed>=target){
+    control.nextRunRequest=null; control.requestedRunNow=false; writeControl(control);
+    event("success","system","auto-iteration-complete",`Continuous showcase loop completed ${completed}/${target} generations`,{runId:previousRunId,completedGenerations:completed,targetGenerations:target});
+    return false;
+  }
+  control.nextRunRequest={schemaVersion:"apb.next-run-request.v1",id:`auto-cont-${Date.now()}`,type:"showcase-loop-generation",status:"pending",generation:completed+1,targetGenerations:target,sourceRunId:previousRunId,sourceIterationId:result?.iterationId||auto.lastIterationId||null,repoPath,baseRef:result?.commit||auto.lastCommit||"HEAD",objective,changeText:auto.changeText||`Generation ${completed+1}/${target}: continue one bounded catalogue iteration of the same Hermes showcase site. Preserve continuity, visible evidence, responsive polish, and avoid unrelated tech-stack churn.`,createdAt:now(),createdBy:"midnight-runner:auto-continuation",limits:{maxIterations:target,targetGenerations:target,maxVariantsPerIteration:clampInt(auto.maxVariantsPerIteration,3,1,5),maxParallelVariants:clampInt(auto.maxParallelVariants,3,1,5),maxAcceptedFeatures:clampInt(auto.maxAcceptedFeatures,4,1,4),maxVisualMotifChanges:clampInt(auto.maxVisualMotifChanges,1,0,1),maxNewSections:clampInt(auto.maxNewSections,1,0,1),stopAfterNoImprovement:clampInt(auto.stopAfterNoImprovement,1,1,3),minImprovementScore:auto.minImprovementScore||0.05}};
+  control.requestedRunNow=true; writeControl(control);
+  event("info","system","auto-iteration-scheduled",`Scheduled showcase generation ${completed+1}/${target}`,{runId:previousRunId,completedGenerations:completed,targetGenerations:target,nextRunRequest:control.nextRunRequest.id});
+  return true;
+}
+
 async function runManagedIterationLoop(runId:string, runRoot:string, req:any, iterationScaffold:any){
   try{
     const repo=await validateIterationRepo(req); const art=join(runRoot,"artifacts"); const wtRoot=join(runRoot,"worktrees"); mkdirSync(wtRoot,{recursive:true});
@@ -285,8 +321,8 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const st=readState(); st.status="completed"; st.phase="completed"; st.completedAt=now(); st.repoPath=repo.repoRoot; st.branch=mashup.branch; st.commit=mashup.commit; st.qualityGate={status:"passed",gateReportPath:`runs/${runId}/artifacts/gate-report.json`,commands:mashup.validation}; st.finalValidation=gateReport; st.lastAction=`Runner-managed iteration completed: ${winner.id} -> ${mashup.branch}`; for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()}; writeState(st);
     writeRunJson(runRoot,{runId,status:"completed",phase:"completed",completedAt:st.completedAt,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,qualityGate:st.qualityGate,finalValidation:gateReport});
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"completed",completedAt:now(),resultRunId:runId,resultBranch:mashup.branch,resultCommit:mashup.commit}; control.requestedRunNow=false; writeControl(control); }
-    event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return "completed";
-  }catch(err:any){ blockRun(runId,runRoot,err?.message||String(err),"Inspect run artifacts/logs and target repo/worktrees before retrying."); return "blocked"; }
+    event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return {status:"completed",runId,iterationId:iterationScaffold.id,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,winnerVariantId:winner.id,objective:req.objective};
+  }catch(err:any){ blockRun(runId,runRoot,err?.message||String(err),"Inspect run artifacts/logs and target repo/worktrees before retrying."); return {status:"blocked",runId}; }
 }
 
 
@@ -326,7 +362,10 @@ async function main(){
     }
     if (iterationRequest) {
       const result = await runManagedIterationLoop(runId, runRoot, iterationRequest, iterationScaffold);
-      if (result === "completed") log(`completed runner-managed iteration ${runId}`);
+      if (result?.status === "completed") {
+        log(`completed runner-managed iteration ${runId}`);
+        if (scheduleNextAutoIteration(runId, result)) scheduleContinuationRunner();
+      }
       return;
     }
     const query = readFileSync(PROMPT,"utf8") + steeringSnapshot(runRoot) + (iterationRequest ? iterationPromptAppend(iterationRequest) : "");

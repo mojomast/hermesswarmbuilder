@@ -68,6 +68,13 @@ try {
   await post('gate-decision', { gateId: 'gate-1', runId, status: 'passed', evidenceArtifacts: ['artifacts/gate-report.json'] });
   const gateArtifact = JSON.parse(readFileSync(join(runRoot, 'artifacts', 'gate-decisions.json'), 'utf8'));
   if (!gateArtifact.find(x => x.evidenceArtifacts?.includes('artifacts/gate-report.json'))) throw new Error('run gate decision artifact not updated');
+  await post('start-showcase-loop', { sourceRunId: runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: '10 gen fixture catalogue', targetGenerations: 10 });
+  const loopControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (loopControl.autoIteration?.mode !== 'showcase-loop' || loopControl.autoIteration?.targetGenerations !== 10 || loopControl.autoIteration?.currentGeneration !== 1) throw new Error('showcase loop control not persisted');
+  if (loopControl.nextRunRequest?.type !== 'showcase-loop-generation' || loopControl.nextRunRequest?.targetGenerations !== 10 || !loopControl.requestedRunNow) throw new Error('showcase loop request not queued');
+  await post('stop-showcase-loop', { reason: 'smoke complete' });
+  const stoppedControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (stoppedControl.autoIteration?.enabled !== false || stoppedControl.nextRunRequest !== null) throw new Error('showcase stop did not disable loop and clear request');
   console.log('smoke-dashboard-iteration ok');
 } finally {
   child.kill('SIGTERM');

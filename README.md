@@ -55,6 +55,13 @@ Future agents should treat `iteration-state.json`, `source-evidence.json`, `vari
 
 See `docs/OPERATIONS.md#cleanup-and-browser-validation-gates` for cleanup and Playwright/browser gate evidence before accepting generated UI projects.
 
+## Continuous showcase catalogue mode
+
+The dashboard now has an explicit **Run 10-generation showcase loop** control for the Hermes Unique Showcase Website. It persists `control.autoIteration` with `mode: "showcase-loop"`, `targetGenerations <= 10`, the target repo path, generation counters, and bounded safety caps. Each completed generation records variants, evaluations, synthesis, gate decisions, and the accepted mashup commit; the runner then queues the next generation from that commit until the target is reached or the operator presses **Pause loop**, **Stop loop**, or **Hold new runs**.
+
+This mode is intentionally catalogue-shaped: the Mission Control catalogue shows the latest 10 same-site generations so an operator can browse different versions, continue one, fork one, or use an accepted direction as the next baseline.
+
+
 ## Quick install prompt for a Hermes agent
 
 Copy this prompt into a Hermes agent on the target machine:

@@ -43,7 +43,13 @@ runs/<run-id>/
 
 The product repo may also keep its own `creative-iterations/` tree. The `runs/<run-id>/artifacts/` tree is the dashboard/future-agent handoff format.
 
-Recommended defaults: `N=3` generations, `variants=4`, `accepted_features=3`, plateau threshold = no material rubric-score gain for 2 consecutive generations.
+Recommended defaults: `N=3` generations for ordinary product work; `N=10` for explicit showcase-catalogue mode; `variants=3-4`, `accepted_features=3`, plateau threshold = no material rubric-score gain for 1-2 consecutive generations. Dashboard/runner hard caps keep showcase mode at 10 generations max.
+
+## Continuous showcase catalogue mode
+
+Showcase-catalogue mode repeats this loop up to 10 times against the same repo. Every generation must be comparable: same objective family, same validation commands, and lineage from prior mashup commit to next base ref. The catalogue is useful only if generations remain meaningfully different but bounded; do not use it as permission for unrelated feature pileups.
+
+Stop conditions are: target generation reached, dashboard stop/hold/pause, failed validation/gate, dirty target repo preflight, no valid evaluated variant, or plateau/regression evidence.
 
 ## Loop architecture
 

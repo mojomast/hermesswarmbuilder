@@ -48,6 +48,34 @@ Open `http://127.0.0.1:9200/` and use **Steering Cockpit**:
 
 These controls write local files under `~/.hermes/autonomous-projects` and do not expose shell execution.
 
+### Continuous 10-generation showcase loop
+
+Use **Run 10-generation showcase loop** when the goal is to browse a catalogue of versions of the same site rather than launch unrelated projects. The control writes:
+
+- `control.autoIteration.enabled = true`
+- `control.autoIteration.mode = "showcase-loop"`
+- `targetGenerations` / `completedGenerations` / `currentGeneration`
+- target `repoPath`, objective, and bounded caps
+- a pending `control.nextRunRequest` for the first generation
+
+The runner performs one bounded worktree generation, writes variant/evaluation/synthesis/gate artifacts, then queues the next generation from the accepted mashup commit. It self-spawns the next runner tick after a safe delay, so the loop continues without waiting for the hourly cron while still respecting the single-run lock.
+
+Operator controls:
+
+- **Pause loop**: pause at the next checkpoint without deleting loop configuration.
+- **Resume loop**: clear pause/stop and allow the next queued generation.
+- **Stop loop**: disable `autoIteration`, clear pending next-run request, and preserve completed generations.
+- **Set target**: adjust the target from 1 to 10 generations.
+
+API example:
+
+```bash
+curl -X POST http://127.0.0.1:9200/api/commands \
+  -H 'content-type: application/json' \
+  -d '{"type":"start-showcase-loop","payload":{"repoPath":"/home/mojo/autonomous-projects/hermes-showcase-site","targetGenerations":10}}'
+```
+
+
 
 ## Resume, continue, and fork operations
 

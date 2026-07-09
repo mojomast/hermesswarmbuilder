@@ -46,7 +46,14 @@ Open `http://127.0.0.1:9200/` and use **Steering Cockpit**:
 - **Run next tick**: record an audited run-now request for the next runner invocation.
 - **Add gate**: add acceptance evidence required for the next spec/devplan/final audit.
 
-These controls write local files under `~/.hermes/autonomous-projects` and do not expose shell execution.
+Layout-only controls are also available in the dashboard and are separate from steering commands:
+
+- **Density**: choose compact/comfortable/dense spacing for the current browser.
+- **Hide/show sections**: reduce visual noise by hiding panels that are not needed during the current operation.
+- **Collapse all / expand active**: quickly compress subagent/tool detail or expand only active work.
+- **Current step / live activity**: use the run-progress summary to see the active generation, phase, task, last action, repo, and recent telemetry before opening logs or raw JSON.
+
+Steering controls write local files under `~/.hermes/autonomous-projects` and do not expose shell execution. Layout controls are browser-local `localStorage` preferences and do not affect runner state.
 
 ### Continuous 10-generation showcase loop
 
@@ -216,6 +223,8 @@ Treat `npx playwright install --with-deps` as an operator-controlled setup step.
 - Check `~/.hermes/autonomous-projects/events.jsonl` size.
 - Current server builds tail/cursor responses, but old installed copies may still full-parse the file. Re-run `./scripts/install.sh` and restart the service.
 - Close duplicate dashboard tabs if the browser has many active SSE connections.
+
+- Switch the Studio view to compact or dense layout and hide/collapse sections that are not needed for the current inspection. These settings are browser-local and can be reset from the Sections menu or by clearing dashboard site data.
 
 ### Runs overlap
 

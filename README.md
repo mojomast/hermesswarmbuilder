@@ -251,6 +251,9 @@ The dashboard shows:
 - next-build queue with pinned user ideas and Hermes-generated tournament ideas,
 - active steering directives and acceptance gates,
 - top-level workflow phase strip,
+- current-step and live-activity summary for the active generation, phase, task, run, repo, and freshest agent telemetry,
+- compact/comfortable/dense layout density controls for fitting more run state on screen,
+- browser-local hide/collapse controls for major dashboard sections,
 - run list,
 - agent/subagent list,
 - subagent activity stack,
@@ -261,6 +264,8 @@ The dashboard shows:
 - raw run JSON.
 
 Live updates use SSE from `/api/stream`. The server tails the event file instead of reparsing the full history on every tick, sends incremental event batches by cursor, redacts secret-shaped strings, and the frontend coalesces live renders so long-running tabs stay responsive. Artifact/log previews are cached client-side per run/file so live refreshes do not flash the preview back to `Loading...` while you are reading.
+
+Dashboard layout preferences are browser-local. Density, hidden/collapsed sections, expanded agents/tools, selected tabs, and follow/pause choices are stored in `localStorage` under `hermes.apb.dashboard.*`; they do not modify runner control files and can be reset by clearing dashboard site data or pressing **Reset layout** in the Sections menu.
 
 ## Steering cockpit
 

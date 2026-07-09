@@ -79,7 +79,11 @@ Changing broad future project behavior should usually be done by editing this pr
 - `/api/commands`
 - `/api/stream`
 
-`dashboard/public/app.js` projects events/state/control into the Studio steering cockpit, workflow strips, agent stacks, tool-call rows, artifact previews, and logs. Other views provide matrix/timeline/console/swarm projections.
+`dashboard/public/app.js` projects events/state/control into the Studio steering cockpit, workflow strips, current-step/live-activity summaries, agent stacks, tool-call rows, artifact previews, and logs. Other views provide matrix/timeline/console/swarm projections.
+
+Dashboard presentation preferences are intentionally client-local. Density mode, hidden/collapsed sections, expanded agent/tool rows, selected tabs, selected run, follow/pause behavior, and preview selections are stored in browser `localStorage` under `hermes.apb.dashboard.*`. They are not part of the steering control plane and must not be consumed by the runner.
+
+The current-step/live-activity projection is derived from existing telemetry and run state such as `phase`, `task`, `lastAction`, selected project, `repoPath`, active agent status, recent events, and tool-call lifecycle events. It does not introduce a second source of truth for workflow state.
 
 ## Canonical vocabulary
 
@@ -116,7 +120,10 @@ operator cockpit / cron / manual trigger
         -> state.json + events.jsonl + runs/<run>/run.json
           -> Bun dashboard APIs/SSE
             -> browser dashboard projection
+              -> browser-local layout preferences, density, hidden sections, and expanded rows
 ```
+
+Only operator intent commands flow back into `control.json`, `queue.json`, `gates.json`, `commands.jsonl`, or `audit.jsonl`. UI density, hidden-section state, collapsed rows, and current inspector selections remain browser-local.
 
 ## Managed worktree loop
 

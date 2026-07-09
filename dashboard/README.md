@@ -15,7 +15,7 @@ Live steering and observability system for Hermes autonomous project builder run
 
 The top navigation switches between 5 views:
 
-1. **Studio (`/`)**: steering cockpit, orchestrator status, subagent stack, event console, and resource inspectors.
+1. **Studio (`/`)**: steering cockpit, current-step/live-activity summary, density/layout customization, orchestrator status, subagent stack, event console, and resource inspectors.
 2. **Command Matrix (`/matrix.html`)**: high-density observability grid with swarm node status and tool telemetry.
 3. **Timeline Stream (`/timeline.html`)**: chronological pipeline/event stream with time deltas and bottleneck cues.
 4. **Developer Console (`/console.html`)**: terminal/IDE-style event and artifact inspection.
@@ -44,6 +44,17 @@ audit.jsonl
 ```
 
 Pinned queue items are exported to `idea.txt` for compatibility with the existing runner prompt and are appended to the launched prompt as a hard selector override.
+
+## Studio layout customization
+
+The Studio view supports operator-local layout preferences for long-running dashboard sessions:
+
+- **Density**: switch between comfortable, compact, and dense layouts to control spacing and information density.
+- **Section visibility**: hide or show major Studio sections when focusing on live activity, artifacts, logs, or run control.
+- **Collapse/expand state**: collapse major panels, collapse all agents, expand active agents, and preserve expanded agent/tool details across live refreshes.
+- **Current step / live activity**: the active run generation, phase, task, last action, selected repo, active agents, and recent telemetry are surfaced as a concise run-progress deck.
+
+These preferences are stored only in browser `localStorage` under `hermes.apb.dashboard.*`. They are presentation preferences, not runner commands, and they do not write `control.json`, `queue.json`, `gates.json`, or command/audit logs.
 
 ## Performance model
 

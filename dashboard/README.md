@@ -52,3 +52,27 @@ Live views receive state, event, and heartbeat updates over SSE. The server now 
 Inspector and drawer panes preserve their current DOM whenever the selected run, tab, artifact/log selection, and resource metadata have not changed. SPEC/DEVPLAN content is cached per run after loading so heartbeat refreshes do not flash the pane back to a loading state.
 
 When updating dashboard renderers, prefer keyed reconciliation, capped lists, render scheduling, or render keys over wholesale `innerHTML` replacement for panels with scroll state, previews, expanded rows, or async document loads.
+
+
+## Iteration and lineage controls
+
+The dashboard is also the operator surface for bounded iteration, resume, and fork workflows.
+
+Important concepts:
+
+- **Run**: one runner invocation visible in the run list.
+- **Iteration**: a bounded improvement pass attached to a run or source run.
+- **Resume point**: the artifacts needed to continue later.
+- **Fork**: a new iteration that keeps source evidence but explores a different direction.
+- **Decision**: an auditable outcome attached to a gate, variant, synthesis, or operator command.
+
+Supported command types include `start-next-iteration`, `continue-from-iteration`, `fork-from-iteration`, `use-as-next-direction`, `gate-decision`, and `attach-gate-evidence`.
+
+Iteration lineage is exposed through:
+
+```text
+GET /api/iterations
+GET /api/iterations/:id
+```
+
+Detailed iteration responses include run state, iteration state, source evidence, variants, evaluations, synthesis/mashup output, gate decisions, artifact listings, log listings, load warnings, and a redaction marker.

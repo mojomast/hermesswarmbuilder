@@ -18,6 +18,31 @@ Purpose: let agents improve a creative product through evidence-backed generatio
 - Every addition must map to the objective or a named acceptance criterion.
 - Stop and ask after `N` generations, or earlier on plateau/regression.
 
+
+## Terms used by this loop
+
+This document uses the same vocabulary as the runner and dashboard: a **run** is one runner invocation; an **iteration** is a bounded improvement pass; a **generation** is one loop through variant generation, evaluation, synthesis, and verification; a **variant** is one focused alternative; an **evaluator** scores variants with evidence; **synthesis/mashup** combines only compatible winning features; a **gate** is a required acceptance condition; **evidence** is durable proof; a **decision** records what was accepted, rejected, continued, or forked; a **resume point** is the artifact set a future agent needs; and a **fork** is a new iteration from prior evidence that intentionally explores another direction.
+
+When launched through Hermes Swarm Builder, the runner creates this machine-readable handoff scaffold under the run root:
+
+```text
+runs/<run-id>/
+  iteration-state.json
+  worktrees/variant-*/
+  worktrees/mashup/
+  artifacts/
+    iterations/iteration.json
+    source-evidence.json
+    variants/*.json
+    variants/*.diff
+    evaluations/*.json
+    synthesis/synthesis.json
+    gate-decisions.json
+    artifact-manifest.json
+```
+
+The product repo may also keep its own `creative-iterations/` tree. The `runs/<run-id>/artifacts/` tree is the dashboard/future-agent handoff format.
+
 Recommended defaults: `N=3` generations, `variants=4`, `accepted_features=3`, plateau threshold = no material rubric-score gain for 2 consecutive generations.
 
 ## Loop architecture
@@ -366,3 +391,21 @@ Stop and ask if generation limit is reached, score plateaus, evidence is ambiguo
 - Design Council Double Diamond: diverge to understand/generate options, converge to define/deliver; small-scale testing should reject weak solutions and improve promising ones.
 - GV Design Sprint: map a focused target, sketch competing solutions, decide, prototype, and test to replace debate with evidence.
 - NN/g iterative UI design: iterate through multiple versions because first attempts are rarely problem-free; use testing/evidence to refine local problem areas, not random redesign.
+
+
+## Future-agent resume checklist
+
+Before stopping a run, make sure a later agent can answer:
+
+1. What was the objective?
+2. What generation was last completed?
+3. Which variants were generated?
+4. What evidence was captured for each variant?
+5. Which evaluator decisions were made?
+6. What synthesis/mashup was accepted?
+7. Which gates passed, failed, or still need evidence?
+8. What is the next safe action?
+9. Is this a continuation, a resume, or a fork?
+10. Which artifact paths prove the above?
+
+Minimum resume artifacts: `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/variants/*.json`, `artifacts/evaluations/*.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, and `artifacts/artifact-manifest.json`.

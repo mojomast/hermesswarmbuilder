@@ -48,6 +48,64 @@ Open `http://127.0.0.1:9200/` and use **Steering Cockpit**:
 
 These controls write local files under `~/.hermes/autonomous-projects` and do not expose shell execution.
 
+
+## Resume, continue, and fork operations
+
+Use iteration controls when improving or branching from previous work instead of starting a fresh project.
+
+- **Start next iteration**: begin a bounded improvement pass for the current objective.
+- **Continue from iteration**: keep pursuing the same direction from a previous run/iteration.
+- **Fork from iteration**: branch from previous evidence into a different direction.
+- **Use as next direction**: promote a prior result, variant, or synthesis into the next runner tick.
+
+These commands write `control.nextRunRequest`, request the next runner tick, and update `iterations.json` lineage. The runner then creates the resume scaffold in the new run directory.
+
+### Request a continuation by API
+
+```bash
+curl -X POST http://127.0.0.1:9200/api/commands \
+  -H 'content-type: application/json' \
+  -d '{
+    "type": "continue-from-iteration",
+    "actor": "operator",
+    "payload": {
+      "sourceRunId": "RUN_ID",
+      "repoPath": "/absolute/path/to/repo",
+      "objective": "Continue improving the selected project",
+      "changeText": "Preserve the current direction and complete the next bounded generation."
+    }
+  }'
+```
+
+### Request a fork by API
+
+```bash
+curl -X POST http://127.0.0.1:9200/api/commands \
+  -H 'content-type: application/json' \
+  -d '{
+    "type": "fork-from-iteration",
+    "actor": "operator",
+    "payload": {
+      "sourceRunId": "RUN_ID",
+      "sourceIterationId": "ITERATION_ID",
+      "repoPath": "/absolute/path/to/repo",
+      "objective": "Explore an alternate direction from the prior evidence",
+      "changeText": "Use the same source evidence but pursue a different synthesis."
+    }
+  }'
+```
+
+### Inspect iteration lineage
+
+```bash
+curl http://127.0.0.1:9200/api/iterations
+curl http://127.0.0.1:9200/api/iterations/ITERATION_ID
+```
+
+### Future agent cannot resume
+
+Check that the previous run has `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, and `artifacts/artifact-manifest.json`. Then inspect `/api/iterations` and `/api/control`. If `control.nextRunRequest` is missing, issue `continue-from-iteration` or `fork-from-iteration` again.
+
 ## Trigger a run manually
 
 ```bash

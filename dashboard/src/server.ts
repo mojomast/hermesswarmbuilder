@@ -201,26 +201,101 @@ function listIterations() {
   });
 }
 function readOptionalJson(path: string, fallback: any = null) { return safeReadJson(path, fallback); }
+type ArtifactLoadWarning = { path: string; reason: "missing" | "parse-error" | "too-large"; message?: string };
+type LoadedArtifact = { path: string; size?: number; modifiedAt?: string; data: any };
+function relStatePath(path: string) { return path.replace(STATE_ROOT, "").replace(/^\/+/, ""); }
+function readJsonWithWarning(path: string, warnings: ArtifactLoadWarning[], fallback: any = null): any {
+  try {
+    if (!existsSync(path)) return fallback;
+    const st = statSync(path);
+    if (st.size > MAX_TEXT_BYTES) { warnings.push({ path: relStatePath(path), reason: "too-large", message: `${st.size} bytes` }); return fallback; }
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (err: any) {
+    warnings.push({ path: relStatePath(path), reason: "parse-error", message: err?.message || String(err) });
+    return fallback;
+  }
+}
+function readFirstArtifactJson(artifactsRoot: string, candidates: string[], warnings: ArtifactLoadWarning[], fallback: any = null): LoadedArtifact | null {
+  for (const rel of candidates) {
+    const path = safeJoin(artifactsRoot, ...rel.split("/").filter(Boolean));
+    if (!existsSync(path)) continue;
+    const st = statSync(path);
+    return { path: `artifacts/${rel}`, size: st.size, modifiedAt: st.mtime.toISOString(), data: readJsonWithWarning(path, warnings, fallback) };
+  }
+  return null;
+}
+function readArtifactJsonFiles(artifactsRoot: string, dirNames: string[], warnings: ArtifactLoadWarning[]): LoadedArtifact[] {
+  const out: LoadedArtifact[] = [];
+  for (const dir of dirNames) {
+    const abs = safeJoin(artifactsRoot, ...dir.split("/").filter(Boolean));
+    if (!existsSync(abs)) continue;
+    for (const file of listDir(abs, true).filter((x) => x.kind === "file" && x.name.endsWith(".json"))) {
+      const rel = `${dir}/${file.name}`.replace(/\/+/g, "/");
+      const path = safeJoin(artifactsRoot, ...rel.split("/").filter(Boolean));
+      const st = statSync(path);
+      out.push({ path: `artifacts/${rel}`, size: st.size, modifiedAt: st.mtime.toISOString(), data: readJsonWithWarning(path, warnings, { name: file.name }) });
+    }
+  }
+  return out.sort((a, b) => String(a.path).localeCompare(String(b.path)));
+}
 function iterationDetail(iter: any) {
+  const warnings: ArtifactLoadWarning[] = [];
   const runRoot = safeJoin(STATE_ROOT, "runs", iter.runId);
   const artifactsRoot = safeJoin(runRoot, "artifacts");
-  const readArtifactJson = (rel: string, fallback: any) => readOptionalJson(safeJoin(artifactsRoot, ...rel.split("/").filter(Boolean)), fallback);
-  const variantFiles = existsSync(join(artifactsRoot, "variants")) ? listDir(join(artifactsRoot, "variants"), true).filter((x) => x.kind === "file" && x.name.endsWith(".json")) : [];
-  const evaluationFiles = existsSync(join(artifactsRoot, "evaluations")) ? listDir(join(artifactsRoot, "evaluations"), true).filter((x) => x.kind === "file" && x.name.endsWith(".json")) : [];
+  const run = readJsonWithWarning(join(runRoot, "run.json"), warnings, { id: iter.runId });
+  const iterationState = readJsonWithWarning(join(runRoot, "iteration-state.json"), warnings, null);
+  const iterationArtifact = readFirstArtifactJson(artifactsRoot, ["iterations/iteration.json", "iteration.json"], warnings, null);
+  const sourceEvidence = readFirstArtifactJson(artifactsRoot, ["source-evidence.json", "iterations/source-evidence.json", "iteration/source-evidence.json"], warnings, null);
+  const variants = readArtifactJsonFiles(artifactsRoot, ["variants", "iterations/variants"], warnings);
+  const evaluations = readArtifactJsonFiles(artifactsRoot, ["evaluations", "evals", "iterations/evaluations"], warnings);
+  const synthesis = readFirstArtifactJson(artifactsRoot, ["synthesis/synthesis.json", "synthesis.json", "mashup/mashup-report.json", "comparison.json", "iterations/synthesis.json"], warnings, null);
+  const gateArtifact = readFirstArtifactJson(artifactsRoot, ["gate-decisions.json", "gates/gate-decisions.json", "iterations/gate-decisions.json"], warnings, []);
+  const gateReport = readFirstArtifactJson(artifactsRoot, ["gate-report.json"], warnings, null);
+  const gatesDoc = readGates();
+  const gateDecisionsFromControl = (gatesDoc.gates || []).flatMap((g: any) => (g.decisions || []).map((d: any) => ({ gateId: g.id, gate: g, decision: d }))).filter((x: any) => !x.decision?.runId || x.decision.runId === iter.runId);
+  const variantsData = variants.map((x) => ({ ...(x.data || {}), _artifact: { path: x.path, size: x.size, modifiedAt: x.modifiedAt } }));
+  const evaluationsData = evaluations.map((x) => ({ ...(x.data || {}), _artifact: { path: x.path, size: x.size, modifiedAt: x.modifiedAt } }));
   return {
     ...iter,
-    run: safeReadJson(join(runRoot, "run.json"), { id: iter.runId }),
-    iterationState: readOptionalJson(join(runRoot, "iteration-state.json"), null),
-    iterationArtifact: readArtifactJson("iterations/iteration.json", null),
-    sourceEvidence: readArtifactJson("source-evidence.json", null),
-    variants: variantFiles.map((f) => readArtifactJson(`variants/${f.name}`, { name: f.name })),
-    evaluations: evaluationFiles.map((f) => readArtifactJson(`evaluations/${f.name}`, { name: f.name })),
-    synthesis: readArtifactJson("synthesis/synthesis.json", readArtifactJson("mashup/mashup-report.json", null)),
-    gateDecisions: readArtifactJson("gate-decisions.json", []),
+    schemaVersion: "apb.iteration-detail.v1",
+    redaction: { enabled: true, stringMaxBytes: 50_000, maxArrayItems: 250, maxObjectEntries: 250 },
+    run,
+    iterationState,
+    iterationArtifact,
+    evidence: { sourceEvidence, variants, evaluations, synthesis, gateDecisions: { artifact: gateArtifact, controlPlane: gateDecisionsFromControl }, gateReport },
+    sourceEvidence: sourceEvidence?.data ?? null,
+    variants: variantsData,
+    evaluations: evaluationsData,
+    synthesis: synthesis?.data ?? null,
+    gateDecisions: gateArtifact?.data ?? [],
+    gateDecisionsFromControl,
     artifacts: existsSync(artifactsRoot) ? listDir(artifactsRoot, true).filter((x) => x.kind === "file") : [],
-    logs: existsSync(join(runRoot, "logs")) ? listDir(join(runRoot, "logs")) : []
+    logs: existsSync(join(runRoot, "logs")) ? listDir(join(runRoot, "logs")) : [],
+    warnings
   };
 }
+function normalizeCommandTarget(type: string, raw: any) {
+  if (["continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) return { kind: "iteration", id: raw.iterationId || raw.sourceIterationId || null, runId: raw.runId || raw.sourceRunId || null };
+  if (["gate-decision", "attach-gate-evidence", "update-gate"].includes(type)) return { kind: "gate", id: raw.id || raw.gateId || null, runId: raw.runId || null };
+  if (["pin-queue-item", "archive-queue-item"].includes(type)) return { kind: "queue-item", id: raw.id || raw.itemId || null };
+  if (type === "add-queue-item") return { kind: "queue-item", id: null };
+  if (["pause", "hold", "resume", "unhold", "stop", "run-now", "steer", "remove-steering", "set-current-objective", "start-next-iteration"].includes(type)) return { kind: "control", id: null };
+  return { kind: "unknown", id: null };
+}
+function makeCommand(body: any, actor: string, type: string, payload: any) {
+  return { schemaVersion: "apb.command.v2", id: uid("cmd"), ts: now(), actor, type, target: body.target || normalizeCommandTarget(type, payload), payload, status: "accepted", source: "dashboard", correlationId: body.correlationId || null, idempotencyKey: body.idempotencyKey || null };
+}
+function normalizeIterationRequestPayload(type: string, payload: any, control: any, actor: string) {
+  const reqType = type === "fork-from-iteration" ? "fork" : type === "continue-from-iteration" ? "continue" : type === "use-as-next-direction" ? "use-as-next-direction" : "start_next_iteration";
+  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId: payload.runId || payload.sourceRunId || null, sourceIterationId: payload.iterationId || payload.sourceIterationId || null, repoPath: payload.repoPath || payload.baseRepoPath || null, baseRef: payload.baseRef || payload.baseCommit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationCommands: payload.validationCommands || payload.commands || null, expectedArtifacts: ["artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json"] };
+}
+function appendRunGateDecision(runId: string, decision: any) {
+  const path = safeJoin(STATE_ROOT, "runs", runId, "artifacts", "gate-decisions.json");
+  const existing = safeReadJson(path, []);
+  const arr = Array.isArray(existing) ? existing : [];
+  writeJson(path, [decision, ...arr].slice(0, 100));
+}
+
 function upsertIterationFromRequest(req: any, status = "requested") {
   const doc = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
   if (!Array.isArray(doc.items)) doc.items = [];
@@ -296,7 +371,7 @@ async function handleCommand(req: Request) {
   const type = String(body.type || "");
   const payload = body.payload || body;
   const actor = body.actor || "dashboard-user";
-  const command = { schemaVersion: "apb.command.v1", id: uid("cmd"), ts: now(), actor, type, target: body.target || {}, payload, status: "accepted" };
+  const command = makeCommand(body, actor, type, payload);
   const control = readControl(); const queue = readQueue(); const gates = readGates();
   if (["pause", "hold"].includes(type)) { control.pause = { requested: true, mode: payload.mode || "checkpoint", requestedBy: actor, requestedAt: now(), reason: payload.reason || null }; if (type === "hold") control.runAdmission = "paused"; writeControl(control); return json(commandAck(command, { effective: "next_checkpoint" })); }
   if (["resume", "unhold"].includes(type)) { control.pause = { requested: false, mode: "checkpoint", reason: null }; control.stop = { requested: false, mode: null, reason: null }; control.runAdmission = "enabled"; writeControl(control); return json(commandAck(command, { effective: "immediate" })); }
@@ -305,12 +380,16 @@ async function handleCommand(req: Request) {
   if (type === "remove-steering") { const id = payload.id || payload.steeringId; control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
   if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
   if (["start-next-iteration", "continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) {
-    const reqType = type === "fork-from-iteration" ? "fork" : type === "continue-from-iteration" ? "continue" : type === "use-as-next-direction" ? "use-as-next-direction" : "start_next_iteration";
-    const req = { id: uid("req"), type: reqType, status: "pending", sourceRunId: payload.runId || payload.sourceRunId || null, sourceIterationId: payload.iterationId || payload.sourceIterationId || null, queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration };
-    control.nextRunRequest = req; control.requestedRunNow = true; if (req.objective) control.currentObjective = { text: req.objective, source: reqType, queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
+    const req = normalizeIterationRequestPayload(type, payload, control, actor);
+    control.nextRunRequest = req; control.requestedRunNow = true; if (req.objective) control.currentObjective = { text: req.objective, source: req.type, queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
     upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { nextRunRequest: req, effective: "next_runner_tick" }));
   }
-  if (type === "gate-decision") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.decisions = [{ id: uid("decision"), runId: payload.runId || null, status: payload.status || "needs-evidence", decision: payload.decision || payload.status || "noted", evidenceArtifacts: payload.evidenceArtifacts || [], notes: payload.notes || "", decidedAt: now(), decidedBy: actor }, ...(gate.decisions || [])].slice(0, 20); gate.status = payload.status || gate.status || "pending"; gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "gate-decision") {
+    const id = payload.id || payload.gateId;
+    const decision = { schemaVersion: "apb.gate-decision.v1", id: uid("decision"), gateId: id, runId: payload.runId || null, status: payload.status || "needs-evidence", decision: payload.decision || payload.status || "noted", evidenceArtifacts: payload.evidenceArtifacts || [], notes: payload.notes || "", decidedAt: now(), decidedBy: actor };
+    for (const gate of gates.gates) if (gate.id === id) { gate.decisions = [decision, ...(gate.decisions || [])].slice(0, 20); gate.status = decision.status; gate.updatedAt = now(); gate.updatedBy = actor; }
+    writeGates(gates); if (decision.runId) appendRunGateDecision(decision.runId, decision); return json(commandAck(command, { gateId: id, decision }));
+  }
   if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
   if (type === "run-now") { control.requestedRunNow = true; writeControl(control); return json(commandAck(command, { effective: "next_runner_tick" })); }
   if (type === "add-queue-item") { const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective: payload.objective || "", context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }

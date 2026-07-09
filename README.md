@@ -15,6 +15,44 @@ The system lets a Hermes agent run a complete local build cycle later on a sched
 
 It intentionally does **not** expose arbitrary browser shells, secrets, ROMs, credentials, or runtime artifacts.
 
+## Vocabulary-first model
+
+Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artifacts, and handoff docs:
+
+- **Run**: one scheduled or manual runner invocation. A run owns logs, telemetry, artifacts, and final gate reports under `runs/<run-id>/`.
+- **Iteration**: a bounded improvement pass against an existing repo or prior run output. An iteration can start fresh, continue, resume, or fork.
+- **Generation**: one cycle inside an iteration where variants are produced, evaluated, synthesized, and gated.
+- **Variant**: one focused alternative generated for the same objective and constraints.
+- **Evaluator**: an agent or deterministic process that scores variants against fixed criteria and records evidence.
+- **Synthesis / mashup**: the deliberate integration of the strongest compatible variant features into the next accepted direction.
+- **Gate**: an acceptance requirement that needs explicit evidence before progress or completion.
+- **Evidence**: screenshots, diffs, logs, tests, accessibility/performance checks, or operator notes used to support a decision.
+- **Decision**: an auditable accept/reject/continue/fork/gate outcome with rationale and evidence links.
+- **Resume point**: the durable artifact set needed to continue later without rediscovering context.
+- **Fork**: a new iteration branched from prior evidence to explore a different direction while preserving lineage.
+
+## Run and iteration artifact meanings
+
+```text
+~/.hermes/autonomous-projects/runs/<run-id>/
+  run.json                       run-level state mirror
+  iteration-state.json            runner-created iteration contract, when iteration mode is active
+  logs/                           runner and Hermes stdout/stderr logs
+  worktrees/                      runner-managed variant/mashup git worktrees, when worktree-loop mode is active
+  artifacts/
+    iterations/iteration.json     copy of the iteration contract for artifact browsers
+    source-evidence.json          source run/iteration context used for resume/fork
+    variants/*.json               variant claims, changes, and evidence
+    variants/*.diff               runner-captured diffs from base commit to variant branch
+    evaluations/*.json            evaluator scores and rationale
+    synthesis/synthesis.json      selected compatible features and mashup rationale
+    gate-decisions.json           gate pass/fail/needs-evidence decisions
+    gate-report.json              final validation evidence
+    artifact-manifest.json        index of important generated artifacts
+```
+
+Future agents should treat `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, and `artifact-manifest.json` as the minimum resume set.
+
 ## Quick install prompt for a Hermes agent
 
 Copy this prompt into a Hermes agent on the target machine:

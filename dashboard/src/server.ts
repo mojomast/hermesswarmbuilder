@@ -2,6 +2,7 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
+import { ProjectPlanError, ProjectPlanStore } from "./project-plans";
 
 const HOME = homedir();
 const PORT = Number(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_PORT || "9200");
@@ -35,6 +36,7 @@ const paths = {
   iterations: join(STATE_ROOT, "iterations.json"),
   idea: join(STATE_ROOT, "idea.txt"),
 };
+const projectPlans = new ProjectPlanStore(STATE_ROOT);
 
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/eyJ[a-zA-Z0-9._-]{20,}/g, "[REDACTED_JWT]"],
@@ -461,6 +463,12 @@ async function route(req: Request): Promise<Response> {
   const url = new URL(req.url);
   try {
     if (url.pathname === "/api/state") return json(readState());
+    if (url.pathname === "/api/project-plans" && req.method === "GET") return json(projectPlans.list());
+    if (url.pathname === "/api/project-plans/commands" && req.method === "POST") return json(projectPlans.command(await readJsonBody(req)));
+    const planRevisionMatch = url.pathname.match(/^\/api\/project-plans\/([^/]+)\/revisions\/(\d+)$/);
+    if (planRevisionMatch && req.method === "GET") return json(projectPlans.getRevision(decodeURIComponent(planRevisionMatch[1]), Number(planRevisionMatch[2])));
+    const planMatch = url.pathname.match(/^\/api\/project-plans\/([^/]+)$/);
+    if (planMatch && req.method === "GET") return json(projectPlans.detail(decodeURIComponent(planMatch[1])));
     if (url.pathname === "/api/capabilities") return json({ browserTerminal: false, sse: true, readOnly: false, steeringCockpit: true, stateRoot: STATE_ROOT });
     if (url.pathname === "/api/states") return json({ states });
     if (url.pathname === "/api/events") return json(readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after") || url.searchParams.get("lastEventId")));
@@ -518,9 +526,10 @@ async function route(req: Request): Promise<Response> {
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
     }
     return staticFile(url.pathname);
-  } catch (err: any) { return json({ error: err?.message || String(err) }, 500); }
+  } catch (err: any) { return json({ error: err?.message || String(err), ...(err instanceof ProjectPlanError && err.details ? { details: err.details } : {}) }, err instanceof ProjectPlanError ? err.status : 500); }
 }
 
-Bun.serve({ port: PORT, hostname: "0.0.0.0", fetch: route });
-console.log(`Autonomous Project Builder dashboard listening on http://0.0.0.0:${PORT}`);
+const HOST = process.env.AUTONOMOUS_PROJECTS_DASHBOARD_HOST || "127.0.0.1";
+Bun.serve({ port: PORT, hostname: HOST, fetch: route });
+console.log(`Autonomous Project Builder dashboard listening on http://${HOST}:${PORT}`);
 console.log(`State root: ${STATE_ROOT}`);

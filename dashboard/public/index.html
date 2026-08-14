@@ -21,6 +21,7 @@
       </div>
       <div id="topStatus" class="top-status">loading state…</div>
       <div class="top-actions">
+        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">Plan project</button>
         <input id="globalFilter" class="filter-input" placeholder="filter events/tools/logs…" aria-label="Global filter" />
         <span id="streamState" class="chip">SSE connecting…</span>
         <button id="refreshNow">Refresh</button>
@@ -86,6 +87,29 @@
     </section>
 
     <aside id="detailDrawer" class="detail-drawer" hidden></aside>
+
+    <section id="planningWorkspace" class="planning-workspace" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden>
+      <header class="planning-header">
+        <div><b id="plannerTitle">Project planning</b><span class="muted"> persisted revision, review, approval, and launch workspace</span></div>
+        <div class="planning-header-actions"><span id="planSaveState" class="status-pill" role="status" aria-live="polite">saved</span><button id="closePlanner" aria-label="Close project planning workspace">Close</button></div>
+      </header>
+      <nav class="planning-mobile-tabs" aria-label="Planning workspace sections">
+        <button data-plan-pane="plans" class="active">Plans</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="monitor">Monitor</button><button data-plan-pane="handoff">Handoff</button>
+      </nav>
+      <div id="planGlobalError" class="planning-alert" role="alert" aria-live="assertive" hidden></div>
+      <div class="planning-grid">
+        <aside class="planning-list panel-scroll" data-planning-pane="plans" aria-label="Persisted project plans">
+          <div class="planning-pane-head"><b>Plans</b><button data-new-plan="classic">New classic</button><button data-new-plan="managed">New managed</button></div>
+          <div id="projectPlanList" class="dense-list"></div>
+        </aside>
+        <main class="planning-editor panel-scroll" data-planning-pane="edit">
+          <div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div>
+        </main>
+        <aside class="planning-review panel-scroll" data-planning-pane="review">
+          <div id="projectPlanReview" class="empty">Select a plan to review its immutable saved revision.</div>
+        </aside>
+      </div>
+    </section>
   </div>
   <script src="/app.js" type="module"></script>
 </body>

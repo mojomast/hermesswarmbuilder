@@ -34,10 +34,11 @@ function runScenario(name, options = {}) {
 const fs=require('node:fs'), path=require('node:path'), cp=require('node:child_process');
 const agent=process.env.APB_AGENT_ID, runRoot=process.env.AUTONOMOUS_PROJECT_RUN_ROOT, root=process.env.AUTONOMOUS_PROJECT_STATE_ROOT;
 const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
-if(agent.startsWith('variant-')){
+  if(agent.startsWith('variant-')){
   fs.writeFileSync(path.join(process.cwd(),agent+'.txt'),'focused managed change\\n');
   fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',objectiveMapping:['fixture objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
   if(process.env.FAKE_SCENARIO==='pause') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.pause={requested:true,mode:'checkpoint',reason:'fixture pause'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
+  if(process.env.FAKE_SCENARIO==='stop') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.stop={requested:true,mode:'graceful',reason:'fixture stop'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
 } else if(agent.startsWith('evaluator-') && process.env.FAKE_SCENARIO!=='missing-evaluator'){
   const variant=(query.match(/evaluation-(variant-[0-9]+)\\.json/)||[])[1]||'variant-1';
   fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'accept',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:['artifacts/variants/'+variant+'.json','artifacts/variants/'+variant+'.diff']},null,2));
@@ -108,6 +109,11 @@ try {
   const pausedRun=json(join(paused.root,'run.json')), pausedHandoff=json(join(paused.root,'artifacts','handoff.json'));
   if(pausedRun.status!=='on-hold' || pausedHandoff.state!=='paused' || pausedHandoff.checkpoint!=='after-variants') throw new Error('pause: checkpoint disposition missing');
   if(existsSync(join(paused.root,'worktrees','mashup')) || !existsSync(join(paused.root,'worktrees','variant-1'))) throw new Error('pause: work was continued or variant worktree was removed');
+
+  const stopped=runScenario('stop',{fakeScenario:'stop'}); fixtures.push(stopped.home);
+  const stoppedRun=json(join(stopped.root,'run.json')), stoppedHandoff=json(join(stopped.root,'artifacts','handoff.json'));
+  if(stoppedRun.status!=='on-hold' || stoppedHandoff.state!=='stopped' || stoppedHandoff.checkpoint!=='after-variants') throw new Error('stop: graceful checkpoint disposition missing');
+  if(existsSync(join(stopped.root,'worktrees','mashup')) || !existsSync(join(stopped.root,'worktrees','variant-1')) || !stoppedHandoff.preservedArtifactPaths?.length) throw new Error('stop: checkpoint state/artifacts were not preserved');
 
   for (const [name,opts] of [['invalid-repo',{invalidRepo:true}],['invalid-base',{invalidBase:true}]]) {
     const invalid=runScenario(name,opts); fixtures.push(invalid.home);

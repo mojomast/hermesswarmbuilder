@@ -21,12 +21,15 @@ Purpose: let agents improve a creative product through evidence-backed generatio
 
 ## Terms used by this loop
 
-This document uses the same vocabulary as the runner and dashboard: a **run** is one runner invocation; an **iteration** is a bounded improvement pass; a **generation** is one loop through variant generation, evaluation, synthesis, and verification; a **variant** is one focused alternative; an **evaluator** scores variants with evidence; **synthesis/mashup** combines only compatible winning features; a **gate** is a required acceptance condition; **evidence** is durable proof; a **decision** records what was accepted, rejected, continued, or forked; a **resume point** is the artifact set a future agent needs; and a **fork** is a new iteration from prior evidence that intentionally explores another direction.
+This document uses the same vocabulary as the runner and dashboard. A **plan** contains project intent; an immutable **revision** is the exact reviewed content; an **approval** authorizes only that revision for launch; a **launch** owns a stable admission **request**; a **run** is one runner invocation; an **iteration** is a bounded improvement pass assigned only to managed routing; and a **generation** is one loop through variant generation, evaluation, synthesis, and verification inside that iteration. A **variant** is one focused alternative; an **evaluator** scores variants with evidence; **synthesis/mashup** combines only compatible winning features; a **gate** is a required acceptance condition; **evidence** is durable proof; a planning or gate **decision** records its specific outcome; a **handoff** records terminal operator action; a **resume point** is the artifact set a future agent needs; and a **fork** is a new draft/iteration from prior evidence that intentionally explores another direction. These ids and records are related but not interchangeable.
 
 When launched through Hermes Swarm Builder, the runner creates this machine-readable handoff scaffold under the run root:
 
 ```text
 runs/<run-id>/
+  approved-project-plan.json       # when launched through the planning cockpit
+  project-plan-approval.json
+  project-launch.json
   lifecycle-contract.json
   iteration-state.json
   worktrees/variant-*/
@@ -41,11 +44,14 @@ runs/<run-id>/
     gate-decisions.json
     gate-report.json
     lifecycle-contract.json
+    project-plan/                  # copies of exact planning snapshots
     handoff.json
     artifact-manifest.json
 ```
 
-The product repo may also keep its own `creative-iterations/` tree. The `runs/<run-id>/artifacts/` tree is the dashboard/future-agent handoff format.
+The product repo may also keep its own `creative-iterations/` tree. The `runs/<run-id>/artifacts/` tree is the dashboard/future-agent handoff format. The three planning records are immutable input snapshots. `lifecycle-contract.json` preserves those inputs but is a mutable progress record whose state, checkpoint, blocker, base-resolution, and terminal fields advance during the run.
+
+When the planning cockpit launches this loop, managed review freezes the absolute Git root, explicit base ref and resolved full base commit, acceptance-gate definitions and required evidence paths, and all iteration limits in the approved `apb.project-plan.v1` revision. The runner rejects a changed base binding, dirty planned repository, stale/tampered pointer, or mismatched revision/approval/launch before agent work. It selects validation itself and ignores mutable dashboard gates after approval; planning and launch payloads cannot supply shell/argv/environment or validation commands.
 
 Recommended defaults: `N=3` generations for ordinary product work; `N=10` for explicit showcase-catalogue mode; `variants=3-4`, `accepted_features=3`, plateau threshold = no material rubric-score gain for 1-2 consecutive generations. Dashboard/runner hard caps keep showcase mode at 10 generations max.
 
@@ -56,6 +62,8 @@ Showcase-catalogue mode repeats this loop up to 10 times against the same repo. 
 For the Hermes Unique Showcase Website, each generation should improve how the site explains or demonstrates this Hermes instance: dashboard control, Swarm Builder/autonomous project building, Becomussy as governed memory and becoming substrate, self-improvement loops, subagent swarms, evidence gates, Playwright/screenshot gates, visible iteration history, and resume/fork controls. Reject variants that merely add generic AI-agent marketing copy without evidence, specificity, or product polish.
 
 Stop conditions are: target generation reached, dashboard stop/hold/pause, failed validation/gate, dirty target repo preflight, no valid evaluated variant, or plateau/regression evidence.
+
+Pause and graceful stop are checkpoint dispositions, not successful generations: they preserve run-local worktrees/evidence, update lifecycle and handoff state, and do not emit completion evidence. A continuation or alternate direction from a planning launch creates a new clone/fork draft with lineage and requires a new review, approval, and launch. The runner never merges, pushes, deploys, publishes, or moves the normal source branch; `handoff.json` names the accepted run-local branch/commit for manual review or promotion.
 
 ## Loop architecture
 
@@ -420,4 +428,4 @@ Before stopping a run, make sure a later agent can answer:
 9. Is this a continuation, a resume, or a fork?
 10. Which artifact paths prove the above?
 
-Minimum resume artifacts: `lifecycle-contract.json`, `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/variants/*.json`, `artifacts/evaluations/*.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, `artifacts/handoff.json`, and `artifacts/artifact-manifest.json`.
+Minimum resume artifacts: `lifecycle-contract.json`, `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/variants/*.json`, `artifacts/evaluations/*.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, `artifacts/handoff.json`, and `artifacts/artifact-manifest.json`. For a planned launch also retain `approved-project-plan.json`, `project-plan-approval.json`, and `project-launch.json` plus their `artifacts/project-plan/` copies. After a dashboard restart these remain readable from disk. After an interrupted claimed runner, inspect snapshots/logs and create a newly approved clone/fork rather than altering or assuming automatic resumption of the old launch.

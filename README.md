@@ -19,7 +19,11 @@ It intentionally does **not** expose arbitrary browser shells, secrets, ROMs, cr
 
 Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artifacts, and handoff docs:
 
-- **Run**: one scheduled or manual runner invocation. A run owns logs, telemetry, artifacts, and final gate reports under `runs/<run-id>/`.
+- **Plan**: the durable project container and mutable ledger projection.
+- **Revision**: one immutable `apb.project-plan.v1` planning snapshot. Editing writes a child revision; it never changes an existing revision.
+- **Approval**: an append-only decision bound to one plan id, revision number, plan digest, and pipeline type. Approval authorizes launch, not completion.
+- **Launch / request**: a launch is the durable approved transaction; its request id is the stable runner-admission identity. Neither is a run.
+- **Run**: one scheduled or manual runner invocation. A launch gains a run id only when claimed; the run owns logs, telemetry, artifacts, and final gate reports under `runs/<run-id>/`.
 - **Iteration**: a bounded improvement pass against an existing repo or prior run output. An iteration can start fresh, continue, resume, or fork.
 - **Generation**: one cycle inside an iteration where variants are produced, evaluated, synthesized, and gated.
 - **Variant**: one focused alternative generated for the same objective and constraints.
@@ -27,7 +31,8 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
 - **Synthesis / mashup**: the deliberate integration of the strongest compatible variant features into the next accepted direction.
 - **Gate**: an acceptance requirement that needs explicit evidence before progress or completion.
 - **Evidence**: screenshots, diffs, logs, tests, accessibility/performance checks, or operator notes used to support a decision.
-- **Decision**: an auditable accept/reject/continue/fork/gate outcome with rationale and evidence links.
+- **Decision**: an auditable planning approval/rejection or execution/gate outcome. Planning decisions and gate decisions are distinct records.
+- **Handoff**: the terminal operator-facing result and next safe action; it is not an approval or a gate.
 - **Resume point**: the durable artifact set needed to continue later without rediscovering context.
 - **Fork**: a new iteration branched from prior evidence to explore a different direction while preserving lineage.
 
@@ -36,8 +41,11 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
 ```text
 ~/.hermes/autonomous-projects/runs/<run-id>/
   run.json                       run-level state mirror
+  approved-project-plan.json      exact approved revision snapshot for a planned launch
+  project-plan-approval.json      exact approval snapshot
+  project-launch.json             exact launch/request snapshot
   iteration-state.json            runner-created iteration contract, when iteration mode is active
-  lifecycle-contract.json         immutable managed launch inputs plus lifecycle status
+  lifecycle-contract.json         managed input snapshot plus mutable lifecycle progress
   logs/                           runner and Hermes stdout/stderr logs
   worktrees/                      runner-managed variant/mashup git worktrees, when worktree-loop mode is active
   artifacts/
@@ -50,11 +58,12 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
     gate-decisions.json           gate pass/fail/needs-evidence decisions
     gate-report.json              final validation evidence
     lifecycle-contract.json       artifact-browser copy of the managed lifecycle contract
+    project-plan/                 copies of the three planning launch snapshots
     handoff.json                  terminal operator handoff for every managed outcome
     artifact-manifest.json        index of important generated artifacts
 ```
 
-Future agents should treat `lifecycle-contract.json`, `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, `handoff.json`, and `artifact-manifest.json` as the minimum resume set.
+For a planning-cockpit launch, the approved revision, approval, and launch inputs are immutable snapshots. `lifecycle-contract.json` is not wholly immutable: the runner preserves its input fields but updates lifecycle state, checkpoints, base resolution, blockers, and terminal timestamps. Future agents should retain the three planning snapshots plus `lifecycle-contract.json`, `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, `handoff.json`, and `artifact-manifest.json` as applicable.
 
 See `docs/OPERATIONS.md#cleanup-and-browser-validation-gates` for cleanup and Playwright/browser gate evidence before accepting generated UI projects.
 
@@ -175,6 +184,10 @@ The installer copies source into this layout:
   runs/
   logs/
   artifacts/
+  project-plans/
+    index.json
+    idempotency.json
+    <plan-id>/{ledger.json,revisions/,decisions/,launches/}
 
 ~/.hermes/scripts/
   autonomous-project-midnight-runner.ts
@@ -292,6 +305,12 @@ Use it to:
 - resume when ready,
 - request a run on the next runner tick.
 
+The Studio **Plan project** workspace is the durable launch path. Create and save a draft, submit the complete revision for review, approve that exact revision and digest, confirm the launch boundary, then monitor the launch/request/run/iteration identities and terminal evidence. Managed review resolves `repository.baseRef` to an exact full `baseCommit`; the approved revision also freezes acceptance gates, required evidence paths, validation expectations, and all limits. Classic plans must not name an existing repository and route through the established SPEC/DEVPLAN/build/final-audit path. Managed plans route through the bounded worktree iteration path.
+
+Every edit writes a new revision, returns the plan to `draft`, and clears the effective approval. Continue and fork actions from a planned terminal run create a new clone/fork draft with lineage; they require a fresh review, exact approval, and launch. Pause and graceful stop take effect at managed checkpoints and preserve artifacts/worktrees. They do not resume the same launch in place.
+
+Planning state is local under `~/.hermes/autonomous-projects/project-plans/`; the single pending pointer is `control.json.projectLaunchRequest`. The runner copies `approved-project-plan.json`, `project-plan-approval.json`, and `project-launch.json` to the run root and `artifacts/project-plan/`, then reconciles stable plan, revision, approval, launch, request, run, and managed iteration ids. Dashboard output is redacted, planning-store files are created with user-only permissions, and the default bind address is `127.0.0.1`. Do not place secrets in plans.
+
 Pinned queue items are exported to `idea.txt` for compatibility and are appended to the runner prompt as a hard selector override. If nothing is pinned, the runner prompt still uses tournament-style selection over Hermes-generated ideas and local inventory.
 
 ### Showcase loop quick start
@@ -382,7 +401,8 @@ This repository was extracted from an active Hermes build session. The workflow 
 
 - Do not commit `~/.hermes/autonomous-projects/runs`, logs, artifacts, databases, `.env`, credentials, ROMs, or private generated files.
 - The dashboard writes only narrow local steering/control files and intentionally does not expose arbitrary terminal execution.
-- The runner should publish externally only after a completed/validated project if you explicitly wire that behavior.
+- Planning payloads reject executable-shaped fields, including shell, argv, command, script, executable, environment, and client validation command fields. The runner selects validation from repository policy.
+- The planning runner never merges, pushes, deploys, publishes, or mutates the normal source branch. Review and promotion from the handed-off branch/commit are manual operator actions.
 - Review generated projects before trusting or deploying them.
 
 ## License

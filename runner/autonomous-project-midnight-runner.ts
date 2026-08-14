@@ -21,6 +21,7 @@ const QUEUE = join(ROOT, "queue.json");
 const GATES = join(ROOT, "gates.json");
 const ITERATIONS = join(ROOT, "iterations.json");
 const ADMISSION = join(ROOT, "runner-admission.json");
+const PROJECT_PLANS = join(ROOT, "project-plans");
 const HERMES = process.env.HERMES_BIN || join(HOME, ".local", "bin", "hermes");
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || "local";
 const ACTIVE = new Set(["inventory-scanning","selecting","repo-created","spec-drafting","spec-review","spec-approved","devplan-drafting","devplan-review","devplan-approved","building","blocked","deblocking"]);
@@ -65,7 +66,7 @@ function event(level:string, source:string, type:string, message:string, data:an
 function nextHourlyLocal(){ const d=new Date(); d.setHours(d.getHours()+1,0,0,0); return d.toISOString(); }
 function lock(){ try { mkdirSync(LOCK); writeFileSync(join(LOCK,"pid"), String(process.pid)); return true; } catch { return false; } }
 function unlock(){ try { rmSync(LOCK,{recursive:true,force:true}); } catch {} }
-function createRunId(){ const d=new Date(); const pad=(n:number)=>String(n).padStart(2,"0"); return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
+function createRunId(){ const d=new Date(); const pad=(n:number)=>String(n).padStart(2,"0"); const base=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; let id=base,index=2; while(existsSync(join(RUNS,id))) id=`${base}-${index++}`; return id; }
 
 function canonical(value:any): any {
   if(Array.isArray(value)) return value.map(canonical);
@@ -73,6 +74,76 @@ function canonical(value:any): any {
   return value;
 }
 function digest(value:any): string { return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex"); }
+function canonicalJson(value:any): string {
+  if(value===null||typeof value==="boolean"||typeof value==="string") return JSON.stringify(value);
+  if(typeof value==="number"){ if(!Number.isFinite(value)) throw new Error("project launch contains a non-finite number"); return JSON.stringify(value); }
+  if(Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if(value&&typeof value==="object") return `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  throw new Error("project launch contains an unsupported JSON value");
+}
+function canonicalDigest(domain:string,value:any): string { return `sha256:${createHash("sha256").update(`${domain}\n`).update(canonicalJson(value)).digest("hex")}`; }
+const PROJECT_ID=/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PROJECT_DIGEST=/^sha256:[a-f0-9]{64}$/;
+const PROJECT_COMMIT=/^[a-f0-9]{40,64}$/;
+const PROJECT_PROHIBITED=new Set(["command","commands","argv","shell","script","executable","env","environment","validationcommands"]);
+const PROJECT_LIMITS:any={maxIterations:[1,10],maxVariantsPerIteration:[1,5],maxParallelVariants:[1,5],maxAcceptedFeatures:[1,4],maxVisualMotifChanges:[0,1],maxNewSections:[0,1],stopAfterNoImprovement:[1,3]};
+function projectObject(value:any,name:string): any { if(!value||typeof value!=="object"||Array.isArray(value)) throw new Error(`${name} must be an object`); return value; }
+function projectId(value:any,name:string): string { if(typeof value!=="string"||!PROJECT_ID.test(value)) throw new Error(`${name} is not a bounded ASCII identifier`); return value; }
+function projectExactKeys(value:any,allowed:string[],name:string){ const unknown=Object.keys(projectObject(value,name)).filter(key=>!allowed.includes(key)); if(unknown.length) throw new Error(`${name} contains unknown fields: ${unknown.slice(0,10).join(", ")}`); }
+function rejectProjectExecutableShape(value:any,path="project plan",depth=0){
+  if(depth>12) throw new Error(`${path} exceeds maximum nesting depth`);
+  if(Array.isArray(value)){ if(value.length>250) throw new Error(`${path} has too many items`); value.forEach((item,i)=>rejectProjectExecutableShape(item,`${path}[${i}]`,depth+1)); return; }
+  if(value&&typeof value==="object") for(const [key,item] of Object.entries(value)){ if(PROJECT_PROHIBITED.has(key.toLowerCase().replace(/[^a-z]/g,""))) throw new Error(`${path}.${key} is a prohibited executable field`); rejectProjectExecutableShape(item,`${path}.${key}`,depth+1); }
+}
+function readExactProjectJson(path:string,name:string): any { if(!existsSync(path)) throw new Error(`${name} record does not exist`); try { return JSON.parse(readFileSync(path,"utf8")); } catch { throw new Error(`${name} record is malformed JSON`); } }
+function validateApprovedProjectContent(content:any,pipelineType:string){
+  projectExactKeys(content,["pipelineType","title","problem","intendedUsers","objective","boundedScope","requirements","nonGoals","constraints","risks","repository","acceptanceGates","validationPolicy","milestones","limits","lineage"],"project plan content");
+  rejectProjectExecutableShape(content);
+  if(content.pipelineType!==pipelineType||!["classic","managed"].includes(content.pipelineType)) throw new Error("project plan pipeline binding is invalid");
+  for(const key of ["title","problem","intendedUsers","objective","boundedScope"]) if(typeof content[key]!=="string"||!content[key].trim()) throw new Error(`project plan content.${key} is required`);
+  for(const key of ["requirements","nonGoals","constraints","risks","milestones"]) if(!Array.isArray(content[key])||!content[key].length||content[key].some((x:any)=>typeof x!=="string"||!x.trim())) throw new Error(`project plan content.${key} must contain non-empty strings`);
+  const policy=projectObject(content.validationPolicy,"project plan validationPolicy"); projectExactKeys(policy,["id","expectations","clientCommandsAllowed"],"project plan validationPolicy");
+  if(policy.id!=="apb.runner-selected.v1"||policy.clientCommandsAllowed!==false||!Array.isArray(policy.expectations)||!policy.expectations.length) throw new Error("project plan must prohibit client commands and use runner-selected validation");
+  const gates=content.acceptanceGates; if(!Array.isArray(gates)||gates.length>50) throw new Error("project plan acceptanceGates is malformed"); const gateIds=new Set<string>();
+  for(const gate of gates){ projectExactKeys(gate,["id","description","severity","required","requiredEvidence"],"project plan acceptance gate"); const id=projectId(gate.id,"acceptance gate id"); if(gateIds.has(id)) throw new Error(`duplicate acceptance gate ${id}`); gateIds.add(id); if(typeof gate.description!=="string"||!gate.description.trim()||!["must","should"].includes(gate.severity)||typeof gate.required!=="boolean"||!Array.isArray(gate.requiredEvidence)) throw new Error(`acceptance gate ${id} is malformed`); for(const path of gate.requiredEvidence){ if(typeof path!=="string"||!path||isAbsolute(path)||path.includes("\\")||path.split("/").some((x:string)=>!x||x==="."||x==="..")||/^[A-Za-z][A-Za-z0-9+.-]*:/.test(path)) throw new Error(`acceptance gate ${id} contains unsafe evidence`); } if(gate.required&&!gate.requiredEvidence.length) throw new Error(`acceptance gate ${id} requires evidence`); }
+  const limits=projectObject(content.limits,"project plan limits"); projectExactKeys(limits,Object.keys(PROJECT_LIMITS),"project plan limits"); for(const [key,bounds] of Object.entries(PROJECT_LIMITS) as any){ if(!Number.isInteger(limits[key])||limits[key]<bounds[0]||limits[key]>bounds[1]) throw new Error(`project plan limit ${key} is out of bounds`); } if(limits.maxParallelVariants>limits.maxVariantsPerIteration) throw new Error("project plan parallel variant limit exceeds variant limit");
+  const lineage=projectObject(content.lineage,"project plan lineage"); projectExactKeys(lineage,["mode","sourcePlanId","sourceRevision","sourceRunId","sourceIterationId"],"project plan lineage"); if(!["new","clone","fork"].includes(lineage.mode)) throw new Error("project plan lineage mode is invalid");
+  const repository=projectObject(content.repository,"project plan repository"); projectExactKeys(repository,["path","baseRef","baseCommit"],"project plan repository");
+  if(pipelineType==="classic"&&[repository.path,repository.baseRef,repository.baseCommit].some((x:any)=>x!==null)) throw new Error("classic project plan must not contain repository inputs");
+  if(pipelineType==="managed"&&(!isAbsolute(repository.path)||typeof repository.baseRef!=="string"||!repository.baseRef.trim()||!PROJECT_COMMIT.test(repository.baseCommit))) throw new Error("managed project plan repository binding is malformed");
+}
+type ProjectLaunchBinding={pointer:any;plan:any;approval:any;launch:any;ledger:any;content:any;identity:any};
+function loadProjectLaunch(pointer:any): ProjectLaunchBinding {
+  projectExactKeys(pointer,["schemaVersion","planId","revision","planDigest","approvalId","launchId","requestId","pipelineType","status"],"project launch pointer");
+  if(pointer.schemaVersion!=="apb.project-launch-pointer.v1"||pointer.status!=="pending") throw new Error("project launch pointer is not pending");
+  const planId=projectId(pointer.planId,"pointer planId"), approvalId=projectId(pointer.approvalId,"pointer approvalId"), launchId=projectId(pointer.launchId,"pointer launchId"), requestId=projectId(pointer.requestId,"pointer requestId");
+  if(!Number.isInteger(pointer.revision)||pointer.revision<1||!PROJECT_DIGEST.test(pointer.planDigest)||!["classic","managed"].includes(pointer.pipelineType)) throw new Error("project launch pointer identity is malformed");
+  const planRoot=join(PROJECT_PLANS,planId); const plan=readExactProjectJson(join(planRoot,"revisions",`${String(pointer.revision).padStart(6,"0")}.json`),"project plan revision"); const approval=readExactProjectJson(join(planRoot,"decisions",`${approvalId}.json`),"project plan approval"); const launch=readExactProjectJson(join(planRoot,"launches",`${launchId}.json`),"project launch"); const ledger=readExactProjectJson(join(planRoot,"ledger.json"),"project plan ledger");
+  projectExactKeys(plan,["schemaVersion","planId","revision","parentRevision","createdAt","createdBy","content","contentDigest"],"project plan revision"); projectExactKeys(approval,["schemaVersion","decisionId","decision","planId","revision","planDigest","approver","approvedPipelineType","notes","decidedAt","recordDigest"],"project plan approval"); projectExactKeys(launch,["schemaVersion","launchId","idempotencyKey","planId","revision","planDigest","approvalId","approvalDigest","pipelineType","status","requestedAt","requestedBy","requestId","runId","iterationId"],"project launch");
+  const planDigest=canonicalDigest("apb.project-plan.v1",{schemaVersion:plan.schemaVersion,planId:plan.planId,revision:plan.revision,parentRevision:plan.parentRevision,content:plan.content}); const approvalBody={...approval}; delete approvalBody.recordDigest; const approvalDigest=canonicalDigest("apb.project-plan-decision.v1",approvalBody);
+  if(plan.schemaVersion!=="apb.project-plan.v1"||plan.contentDigest!==planDigest||planDigest!==pointer.planDigest) throw new Error("project plan digest binding is invalid");
+  if(approval.schemaVersion!=="apb.project-plan-decision.v1"||approval.recordDigest!==approvalDigest||approval.decision!=="approved") throw new Error("project plan approval digest or decision is invalid");
+  if(plan.planId!==planId||plan.revision!==pointer.revision||approval.planId!==planId||approval.revision!==pointer.revision||approval.planDigest!==planDigest||approval.decisionId!==approvalId||approval.approvedPipelineType!==pointer.pipelineType) throw new Error("project plan approval does not bind the exact revision");
+  if(launch.schemaVersion!=="apb.project-launch.v1"||launch.launchId!==launchId||launch.planId!==planId||launch.revision!==pointer.revision||launch.planDigest!==planDigest||launch.approvalId!==approvalId||launch.approvalDigest!==approvalDigest||launch.pipelineType!==pointer.pipelineType||launch.requestId!==requestId||launch.status!=="requested"||launch.runId!==null||launch.iterationId!==null) throw new Error("project launch record does not bind the pointer exactly or was already claimed");
+  if(ledger.schemaVersion!=="apb.project-plan-ledger.v1"||ledger.planId!==planId||ledger.currentRevision!==pointer.revision||ledger.currentDigest!==planDigest||ledger.effectiveApprovalId!==approvalId||ledger.activeLaunchId!==launchId||ledger.state!=="launch-requested"||ledger.validation?.revision!==pointer.revision||ledger.validation?.digest!==planDigest||ledger.validation?.valid!==true) throw new Error("project plan ledger is stale or unapproved");
+  validateApprovedProjectContent(plan.content,pointer.pipelineType);
+  const identity={planId,revision:pointer.revision,planDigest,approvalId,approvalDigest,launchId,requestId,pipelineType:pointer.pipelineType}; return {pointer,plan,approval,launch,ledger,content:plan.content,identity};
+}
+function writeProjectPlanIndex(ledger:any,content:any){ const path=join(PROJECT_PLANS,"index.json"), index=readJson(path,{schemaVersion:"apb.project-plan-index.v1",plans:{}}); index.plans=index.plans||{}; index.plans[ledger.planId]={...(index.plans[ledger.planId]||{}),planId:ledger.planId,title:content.title,pipelineType:content.pipelineType,state:ledger.state,version:ledger.version,currentRevision:ledger.currentRevision,currentDigest:ledger.currentDigest,activeLaunchId:ledger.activeLaunchId,updatedAt:ledger.updatedAt}; index.updatedAt=now(); writeFileSync(path,JSON.stringify(index,null,2)); }
+function updateProjectLaunch(binding:ProjectLaunchBinding,status:"running"|"paused"|"blocked"|"completed",runId:string,iterationId:string|null=null,extra:any={}){
+  const ts=now(), {identity}=binding; const launchPath=join(PROJECT_PLANS,identity.planId,"launches",`${identity.launchId}.json`), ledgerPath=join(PROJECT_PLANS,identity.planId,"ledger.json");
+  const launch=readExactProjectJson(launchPath,"project launch"); if(launch.launchId!==identity.launchId||launch.requestId!==identity.requestId||launch.planDigest!==identity.planDigest||launch.approvalId!==identity.approvalId) throw new Error("project launch identity changed during execution");
+  if(status==="running"&&!(launch.status==="requested"&&launch.runId===null)) throw new Error("project launch was already claimed");
+  if(status!=="running"&&launch.runId!==runId) throw new Error("project launch run identity changed during execution");
+  Object.assign(launch,{status,runId,iterationId:iterationId||launch.iterationId||null,updatedAt:ts,...extra}); writeFileSync(launchPath,JSON.stringify(launch,null,2));
+  const ledger=readExactProjectJson(ledgerPath,"project plan ledger"); if(ledger.planId!==identity.planId||ledger.currentRevision!==identity.revision||ledger.currentDigest!==identity.planDigest||ledger.activeLaunchId!==identity.launchId) throw new Error("project plan ledger identity changed during execution"); Object.assign(ledger,{version:Number(ledger.version||0)+1,state:status,activeLaunchId:status==="running"?identity.launchId:null,updatedAt:ts}); writeFileSync(ledgerPath,JSON.stringify(ledger,null,2)); writeProjectPlanIndex(ledger,binding.content);
+  const control=readControl(); if(control.projectLaunchRequest?.launchId===identity.launchId){ const current=control.projectLaunchRequest; if(current.requestId!==identity.requestId||current.planDigest!==identity.planDigest) throw new Error("project launch control pointer identity changed during execution"); control.projectLaunchRequest={...current,status,runId,iterationId:iterationId||current.iterationId||null,updatedAt:ts,...extra}; writeControl(control); }
+}
+function snapshotProjectLaunch(runRoot:string,binding:ProjectLaunchBinding){ const dir=join(runRoot,"artifacts","project-plan"); mkdirSync(dir,{recursive:true}); for(const [name,value] of [["approved-project-plan.json",binding.plan],["project-plan-approval.json",binding.approval],["project-launch.json",binding.launch]] as any){ writeFileSync(join(runRoot,name),JSON.stringify(value,null,2)); writeFileSync(join(dir,name),JSON.stringify(value,null,2)); } }
+function projectManagedRequest(binding:ProjectLaunchBinding): any { const content=binding.content, lineage=content.lineage; return {id:binding.identity.requestId,type:"project-plan",status:"pending",repoPath:content.repository.path,baseRef:content.repository.baseRef,expectedBaseCommit:content.repository.baseCommit,objective:content.objective,changeText:content.boundedScope,limits:{...content.limits},snapshottedAcceptanceGates:content.acceptanceGates.map((gate:any)=>({...gate,requiredEvidence:[...gate.requiredEvidence]})),acceptanceGateIds:content.acceptanceGates.map((gate:any)=>gate.id),allowDirty:false,generation:1,targetGenerations:content.limits.maxIterations,sourceRunId:lineage.sourceRunId,sourceIterationId:lineage.sourceIterationId,projectLaunch:{...binding.identity,lineage:{...lineage}}}; }
+function projectClassicContext(binding:ProjectLaunchBinding): string { return `\n\n# Hard approved project planning and execution context\n\nThis is an exact approved project-plan launch. Do not select another project and do not infer or replace any planning input from dashboard control, queue, gates, prior runs, or mutable state. Approval authorizes launch only and is not completion evidence. Execute the existing classic SPEC, DEVPLAN, build, final-audit, and gate-report workflow. The existing explicit completion evidence contract remains mandatory. Never merge, push, deploy, publish, or mutate an existing normal source branch.\n\nApproved identity:\n${JSON.stringify(binding.identity,null,2)}\n\nExact approved content:\n${JSON.stringify(binding.content,null,2)}\n`; }
+function bindingFromRun(runRoot:string): ProjectLaunchBinding|null { const plan=readJson(join(runRoot,"approved-project-plan.json"),null), approval=readJson(join(runRoot,"project-plan-approval.json"),null), launch=readJson(join(runRoot,"project-launch.json"),null); if(!plan||!approval||!launch) return null; const pointer={schemaVersion:"apb.project-launch-pointer.v1",planId:launch.planId,revision:launch.revision,planDigest:launch.planDigest,approvalId:launch.approvalId,launchId:launch.launchId,requestId:launch.requestId,pipelineType:launch.pipelineType,status:"pending"}; return {pointer,plan,approval,launch,ledger:{},content:plan.content,identity:{planId:launch.planId,revision:launch.revision,planDigest:launch.planDigest,approvalId:launch.approvalId,approvalDigest:launch.approvalDigest,launchId:launch.launchId,requestId:launch.requestId,pipelineType:launch.pipelineType}}; }
+function reconcileProjectRun(runId:string,runRoot:string,status:"paused"|"blocked"|"completed",iterationId:string|null=null,extra:any={}){ const binding=bindingFromRun(runRoot); if(binding) updateProjectLaunch(binding,status,runId,iterationId,extra); }
 function pinnedItem(control:any, queue:any): any | null { return queue.items?.find((x:any)=>x.id===control.pinnedQueueItemId)||queue.items?.find((x:any)=>x.status==="pinned")||null; }
 function stableBlockers(state:any): any[] {
   return (Array.isArray(state?.blockers)?state.blockers:[]).map((b:any)=>({id:b?.id||null,code:b?.code||null,status:b?.status||null,severity:b?.severity||null,summary:b?.summary||null}));
@@ -183,6 +254,7 @@ function validateLaunchRequest(req:any) {
   if(missing.length) throw new Error(`managed launch request is incomplete: ${missing.join(", ")}`);
 }
 function snapshotAcceptanceGates(req:any): any[] {
+  if(Array.isArray(req.snapshottedAcceptanceGates)) return req.snapshottedAcceptanceGates.map((g:any)=>({id:g.id,description:g.description,severity:g.severity,required:g.required,requiredEvidence:[...g.requiredEvidence]}));
   const configured=readGates().gates||[];
   const wanted=new Set(Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:[]);
   const selected=configured.filter((g:any)=>wanted.size===0||wanted.has(g.id));
@@ -210,6 +282,7 @@ function writeIterationScaffold(runId:string, runRoot:string, req:any) {
     acceptanceGates, dirtyRepoPolicy:{allowDirty:req.allowDirty===true,policy:req.allowDirty===true?"explicitly-allowed":"require-clean"}, limits:req.limits,
     checkpoints:["preflight","after-variants","after-evaluation","before-mashup","after-validation"]
   };
+  if(req.projectLaunch) Object.assign(lifecycle,{projectLaunch:{...req.projectLaunch},planId:req.projectLaunch.planId,revision:req.projectLaunch.revision,planDigest:req.projectLaunch.planDigest,approvalId:req.projectLaunch.approvalId,launchId:req.projectLaunch.launchId});
   writeLifecycle(runRoot,lifecycle);
   const iteration={
     schemaVersion:"apb.iteration.v1",
@@ -239,6 +312,7 @@ function writeIterationScaffold(runId:string, runRoot:string, req:any) {
     status:"orchestrator-running",
     createdAt:now()
   };
+  if(req.projectLaunch) Object.assign(iteration,{projectLaunch:{...req.projectLaunch},planId:req.projectLaunch.planId,revision:req.projectLaunch.revision,planDigest:req.projectLaunch.planDigest,approvalId:req.projectLaunch.approvalId,launchId:req.projectLaunch.launchId});
   writeFileSync(join(runRoot,"iteration-state.json"), JSON.stringify(iteration,null,2));
   writeFileSync(join(art,"iterations","iteration.json"), JSON.stringify(iteration,null,2));
   writeFileSync(join(art,"source-evidence.json"), JSON.stringify({schemaVersion:"apb.source-evidence.v1",runId,sourceRunId:req.sourceRunId||null,source,createdAt:now()},null,2));
@@ -318,7 +392,7 @@ function reconcileIteration(req:any, runId:string, iterationId:string, status:st
   const row={...(old||{}),id:iterationId,iterationId,requestId:req.id,runId,status,mode:req.type,objective:req.objective,steeringText:req.changeText,repoPath:req.repoPath,
     acceptanceGateIds:Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:(old?.acceptanceGateIds||[]),
     sourceRunId:req.sourceRunId||old?.sourceRunId||null,parentIterationId:req.type!=="fork"?(req.sourceIterationId||old?.parentIterationId||null):(old?.parentIterationId||null),
-    forkedFromIterationId:req.type==="fork"?(req.sourceIterationId||old?.forkedFromIterationId||null):(old?.forkedFromIterationId||null),updatedAt:now(),...extra};
+    forkedFromIterationId:req.type==="fork"?(req.sourceIterationId||old?.forkedFromIterationId||null):(old?.forkedFromIterationId||null),...(req.projectLaunch?{projectLaunch:{...req.projectLaunch},planId:req.projectLaunch.planId,revision:req.projectLaunch.revision,planDigest:req.projectLaunch.planDigest,approvalId:req.projectLaunch.approvalId,launchId:req.projectLaunch.launchId}:{}),updatedAt:now(),...extra};
   if(old) Object.assign(old,row); else doc.items.unshift(row); doc.updatedAt=now(); writeFileSync(ITERATIONS,JSON.stringify(doc,null,2));
 }
 function preservedPaths(runRoot:string){ return [join(runRoot,"lifecycle-contract.json"),join(runRoot,"iteration-state.json"),join(runRoot,"artifacts"),join(runRoot,"logs"),join(runRoot,"worktrees")].filter(existsSync); }
@@ -332,7 +406,7 @@ function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:s
   writeState(st); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:st.block});
   if(!existsSync(join(runRoot,"lifecycle-contract.json"))){
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"blocked",blockedAt:now(),block:st.block}; control.requestedRunNow=false; writeControl(control); }
-    event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction); return;
+    reconcileProjectRun(runId,runRoot,"blocked",null,{blockedAt:now(),reason}); event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction); return;
   }
   patchLifecycle(runRoot,{state:"blocked",terminalAt:now(),blocker:reason});
   const iter=readJson(join(runRoot,"iteration-state.json"),null); if(iter){ Object.assign(iter,{status:"blocked",blockedAt:now(),blocker:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2)); }
@@ -343,6 +417,7 @@ function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:s
   control.requestedRunNow=false; writeControl(control);
   const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}), lineageReq=claimed||{id:lifecycle.requestId||iter?.requestId||`request-${runId}`,type:iter?.mode||"managed",objective:iter?.objective||"Managed iteration",changeText:iter?.steeringText||"",repoPath:iter?.repoPath||null,sourceRunId:iter?.sourceRunId||null,sourceIterationId:iter?.parentIterationId||null};
   reconcileIteration(lineageReq,runId,iter?.id||`iter-${runId}`,"blocked",{blocker:reason});
+  reconcileProjectRun(runId,runRoot,"blocked",iter?.id||null,{blockedAt:now(),reason});
   event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction);
 }
 function pauseManagedRun(runId:string, runRoot:string, req:any, checkpoint:string, kind:"paused"|"stopped", reason:string){
@@ -351,7 +426,7 @@ function pauseManagedRun(runId:string, runRoot:string, req:any, checkpoint:strin
   const iter=readJson(join(runRoot,"iteration-state.json"),{}); Object.assign(iter,{status:kind,pausedAt:now(),checkpoint,pauseReason:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2));
   writeHandoff(runId,runRoot,kind,{iterationId:iter.id,checkpoint,[kind==="paused"?"pauseReason":"blocker"]:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:"Clear the pause/stop control, inspect preserved artifacts and worktrees, then issue a new continue-from-iteration request from this run."});
   const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId) control.nextRunRequest={...control.nextRunRequest,status:kind,resultRunId:runId,resultIterationId:iter.id,[`${kind}At`]:now(),checkpoint,reason}; control.requestedRunNow=false; writeControl(control); reconcileIteration(req,runId,iter.id||`iter-${runId}`,kind,{checkpoint,reason});
-  event(kind==="paused"?"info":"warn","system",kind,st.lastAction,{runId,checkpoint,reason}); return {status:kind,runId,iterationId:iter.id};
+  reconcileProjectRun(runId,runRoot,"paused",iter.id||null,{pausedAt:now(),checkpoint,reason,disposition:kind}); event(kind==="paused"?"info":"warn","system",kind,st.lastAction,{runId,checkpoint,reason}); return {status:kind,runId,iterationId:iter.id};
 }
 function checkpointDisposition(runId:string, runRoot:string, req:any, checkpoint:string): any | null {
   const control=readControl();
@@ -365,12 +440,13 @@ async function validateIterationRepo(req:any){
   if(!isAbsolute(repoPath)) throw new Error(`repoPath must be absolute: ${repoPath}`);
   if(!existsSync(repoPath) || !statSync(repoPath).isDirectory()) throw new Error(`repoPath does not exist or is not a directory: ${repoPath}`);
   const top=await gitCmd(repoPath,["rev-parse","--show-toplevel"]); if(top.exitCode!==0) throw new Error(`repoPath is not a git repo: ${top.stderr||top.stdout}`);
-  const repoRoot=top.stdout.trim();
+  const repoRoot=realpathSync(top.stdout.trim()); if(req.expectedBaseCommit&&realpathSync(repoPath)!==repoRoot) throw new Error("approved repository path no longer identifies the Git repository root");
   const baseRef=req.baseRef||"HEAD"; const base=await gitCmd(repoRoot,["rev-parse","--verify",`${baseRef}^{commit}`]); if(base.exitCode!==0) throw new Error(`baseRef is not a commit: ${baseRef}: ${base.stderr||base.stdout}`);
+  const baseCommit=base.stdout.trim().toLowerCase(); if(req.expectedBaseCommit&&baseCommit!==req.expectedBaseCommit) throw new Error(`approved base ref no longer resolves to approved baseCommit ${req.expectedBaseCommit}`);
   const status=await gitCmd(repoRoot,["status","--porcelain=v1"]); if(status.exitCode!==0) throw new Error(`git status failed: ${status.stderr||status.stdout}`);
   if(status.stdout.trim() && !req.allowDirty) throw new Error(`target repo is dirty; clean it or set allowDirty explicitly. Dirty summary:\n${status.stdout.trim().slice(0,2000)}`);
   const sourceHead=await gitCmd(repoRoot,["rev-parse","HEAD"]); if(sourceHead.exitCode!==0) throw new Error(`source HEAD could not be resolved: ${sourceHead.stderr||sourceHead.stdout}`);
-  return { repoRoot, baseRef, baseCommit:base.stdout.trim(), sourceHead:sourceHead.stdout.trim(), sourceStatus:status.stdout };
+  return { repoRoot, baseRef, baseCommit, sourceHead:sourceHead.stdout.trim(), sourceStatus:status.stdout };
 }
 async function createWorktree(repoRoot:string, path:string, branch:string, baseCommit:string){
   if(existsSync(path)) throw new Error(`worktree path already exists: ${path}`);
@@ -533,6 +609,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const st=readState(); st.status="completed"; st.phase="completed"; st.completedAt=now(); st.repoPath=repo.repoRoot; st.branch=mashup.branch; st.commit=mashup.commit; st.qualityGate={status:"passed",gateReportPath:`runs/${runId}/artifacts/gate-report.json`,commands:mashup.validation}; st.finalValidation=gateReport; st.lastAction=`Runner-managed iteration completed: ${winner.id} -> ${mashup.branch}`; for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()}; writeState(st);
     writeRunJson(runRoot,{runId,status:"completed",phase:"completed",completedAt:st.completedAt,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,qualityGate:st.qualityGate,finalValidation:gateReport});
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"completed",completedAt:now(),resultRunId:runId,resultIterationId:iterationScaffold.id,resultBranch:mashup.branch,resultCommit:mashup.commit}; control.requestedRunNow=false; writeControl(control); } reconcileIteration(req,runId,iterationScaffold.id,"completed",{completedAt:now(),commit:mashup.commit,branch:mashup.branch});
+    reconcileProjectRun(runId,runRoot,"completed",iterationScaffold.id,{completedAt:now(),resultBranch:mashup.branch,resultCommit:mashup.commit});
     event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return {status:"completed",runId,iterationId:iterationScaffold.id,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,winnerVariantId:winner.id,objective:req.objective};
   }catch(err:any){ const reason=err?.message||String(err); writeFileSync(join(runRoot,"artifacts","failure.json"),JSON.stringify({schemaVersion:"apb.managed-failure.v1",runId,failedAt:now(),reason,preservedPaths:preservedPaths(runRoot)},null,2)); blockRun(runId,runRoot,reason,"Inspect the handoff, run artifacts/logs, and preserved worktrees; then issue an explicit continue-from-iteration request."); return {status:"blocked",runId}; }
 }
@@ -548,8 +625,9 @@ async function main(){
     s.lastRunTime = now();
     let control=readControl();
     let queue=readQueue();
+    let projectBinding:ProjectLaunchBinding|null=null;
     let iterationRequest=resolveIterationRequest(control,s,queue);
-    let explicitWake=!!control.requestedRunNow || control.nextRunRequest?.status==="pending";
+    let explicitWake=!!control.requestedRunNow || control.nextRunRequest?.status==="pending" || control.projectLaunchRequest?.status==="pending";
     if (control.runAdmission === "paused" || control.pause?.requested) {
       s.status = s.status || "idle"; s.phase = s.phase || s.status; s.hold = { reason: control.pause?.reason || "Dashboard hold/pause requested", since: control.pause?.requestedAt || now(), owner:"dashboard" };
       s.lastAction = "Hourly runner skipped launch because dashboard steering has paused/held new runs.";
@@ -558,6 +636,10 @@ async function main(){
     if (control.stop?.requested) {
       s.status="on-hold"; s.phase="on-hold"; s.hold={reason:control.stop.reason||"Dashboard stop requested",since:control.stop.requestedAt||now(),owner:"dashboard"};
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
+    }
+    if(control.projectLaunchRequest?.status==="pending"){
+      try { projectBinding=loadProjectLaunch(control.projectLaunchRequest); if(projectBinding.identity.pipelineType==="managed") iterationRequest=projectManagedRequest(projectBinding); else iterationRequest=null; }
+      catch(err:any){ const reason=err?.message||String(err); control.projectLaunchRequest={...control.projectLaunchRequest,status:"rejected",rejectedAt:now(),rejectionReason:reason}; writeControl(control); s.status="blocked"; s.phase="blocked"; s.block={reason:`Project launch rejected before runner work: ${reason}`,since:now(),owner:"midnight-runner",suggestedAction:"Inspect the immutable project plan, approval, launch, ledger, and control pointer; create a newly approved launch after correcting the records."}; s.lastAction="Runner rejected a stale, malformed, tampered, or unapproved project launch pointer before Hermes work."; writeState(s); event("error","system","project-launch-rejected",s.lastAction,{planId:control.projectLaunchRequest?.planId||null,launchId:control.projectLaunchRequest?.launchId||null,reason}); log(s.lastAction); return; }
     }
     if (HELD.has(s.status) && !explicitWake && pinnedItem(control,queue)) {
       deferHeldPinnedItem(s.currentRunId||"unknown",s);
@@ -579,37 +661,39 @@ async function main(){
     }
     const runId=createRunId();
     const runRoot=join(RUNS,runId); mkdirSync(join(runRoot,"logs"),{recursive:true}); mkdirSync(join(runRoot,"artifacts"),{recursive:true});
-    const run={ id:runId, status:"inventory-scanning", startedAt:now(), timezone:TZ, selectedProject:null };
+    const projectIdentity=projectBinding?{...projectBinding.identity,...(projectBinding.identity.pipelineType==="managed"?{iterationId:`iter-${runId}`}:{})}:{};
+    const run={ id:runId, runId, status:"inventory-scanning", startedAt:now(), timezone:TZ, selectedProject:null, ...projectIdentity };
     writeFileSync(join(runRoot,"run.json"), JSON.stringify(run,null,2));
+    if(projectBinding){ const iterationId=projectBinding.identity.pipelineType==="managed"?`iter-${runId}`:null; updateProjectLaunch(projectBinding,"running",runId,iterationId,{claimedAt:now()}); snapshotProjectLaunch(runRoot,projectBinding); }
     let iterationScaffold:any = null;
     if (iterationRequest) {
       try { iterationScaffold = writeIterationScaffold(runId, runRoot, iterationRequest); }
       catch(err:any){
         const reason=err?.message||String(err); writeLifecycle(runRoot,{schemaVersion:"apb.managed-lifecycle.v1",runId,iterationId:`iter-${runId}`,requestId:iterationRequest?.id||null,state:"rejected",createdAt:now(),updatedAt:now(),terminalAt:now(),rejectionReason:reason});
         s={...s,currentRunId:runId,status:"blocked",phase:"blocked",startedAt:run.startedAt,agents:{}}; writeState(s);
-        if(control.nextRunRequest?.status==="pending"){ control.nextRunRequest={...control.nextRunRequest,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
+        if(!projectBinding&&control.nextRunRequest?.status==="pending"){ control.nextRunRequest={...control.nextRunRequest,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
         blockRun(runId,runRoot,reason,"Correct the managed launch request and submit a new explicit iteration request."); return;
       }
     }
-    if (control.nextRunRequest?.status === "pending") { control.nextRunRequest = { ...control.nextRunRequest, status:"running", claimedByRunId:runId, claimedAt:now() }; control.requestedRunNow=false; writeControl(control); }
-    else if(control.requestedRunNow){ control.requestedRunNow=false; if(control.progressHandoff?.status==="pending") control.progressHandoff={...control.progressHandoff,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
-    s = { ...s, schemaVersion:"apb.state.v1", currentRunId:runId, status:"inventory-scanning", phase:"inventory-scanning", startedAt:run.startedAt, completedAt:null, selectedProject:null, block:null, hold:null, currentTask:iterationRequest?"Bounded iteration workflow starting through Hermes CLI":"Scheduled workflow starting through Hermes CLI", task:iterationRequest?iterationRequest.objective:"Scheduled workflow starting through Hermes CLI", lastAction:iterationRequest?"Hourly runner created a bounded iteration run and is invoking Hermes workflow.":"Hourly runner created a new run and is invoking Hermes workflow.", iteration:iterationScaffold, agents:{orchestrator:{id:"orchestrator",label:"Main Orchestrator",role:"scheduled workflow orchestrator",status:"running",currentPhase:"inventory-scanning",currentTask:"Scan local build inventory and select candidate",lastMessage:"Hermes CLI process launched by hourly runner.",startedAt:now(),updatedAt:now(),logPath:join(runRoot,"logs","hermes.stdout.log")}} };
+    if (!projectBinding&&control.nextRunRequest?.status === "pending") { control.nextRunRequest = { ...control.nextRunRequest, status:"running", claimedByRunId:runId, claimedAt:now() }; control.requestedRunNow=false; writeControl(control); }
+    else if(!projectBinding&&control.requestedRunNow){ control.requestedRunNow=false; if(control.progressHandoff?.status==="pending") control.progressHandoff={...control.progressHandoff,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
+    s = { ...s, schemaVersion:"apb.state.v1", currentRunId:runId, status:"inventory-scanning", phase:"inventory-scanning", startedAt:run.startedAt, completedAt:null, selectedProject:null, block:null, hold:null, ...(projectBinding?{projectLaunch:{...projectIdentity}}:{}), currentTask:iterationRequest?"Bounded iteration workflow starting through Hermes CLI":"Scheduled workflow starting through Hermes CLI", task:iterationRequest?iterationRequest.objective:"Scheduled workflow starting through Hermes CLI", lastAction:iterationRequest?"Hourly runner created a bounded iteration run and is invoking Hermes workflow.":"Hourly runner created a new run and is invoking Hermes workflow.", iteration:iterationScaffold, agents:{orchestrator:{id:"orchestrator",label:"Main Orchestrator",role:"scheduled workflow orchestrator",status:"running",currentPhase:"inventory-scanning",currentTask:"Scan local build inventory and select candidate",lastMessage:"Hermes CLI process launched by hourly runner.",startedAt:now(),updatedAt:now(),logPath:join(runRoot,"logs","hermes.stdout.log")}} };
     writeState(s); event("info","system","state-change",s.lastAction,{runId, iteration: iterationScaffold?.id}); if (iterationScaffold) { const rr=readJson(join(runRoot,"run.json"),{}); Object.assign(rr,{iterationId:iterationScaffold.id,iterationKind:iterationRequest.type,generation:iterationRequest.generation||null,targetGenerations:iterationRequest.targetGenerations||null,parentIterationId:iterationRequest.sourceIterationId||null,sourceRunId:iterationRequest.sourceRunId||null,repoPath:iterationRequest.repoPath||rr.repoPath||null,objective:iterationRequest.objective}); writeFileSync(join(runRoot,"run.json"),JSON.stringify(rr,null,2)); } log(`starting run ${runId}`);
     if(iterationScaffold) reconcileIteration(iterationRequest,runId,iterationScaffold.id,"running",{startedAt:run.startedAt});
     if (!existsSync(HERMES) || !existsSync(PROMPT) || !existsSync(TELEMETRY)) {
       if(iterationRequest){ blockRun(runId,runRoot,"Hermes binary, runner prompt, or telemetry helper missing",`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`); return; }
-      s.status="blocked"; s.block={reason:"Hermes binary, runner prompt, or telemetry helper missing",since:now(),owner:"midnight-runner",suggestedAction:`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`}; s.lastAction="Scheduled workflow blocked before launch."; writeState(s); event("error","system","block",s.lastAction,{...s.block,runId,agentId:"orchestrator"}); return;
+      s.status="blocked"; s.block={reason:"Hermes binary, runner prompt, or telemetry helper missing",since:now(),owner:"midnight-runner",suggestedAction:`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`}; s.lastAction="Scheduled workflow blocked before launch."; writeState(s); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:s.block}); reconcileProjectRun(runId,runRoot,"blocked",null,{blockedAt:now(),reason:s.block.reason}); event("error","system","block",s.lastAction,{...s.block,runId,agentId:"orchestrator"}); return;
     }
     if (iterationRequest) {
       const result = await runManagedIterationLoop(runId, runRoot, iterationRequest, iterationScaffold);
       if (result?.status === "completed") {
         log(`completed runner-managed iteration ${runId}`);
-        if (scheduleNextAutoIteration(runId, result)) scheduleContinuationRunner();
+        if (!projectBinding&&scheduleNextAutoIteration(runId, result)) scheduleContinuationRunner();
       }
       return;
     }
     const budgetContract=`\n\n# Hard efficiency contract\n- Parent budget: at most ${clampInt(process.env.APB_CLASSIC_MAX_TURNS,24,8,40)} model turns.\n- The mandatory spec, devplan, audit, build, and test roles in the workflow contract take precedence over any generic child-session count; keep every role focused, avoid duplicate rediscovery, and cap concurrency at 2.\n- Use only the review rounds required by the base workflow, plus one bounded correction round only when concrete failing evidence requires it.\n- Persist full evidence to files; return compact summaries and paths.\n- Do not re-audit unchanged held work. If blocked, record a truthful hold once and exit.\n- Prefer implementation plus tests over repeated planning prose.\n`;
-    const query = readFileSync(PROMPT,"utf8") + steeringSnapshot(runRoot) + budgetContract;
+    const query = readFileSync(PROMPT,"utf8") + (projectBinding?projectClassicContext(projectBinding):steeringSnapshot(runRoot)) + budgetContract;
     const stdoutPath = join(runRoot,"logs","hermes.stdout.log");
     const stderrPath = join(runRoot,"logs","hermes.stderr.log");
     writeFileSync(stdoutPath, ""); writeFileSync(stderrPath, "");
@@ -644,15 +728,16 @@ async function main(){
     const exitCode = await proc.exited;
     const final=readState();
     if (exitCode !== 0) {
-      final.status="blocked"; final.block={reason:`Hermes workflow exited with code ${exitCode}`, since:now(), owner:"midnight-runner", suggestedAction:"Inspect hermes stdout/stderr logs in run directory"}; final.lastAction="Hermes workflow failed; preserved run for inspection."; writeState(final); event("error","system","block",final.lastAction,final.block); event("error","orchestrator","tool-call-error","Hermes scheduled workflow failed",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",error:final.block.reason}); log(final.lastAction); return;
+      final.status="blocked"; final.block={reason:`Hermes workflow exited with code ${exitCode}`, since:now(), owner:"midnight-runner", suggestedAction:"Inspect hermes stdout/stderr logs in run directory"}; final.lastAction="Hermes workflow failed; preserved run for inspection."; writeState(final); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:final.block}); reconcileProjectRun(runId,runRoot,"blocked",null,{blockedAt:now(),reason:final.block.reason}); event("error","system","block",final.lastAction,final.block); event("error","orchestrator","tool-call-error","Hermes scheduled workflow failed",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",error:final.block.reason}); log(final.lastAction); return;
     }
     const finalRun=readJson(join(runRoot,"run.json"),{});
     if(HELD.has(normalizeStatus(final.status)) || HELD.has(normalizeStatus(finalRun.status))){
       if(!HELD.has(normalizeStatus(final.status))){ final.status=normalizeStatus(finalRun.status); final.phase=normalizeStatus(finalRun.phase||finalRun.status); writeState(final); }
-      const deferred=deferHeldPinnedItem(runId,final);
+      const deferred=projectBinding?false:deferHeldPinnedItem(runId,final);
       const receiptControl=readControl(), receiptQueue=readQueue();
       const fingerprint=await admissionFingerprint(readState(),receiptControl,receiptQueue);
       writeAdmissionReceipt(fingerprint,"held",readJson(ADMISSION,{}),{runId,deferredPinnedItem:deferred});
+      reconcileProjectRun(runId,runRoot,"paused",null,{pausedAt:now(),reason:final.hold?.reason||final.block?.reason||"Hermes preserved a held disposition"});
       event("warn","orchestrator","tool-call-end",`Hermes workflow preserved held disposition for ${runId}`,{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",status:"held",deferredPinnedItem:deferred});
       log(`preserved held disposition for ${runId}`);
       if(deferred) scheduleContinuationRunner();
@@ -664,8 +749,9 @@ async function main(){
       writeAdmissionReceipt(fingerprint,"held",readJson(ADMISSION,{}),{runId,reason:"missing-explicit-completion-evidence"});
       return;
     }
-    const doneControl=readControl(); if (doneControl.nextRunRequest?.claimedByRunId === runId) { doneControl.nextRunRequest = { ...doneControl.nextRunRequest, status:"completed", completedAt:now() }; doneControl.requestedRunNow=false; writeControl(doneControl); }
-    else if(doneControl.progressHandoff?.claimedByRunId===runId){ doneControl.progressHandoff={...doneControl.progressHandoff,status:"completed",completedAt:now()}; writeControl(doneControl); }
+    reconcileProjectRun(runId,runRoot,"completed",null,{completedAt:now()});
+    const doneControl=readControl(); if (!projectBinding&&doneControl.nextRunRequest?.claimedByRunId === runId) { doneControl.nextRunRequest = { ...doneControl.nextRunRequest, status:"completed", completedAt:now() }; doneControl.requestedRunNow=false; writeControl(doneControl); }
+    else if(!projectBinding&&doneControl.progressHandoff?.claimedByRunId===runId){ doneControl.progressHandoff={...doneControl.progressHandoff,status:"completed",completedAt:now()}; writeControl(doneControl); }
     event("success","orchestrator","tool-call-end",`Hermes workflow process exited successfully for ${runId}`,{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",status:"done"}); log(`completed process for ${runId}`);
   } finally { unlock(); }
 }

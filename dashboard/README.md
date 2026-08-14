@@ -45,6 +45,44 @@ audit.jsonl
 
 Pinned queue items are exported to `idea.txt` for compatibility with the existing runner prompt and are appended to the launched prompt as a hard selector override.
 
+## Project planning cockpit
+
+**Plan project** provides the persisted operator workflow: create a classic or managed draft, save revisions, submit a complete revision for review, approve or reject the exact revision, confirm launch, monitor identity/status reconciliation, and open run, iteration, artifact, and handoff views. The server, not a client-supplied actor, records planning authority as `local-operator`.
+
+The planning records live under the configured state root:
+
+```text
+project-plans/index.json
+project-plans/idempotency.json
+project-plans/<plan-id>/ledger.json
+project-plans/<plan-id>/revisions/000001.json
+project-plans/<plan-id>/decisions/<decision-id>.json
+project-plans/<plan-id>/launches/<launch-id>.json
+control.json                         # projectLaunchRequest pointer
+runs/<run-id>/approved-project-plan.json
+runs/<run-id>/project-plan-approval.json
+runs/<run-id>/project-launch.json
+runs/<run-id>/artifacts/project-plan/*
+```
+
+`apb.project-plan.v1` revisions and `apb.project-plan-decision.v1` decisions are immutable files. `apb.project-plan-ledger.v1`, `apb.project-launch.v1`, and the `apb.project-launch-pointer.v1` are restart-safe projections whose status/version fields advance. The run-local planning files preserve the exact approved inputs. For managed runs, `lifecycle-contract.json` contains frozen inputs but is itself a mutable lifecycle projection.
+
+Read APIs:
+
+```text
+GET /api/project-plans
+GET /api/project-plans/:planId
+GET /api/project-plans/:planId/revisions/:revision
+```
+
+All planning writes use `POST /api/project-plans/commands` with `schemaVersion: "apb.project-plan-command.v1"`. Implemented command types are `project-plan.create`, `project-plan.update`, `project-plan.ready-for-review`, `project-plan.approve`, `project-plan.reject`, `project-plan.launch`, `project-plan.clone`, `project-plan.fork`, and `project-plan.archive`.
+
+Every command except create carries the current ledger `expectedVersion`; a stale value returns HTTP 409 without overwriting newer state. Create, approve, launch, clone, and fork require a bounded idempotency key. Retrying the same type, expected version, and payload returns the persisted original result without a second revision/decision/launch/audit transaction; reusing the key for a different subject returns HTTP 409.
+
+Review and decision commands carry the current revision and SHA-256 content digest. Approval additionally binds the pipeline type in its digest-protected decision. Any later edit creates a new revision, resets state to `draft`, invalidates the effective approval, and requires review/approval again. Managed review validates the local Git root and resolves the named base ref into the exact `baseCommit`; launch accepts no repository, gate, limit, environment, or validation override.
+
+Classic launches route to the existing single-agent SPEC/DEVPLAN/build/final-audit contract and have no managed iteration id. Managed launches route to the bounded worktree loop and preserve the approved repository/base commit, gate definitions/evidence paths, and limit snapshot even if `gates.json` or other dashboard projections later change. Both routes preserve normal source branches and never merge, push, deploy, or publish.
+
 ## Studio layout customization
 
 The Studio view supports operator-local layout preferences for long-running dashboard sessions:
@@ -77,7 +115,7 @@ Important concepts:
 - **Fork**: a new iteration that keeps source evidence but explores a different direction.
 - **Decision**: an auditable outcome attached to a gate, variant, synthesis, or operator command.
 
-Supported command types include `start-next-iteration`, `continue-from-iteration`, `fork-from-iteration`, `use-as-next-direction`, `gate-decision`, and `attach-gate-evidence`.
+Legacy direct iteration command types include `start-next-iteration`, `continue-from-iteration`, `fork-from-iteration`, `use-as-next-direction`, `gate-decision`, and `attach-gate-evidence`. From a planning-cockpit launch, the Continue/Fork controls instead create a new clone/fork plan draft and require fresh exact approval before another launch.
 
 Iteration lineage is exposed through:
 

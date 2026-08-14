@@ -1,6 +1,6 @@
 # Architecture
 
-Hermes Swarm Builder has five bounded contexts.
+Hermes Swarm Builder has six bounded contexts.
 
 ## 1. Scheduler / Runner
 
@@ -45,7 +45,22 @@ This context intentionally does **not** expose an arbitrary browser shell. Comma
 
 The dashboard treats these files as the source of truth and defensively redacts output again at the server boundary.
 
-## 4. Agent Prompt / Governance
+## 4. Project Planning Ledger
+
+`dashboard/src/project-plans.ts` owns the durable planning transaction under `~/.hermes/autonomous-projects/project-plans/`:
+
+- `index.json` is the list projection and `idempotency.json` stores command subject digests and original results.
+- `<plan-id>/revisions/<zero-padded-revision>.json` is an exclusively-created immutable `apb.project-plan.v1` snapshot.
+- `<plan-id>/decisions/<decision-id>.json` is an exclusively-created digest-protected `apb.project-plan-decision.v1` approval/rejection.
+- `<plan-id>/launches/<launch-id>.json` is the durable `apb.project-launch.v1` request/status record.
+- `<plan-id>/ledger.json` is the mutable, versioned `apb.project-plan-ledger.v1` projection.
+- `control.json.projectLaunchRequest` is the single `apb.project-launch-pointer.v1` runner admission pointer.
+
+The revision digest is domain-separated SHA-256 over canonical JSON containing schema, plan id, revision, parent revision, and content; generated metadata is excluded. Approval binds the exact plan id, revision, digest, and pipeline type. Editing creates a child revision and clears effective approval. The runner verifies the revision digest, approval record digest, launch, ledger validation, and pointer as one exact binding before any Hermes work.
+
+Command writes are optimistic: every non-create command must match `ledger.version`, including clone/fork against the source ledger, or fails with HTTP 409. Create, approve, launch, clone, and fork are idempotent by a persisted key plus command type/expected-version/payload subject. Identical retry returns the original result; different reuse fails with HTTP 409.
+
+## 5. Agent Prompt / Governance
 
 `prompts/runner-prompt.md` is the policy surface for the autonomous workflow. It defines:
 
@@ -62,7 +77,7 @@ The dashboard treats these files as the source of truth and defensively redacts 
 
 Changing broad future project behavior should usually be done by editing this prompt or by adding dashboard queue/gate/steering entries rather than dashboard code.
 
-## 5. Dashboard Projection
+## 6. Dashboard Projection
 
 `dashboard/src/server.ts` serves static UI, JSON APIs, command APIs, and SSE over Bun:
 
@@ -77,6 +92,10 @@ Changing broad future project behavior should usually be done by editing this pr
 - `/api/gates`
 - `/api/audit`
 - `/api/commands`
+- `GET /api/project-plans`
+- `GET /api/project-plans/:planId`
+- `GET /api/project-plans/:planId/revisions/:revision`
+- `POST /api/project-plans/commands`
 - `/api/stream`
 
 `dashboard/public/app.js` projects events/state/control into the Studio steering cockpit, workflow strips, current-step/live-activity summaries, agent stacks, tool-call rows, artifact previews, and logs. Other views provide matrix/timeline/console/swarm projections.
@@ -90,6 +109,11 @@ The current-step/live-activity projection is derived from existing telemetry and
 Use these words consistently in code, telemetry, artifacts, and docs:
 
 - **Run**: one scheduled/manual runner invocation. It owns `run.json`, logs, artifacts, events, and final validation.
+- **Plan**: a durable project-planning container with a current ledger projection.
+- **Revision**: an immutable planning input snapshot; revision number is local to a plan.
+- **Approval**: an exact-revision planning decision. It grants launch authority only.
+- **Launch**: the durable transaction connecting approved planning inputs to one request and, after claim, one run.
+- **Request**: runner admission identity. A request is not a run; managed reconciliation retains it when adding run and iteration ids.
 - **Iteration**: a bounded improvement pass with an objective, limits, lineage, source context, variants, evaluations, synthesis, and gate decisions.
 - **Generation**: one diverge/evaluate/synthesize/verify cycle inside an iteration.
 - **Variant**: one focused alternative generated against the same objective and constraints.
@@ -107,13 +131,14 @@ Use these words consistently in code, telemetry, artifacts, and docs:
 - **Agent**: stable dashboard-visible role such as `orchestrator`, `variant-1`, `evaluator-1`, or `mashup`.
 - **Tool call**: meaningful delegated action with `tool-start`, optional `tool-output`, and terminal `tool-end`/`tool-error`.
 - **Artifact**: durable run output intended for review, evidence, resume, or handoff.
+- **Handoff**: terminal operator guidance and accepted branch/commit or safe recovery action; it is distinct from approval and gate evidence.
 - **Projection**: dashboard-derived view over state/events/control/artifacts.
 
 ## Data flow
 
 ```text
 operator cockpit / cron / manual trigger
-  -> control.json + queue.json + gates.json
+  -> planning ledger + control.json pointer, or legacy control/queue/gates intent
   -> autonomous-project-midnight-runner.ts
     -> hermes chat with runner-prompt.md + steering snapshot
       -> telemetry.py commands
@@ -125,11 +150,19 @@ operator cockpit / cron / manual trigger
 
 Only operator intent commands flow back into `control.json`, `queue.json`, `gates.json`, `commands.jsonl`, or `audit.jsonl`. UI density, hidden-section state, collapsed rows, and current inspector selections remain browser-local.
 
+## Planned launch routing
+
+At review, the server validates completeness. For a managed plan it resolves the absolute repository root and explicit base ref to an exact full commit, writing a new immutable revision if resolution changes the draft. Approval then binds that review revision. Launch writes one launch record and pointer; it accepts no launch-time repository, gate, limit, validation, command, or environment override.
+
+The runner verifies the entire pointer/revision/approval/launch/ledger chain fail-closed, claims the launch once, and writes identical `approved-project-plan.json`, `project-plan-approval.json`, and `project-launch.json` snapshots at the run root and under `artifacts/project-plan/`. Stable identities reconcile as follows: `planId` owns revision numbers; `approvalId` identifies the exact decision; `launchId` identifies the launch transaction; `requestId` survives admission; `runId` is assigned on claim; managed routing additionally assigns `iterationId = iter-<runId>`. Generations occur inside the managed iteration and do not replace any of these ids.
+
+`pipelineType: classic` bypasses project selection and injects exact approved content into the existing SPEC/DEVPLAN/build/final-audit path. It has a run but no managed iteration. `pipelineType: managed` converts only the approved content into a bounded request and snapshots exact repository/base, acceptance gates, evidence paths, and limits into the managed run. Mutable queue, steering, and `gates.json` values cannot replace approved planning inputs.
+
 ## Managed worktree loop
 
 The managed loop is deliberately bounded and reversible:
 
-1. **Launch contract and preflight**: before repository work, the runner validates the bounded request and writes `lifecycle-contract.json` plus `artifacts/lifecycle-contract.json` using `apb.managed-lifecycle.v1`. It snapshots repository path, objective, bounded change request, lineage, base ref, runner-selected validation policy, configured gates, dirty-repository policy, limits, and checkpoints. `repoPath` must then exist as an absolute Git repo, resolve `baseRef`, and be clean unless `allowDirty` is true.
+1. **Launch contract and preflight**: before repository work, the runner validates the bounded request and writes `lifecycle-contract.json` plus `artifacts/lifecycle-contract.json` using `apb.managed-lifecycle.v1`. Approved inputs snapshot repository path, objective, bounded change request, lineage, exact base ref/commit, runner-selected validation policy, gates, dirty-repository policy, limits, and checkpoints. Lifecycle state, resolved execution details, blockers, and terminal timestamps remain mutable and are mirrored to both copies; `lifecycle-contract.json` itself is not an immutable object. `repoPath` must identify the approved absolute Git root, `baseRef` must still resolve to the approved `baseCommit`, and planned launches require a clean repo.
 2. **Branching**: run-local worktrees live under `runs/<run-id>/worktrees/`; source branches use `apb/<runId>/variant-N` and `apb/<runId>/mashup`.
 3. **Divergence**: the runner launches up to `maxParallelVariants` Hermes variant agents, never exceeding the configured variant cap.
 4. **Evidence capture**: each variant must write `artifacts/variants/<variant-id>.json`; the runner captures `artifacts/variants/<variant-id>.diff` from git.
@@ -139,6 +172,8 @@ The managed loop is deliberately bounded and reversible:
 8. **Handoff and lineage**: every terminal managed outcome writes `artifacts/handoff.json` using `apb.handoff.v1`. Accepted commit/branch/source evidence reconcile the original `iterations.json` request row to the real run/iteration and, in showcase-loop mode, queue the next generation until the target count or stop condition is reached.
 
 Generated worktrees, run logs, screenshots, browser traces, build output, databases, and model artifacts are runtime evidence. They belong under the run root or generated project artifacts, not in this repository unless intentionally curated as documentation assets.
+
+The dashboard is local-only by default (`127.0.0.1`), sanitizes API/SSE/artifact/log output for common secret shapes, bounds returned values, and rejects executable-shaped planning fields. Planning content must still be treated as local sensitive data and must not contain secrets. Validation argv comes only from runner policy (`git diff --check` and declared package test/build scripts); browser/client command strings are not accepted or executed. Neither route merges, pushes, deploys, publishes, or mutates the checked-out normal source branch.
 
 ## Iteration/resume data flow
 

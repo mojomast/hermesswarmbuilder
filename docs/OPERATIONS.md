@@ -18,6 +18,7 @@ curl 'http://127.0.0.1:9200/api/events?limit=5'
 curl http://127.0.0.1:9200/api/control
 curl http://127.0.0.1:9200/api/queue
 curl http://127.0.0.1:9200/api/gates
+curl http://127.0.0.1:9200/api/project-plans
 ```
 
 ## Check cron
@@ -55,6 +56,51 @@ Layout-only controls are also available in the dashboard and are separate from s
 
 Steering controls write local files under `~/.hermes/autonomous-projects` and do not expose shell execution. Layout controls are browser-local `localStorage` preferences and do not affect runner state.
 
+## Planning cockpit workflow
+
+Use **Plan project** for reviewed launches:
+
+1. Create a classic fresh-build draft or managed existing-repository draft. Save writes immutable child revisions.
+2. Complete problem/users/objective/scope, requirements, non-goals, constraints, risks, gates/evidence paths, validation expectations, milestones, and bounded limits. Managed plans also require an absolute local Git root and explicit base ref.
+3. Submit for review. The server validates the complete `apb.project-plan.v1`; for managed work it resolves the repo root and freezes the full `baseCommit` in the review revision.
+4. Review the displayed revision number and digest, then approve or reject it. Approval is an append-only decision bound to that plan, revision, digest, and pipeline type; it is launch authority, not gate or completion evidence.
+5. Confirm the no-source-branch-mutation/manual-promotion boundary and launch. No launch-time override is accepted.
+6. Monitor distinct plan, approval, launch, request, run, and managed iteration ids. Review gate evidence and terminal handoff; promote an accepted managed branch/commit only through a separate manual operator action.
+
+Any edit after review or approval creates a new revision, returns the ledger to `draft`, and clears effective approval. The historical decision remains for audit but cannot launch the new content. An active launch cannot be edited or archived.
+
+Planning storage is `~/.hermes/autonomous-projects/project-plans/`: global `index.json` and `idempotency.json`, then `<plan-id>/ledger.json`, `revisions/000001.json`, `decisions/<decision-id>.json`, and `launches/<launch-id>.json`. The pending pointer is `control.json.projectLaunchRequest`. On claim, exact planning snapshots appear as `runs/<run-id>/{approved-project-plan.json,project-plan-approval.json,project-launch.json}` and duplicate copies under `runs/<run-id>/artifacts/project-plan/`.
+
+### Planning API
+
+```text
+GET  /api/project-plans
+GET  /api/project-plans/:planId
+GET  /api/project-plans/:planId/revisions/:revision
+POST /api/project-plans/commands
+```
+
+The POST body uses `apb.project-plan-command.v1`. Supported types are `project-plan.create`, `project-plan.update`, `project-plan.ready-for-review`, `project-plan.approve`, `project-plan.reject`, `project-plan.launch`, `project-plan.clone`, `project-plan.fork`, and `project-plan.archive`.
+
+```json
+{
+  "schemaVersion": "apb.project-plan-command.v1",
+  "type": "project-plan.approve",
+  "idempotencyKey": "approve-operator-generated-id",
+  "expectedVersion": 4,
+  "payload": {
+    "planId": "plan-...",
+    "revision": 3,
+    "planDigest": "sha256:...",
+    "notes": "Reviewed exact scope and safety boundary"
+  }
+}
+```
+
+Use the current `ledger.version` as `expectedVersion` on every command after create; clone/fork compare it to the source ledger. Stale values return HTTP 409. Create, approve, launch, clone, and fork require idempotency keys. An identical type/expected-version/payload retry returns the original persisted result; key reuse with a different subject returns HTTP 409. The actor is derived server-side as `local-operator`, regardless of a client `actor` field.
+
+Do not add shell, argv, command, script, executable, environment, or validation-command fields. Planning validation policy must be `apb.runner-selected.v1` with `clientCommandsAllowed: false`; launch payload is only the exact plan id, revision, and digest.
+
 ### Continuous 10-generation showcase loop
 
 Use **Run 10-generation showcase loop** when the goal is to browse a catalogue of versions of the same site rather than launch unrelated projects. The control writes:
@@ -67,7 +113,7 @@ Use **Run 10-generation showcase loop** when the goal is to browse a catalogue o
 
 The runner performs one bounded worktree generation, writes variant/evaluation/synthesis/gate artifacts, then queues the next generation from the accepted mashup commit. It self-spawns the next runner tick after a safe delay, so the loop continues without waiting for the hourly cron while still respecting the single-run lock.
 
-Each managed run freezes its launch inputs and configured gates in `lifecycle-contract.json`. Validation commands are selected by runner policy from the repository; dashboard/client-provided command strings are never executed. Inspect `artifacts/handoff.json` for the accepted branch/commit and exact review/promotion action, or for the blocker/pause reason and safe recovery action. Promotion is always manual: the runner does not merge, push, deploy, publish, or change the normal source branch.
+Each managed run freezes approved inputs and configured gates while creating `lifecycle-contract.json`. That file is a mutable progress projection: lifecycle state, base resolution, blockers, checkpoints, and terminal timestamps change during execution, while approved planning inputs remain preserved in their run-local snapshots. Validation commands are selected by runner policy from the repository; dashboard/client-provided command strings are never executed. Inspect `artifacts/handoff.json` for the accepted branch/commit and exact review/promotion action, or for the blocker/pause reason and safe recovery action. Promotion is always manual: the runner does not merge, push, deploy, publish, or change the normal source branch.
 
 Preflight expectations:
 
@@ -103,6 +149,8 @@ Use iteration controls when improving or branching from previous work instead of
 - **Use as next direction**: promote a prior result, variant, or synthesis into the next runner tick.
 
 These commands write `control.nextRunRequest`, request the next runner tick, and update `iterations.json` lineage. The runner then creates the resume scaffold in the new run directory.
+
+For a run launched from a project plan, use the run/iteration Continue or Fork action to create a new clone/fork plan in `draft`. Inspect and edit that draft, then submit, approve, and launch it as a new transaction. Pause and graceful stop preserve the current managed run at the next checkpoint, update the existing launch to `paused`, and write a handoff; they do not make the same approved launch reclaimable. Continue/fork therefore uses a new plan and exact approval rather than mutating the old launch.
 
 ### Request a continuation by API
 
@@ -162,6 +210,14 @@ Useful fields in the detail response:
 
 Check that the previous run has `lifecycle-contract.json`, `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, `artifacts/handoff.json`, and `artifacts/artifact-manifest.json`. Then inspect `/api/iterations` and `/api/control`. If `control.nextRunRequest` is missing or terminal, issue `continue-from-iteration` or `fork-from-iteration` again using the handoff's safe recovery action.
 
+### Restart and rejected-launch recovery
+
+- Dashboard restart is safe: plans, revisions, decisions, idempotency results, launches, and ledger versions are disk-backed. Reload the planner and use the latest version; do not retry a stale unsaved edit blindly.
+- A pending, unclaimed launch remains in `control.json` and can be claimed by a later runner tick. Runner locking prevents concurrent claims.
+- A claimed launch has run-local planning snapshots. If the runner process dies, do not recreate or edit those snapshots and do not assume the `running` launch is automatically resumed. Inspect the run root and logs, then clone/fork to a new draft and obtain a new approval/launch when recovery requires more work.
+- A malformed, stale, tampered, already-claimed, or no-longer-approved pointer is marked `rejected` before Hermes work and global state becomes blocked. Preserve the records for audit, correct the source conditions, then clone/fork into a new draft and launch only after fresh review and approval. Never repair a digest or id in place.
+- For managed preflight rejection or later blocking, use `artifacts/handoff.json` when present. Confirm the approved base ref still resolves to the approved full commit, the repo is clean, required evidence is available, and runner-selected validation can pass.
+
 ## Trigger a run manually
 
 ```bash
@@ -211,6 +267,27 @@ npx playwright test # when Playwright is configured
 ```
 
 Treat `npx playwright install --with-deps` as an operator-controlled setup step. Browser binaries, traces, screenshots, videos, and Playwright caches are runtime/generated evidence; list them in artifacts when useful, but do not commit them as source unless they are intentionally curated documentation assets.
+
+### Repository verification
+
+The implemented planning contract is covered by:
+
+```bash
+bun scripts/project-plans-helper-smoke.ts
+bun scripts/smoke-runner-project-launch.ts
+bun run --cwd dashboard check
+node scripts/smoke-runner-managed-lifecycle.mjs
+node scripts/smoke-runner-classic-evidence-contract.mjs
+node scripts/smoke-runner-classic-completion.mjs
+node scripts/smoke-runner-progress-budget.mjs
+node scripts/smoke-runner-scaffold.mjs
+node scripts/smoke-dashboard-iteration.mjs
+git diff --check
+```
+
+The end-to-end project-launch smoke exercises the real dashboard and runner with temporary state/repositories: restart persistence, immutable revisions, stale-version conflicts, exact approval invalidation, idempotent launch, classic/managed routing, exact base/gate/limit snapshots, identity reconciliation, handoff visibility, command rejection, and source-branch preservation.
+
+Manual browser checks should cover desktop and narrow/mobile layouts: open **Plan project**; create and persist both draft types; verify dirty-edit protection and refresh conflict messaging; submit a managed plan and confirm the resolved full base commit; approve/reject exact revisions; verify editing invalidates approval; confirm launch requires the safety checkbox; watch launch/request/run/iteration status refresh; open run, iteration, artifacts, and managed handoff links; exercise terminal Continue/Fork draft creation; restart the dashboard and confirm state returns. Also verify no arbitrary command field is presented, secret-shaped API output is redacted, keyboard focus remains usable, and the normal source branch remains unchanged.
 
 ## Common issues
 

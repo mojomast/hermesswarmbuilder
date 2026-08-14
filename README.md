@@ -37,6 +37,7 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
 ~/.hermes/autonomous-projects/runs/<run-id>/
   run.json                       run-level state mirror
   iteration-state.json            runner-created iteration contract, when iteration mode is active
+  lifecycle-contract.json         immutable managed launch inputs plus lifecycle status
   logs/                           runner and Hermes stdout/stderr logs
   worktrees/                      runner-managed variant/mashup git worktrees, when worktree-loop mode is active
   artifacts/
@@ -48,10 +49,12 @@ Hermes Swarm Builder uses the same bounded terms in the runner, dashboard, artif
     synthesis/synthesis.json      selected compatible features and mashup rationale
     gate-decisions.json           gate pass/fail/needs-evidence decisions
     gate-report.json              final validation evidence
+    lifecycle-contract.json       artifact-browser copy of the managed lifecycle contract
+    handoff.json                  terminal operator handoff for every managed outcome
     artifact-manifest.json        index of important generated artifacts
 ```
 
-Future agents should treat `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, and `artifact-manifest.json` as the minimum resume set.
+Future agents should treat `lifecycle-contract.json`, `iteration-state.json`, `source-evidence.json`, `variants/*.json`, `evaluations/*.json`, `synthesis/synthesis.json`, `gate-decisions.json`, `handoff.json`, and `artifact-manifest.json` as the minimum resume set.
 
 See `docs/OPERATIONS.md#cleanup-and-browser-validation-gates` for cleanup and Playwright/browser gate evidence before accepting generated UI projects.
 

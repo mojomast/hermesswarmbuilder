@@ -18,7 +18,7 @@ writeFileSync(join(target, 'README.md'), '# Fixture\n');
 spawnSync('git', ['add', 'README.md'], { cwd: target, stdio: 'ignore' });
 spawnSync('git', ['commit', '-m', 'initial fixture'], { cwd: target, stdio: 'ignore' });
 writeFileSync(join(root, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', status: 'idle', phase: 'idle', agents: {} }, null, 2));
-writeFileSync(join(root, 'control.json'), JSON.stringify({ schemaVersion: 'apb.control.v1', runAdmission: 'enabled', activeSteering: [], requestedRunNow: true, nextRunRequest: { id: 'req-smoke', status: 'pending', type: 'continue', repoPath: target, objective: 'Smoke scaffold iteration', limits: { maxVariantsPerIteration: 2, maxParallelVariants: 2 } }, autoIteration: { enabled: false, maxIterations: 1, maxVariantsPerIteration: 2, maxParallelVariants: 2, maxAcceptedFeatures: 2, maxVisualMotifChanges: 1, maxNewSections: 1 } }, null, 2));
+writeFileSync(join(root, 'control.json'), JSON.stringify({ schemaVersion: 'apb.control.v1', runAdmission: 'enabled', activeSteering: [], requestedRunNow: true, nextRunRequest: { id: 'req-smoke', status: 'pending', type: 'continue', repoPath: target, baseRef: 'HEAD', objective: 'Smoke scaffold iteration', changeText: 'Create one bounded smoke-test variant.', limits: { maxVariantsPerIteration: 2, maxParallelVariants: 2 } }, autoIteration: { enabled: false, maxIterations: 1, maxVariantsPerIteration: 2, maxParallelVariants: 2, maxAcceptedFeatures: 2, maxVisualMotifChanges: 1, maxNewSections: 1 } }, null, 2));
 writeFileSync(join(root, 'queue.json'), JSON.stringify({ schemaVersion: 'apb.queue.v1', items: [] }, null, 2));
 writeFileSync(join(root, 'gates.json'), JSON.stringify({ schemaVersion: 'apb.gates.v1', gates: [] }, null, 2));
 try {

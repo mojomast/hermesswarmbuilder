@@ -27,6 +27,7 @@ When launched through Hermes Swarm Builder, the runner creates this machine-read
 
 ```text
 runs/<run-id>/
+  lifecycle-contract.json
   iteration-state.json
   worktrees/variant-*/
   worktrees/mashup/
@@ -38,6 +39,9 @@ runs/<run-id>/
     evaluations/*.json
     synthesis/synthesis.json
     gate-decisions.json
+    gate-report.json
+    lifecycle-contract.json
+    handoff.json
     artifact-manifest.json
 ```
 
@@ -416,4 +420,4 @@ Before stopping a run, make sure a later agent can answer:
 9. Is this a continuation, a resume, or a fork?
 10. Which artifact paths prove the above?
 
-Minimum resume artifacts: `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/variants/*.json`, `artifacts/evaluations/*.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, and `artifacts/artifact-manifest.json`.
+Minimum resume artifacts: `lifecycle-contract.json`, `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/variants/*.json`, `artifacts/evaluations/*.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, `artifacts/handoff.json`, and `artifacts/artifact-manifest.json`.

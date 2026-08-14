@@ -67,6 +67,8 @@ Use **Run 10-generation showcase loop** when the goal is to browse a catalogue o
 
 The runner performs one bounded worktree generation, writes variant/evaluation/synthesis/gate artifacts, then queues the next generation from the accepted mashup commit. It self-spawns the next runner tick after a safe delay, so the loop continues without waiting for the hourly cron while still respecting the single-run lock.
 
+Each managed run freezes its launch inputs and configured gates in `lifecycle-contract.json`. Validation commands are selected by runner policy from the repository; dashboard/client-provided command strings are never executed. Inspect `artifacts/handoff.json` for the accepted branch/commit and exact review/promotion action, or for the blocker/pause reason and safe recovery action. Promotion is always manual: the runner does not merge, push, deploy, publish, or change the normal source branch.
+
 Preflight expectations:
 
 - `repoPath` is absolute and points at a git repo.
@@ -158,7 +160,7 @@ Useful fields in the detail response:
 
 ### Future agent cannot resume
 
-Check that the previous run has `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, and `artifacts/artifact-manifest.json`. Then inspect `/api/iterations` and `/api/control`. If `control.nextRunRequest` is missing, issue `continue-from-iteration` or `fork-from-iteration` again.
+Check that the previous run has `lifecycle-contract.json`, `iteration-state.json`, `artifacts/source-evidence.json`, `artifacts/synthesis/synthesis.json`, `artifacts/gate-decisions.json`, `artifacts/handoff.json`, and `artifacts/artifact-manifest.json`. Then inspect `/api/iterations` and `/api/control`. If `control.nextRunRequest` is missing or terminal, issue `continue-from-iteration` or `fork-from-iteration` again using the handoff's safe recovery action.
 
 ## Trigger a run manually
 

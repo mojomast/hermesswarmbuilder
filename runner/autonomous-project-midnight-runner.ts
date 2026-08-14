@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync } from "fs";
 import { createHash } from "crypto";
 import { homedir } from "os";
-import { isAbsolute, join } from "path";
+import { isAbsolute, join, sep } from "path";
 
 // Run artifacts can contain source paths and operational evidence; keep them owner-only.
 process.umask(0o077);
@@ -19,6 +19,7 @@ const TELEMETRY = join(ROOT, "telemetry.py");
 const CONTROL = join(ROOT, "control.json");
 const QUEUE = join(ROOT, "queue.json");
 const GATES = join(ROOT, "gates.json");
+const ITERATIONS = join(ROOT, "iterations.json");
 const ADMISSION = join(ROOT, "runner-admission.json");
 const HERMES = process.env.HERMES_BIN || join(HOME, ".local", "bin", "hermes");
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || "local";
@@ -142,7 +143,7 @@ function clampInt(value:any, fallback:number, min:number, max:number): number {
   return Math.min(Math.max(Math.trunc(n), min), max);
 }
 function resolveIterationRequest(control:any, state:any, queue:any): any | null {
-  const req=control.nextRunRequest && control.nextRunRequest.status !== "completed" ? control.nextRunRequest : null;
+  const req=control.nextRunRequest?.status === "pending" ? control.nextRunRequest : null;
   const pinned=pinnedItem(control,queue);
   const auto=control.autoIteration?.enabled ? control.autoIteration : null;
   const source=req||auto;
@@ -168,19 +169,51 @@ function resolveIterationRequest(control:any, state:any, queue:any): any | null 
       maxNewSections:clampInt(source.limits?.maxNewSections||control.autoIteration?.maxNewSections,1,0,1),
       stopAfterNoImprovement:clampInt(source.limits?.stopAfterNoImprovement||control.autoIteration?.stopAfterNoImprovement,1,1,3)
     },
-    validationCommands: source.validationCommands || source.commands || pinned?.target?.validationCommands || null,
+    acceptanceGateIds: Array.isArray(source.acceptanceGateIds)?source.acceptanceGateIds:(Array.isArray(pinned?.acceptanceGateIds)?pinned.acceptanceGateIds:[]),
     allowDirty: source.allowDirty === true || source.allowDirtyRepo === true || source.limits?.allowDirty === true,
     generation: clampInt(source.generation||source.currentGeneration||control.autoIteration?.currentGeneration,1,1,10),
     targetGenerations: clampInt(source.targetGenerations||source.limits?.targetGenerations||control.autoIteration?.targetGenerations||control.autoIteration?.maxIterations,10,1,10)
   };
 }
+function validateLaunchRequest(req:any) {
+  const missing:string[]=[];
+  if(!req || typeof req!=="object") throw new Error("managed launch request must be an object");
+  for(const [key,value] of [["id",req.id],["repoPath",req.repoPath],["objective",req.objective],["changeText",req.changeText],["baseRef",req.baseRef]]) if(typeof value!=="string"||!value.trim()) missing.push(key);
+  if(!req.limits || typeof req.limits!=="object") missing.push("limits");
+  if(missing.length) throw new Error(`managed launch request is incomplete: ${missing.join(", ")}`);
+}
+function snapshotAcceptanceGates(req:any): any[] {
+  const configured=readGates().gates||[];
+  const wanted=new Set(Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:[]);
+  const selected=configured.filter((g:any)=>wanted.size===0||wanted.has(g.id));
+  const missing=[...wanted].filter(id=>!selected.some((g:any)=>g.id===id)); if(missing.length) throw new Error(`managed launch request references unknown acceptance gates: ${missing.join(", ")}`);
+  return selected.map((g:any)=>({
+    id:String(g.id||""), description:String(g.description||g.title||"Acceptance gate"), severity:String(g.severity||"must"),
+    required:g.required!==false&&String(g.severity||"must")!=="optional", requiredEvidence:Array.isArray(g.requiredEvidence)?g.requiredEvidence.map(String):[]
+  }));
+}
+function lifecyclePaths(runRoot:string){ return [join(runRoot,"lifecycle-contract.json"),join(runRoot,"artifacts","lifecycle-contract.json")]; }
+function writeLifecycle(runRoot:string, lifecycle:any){ for(const path of lifecyclePaths(runRoot)) writeFileSync(path,JSON.stringify(lifecycle,null,2)); }
+function patchLifecycle(runRoot:string, patch:any){ const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}); const next={...lifecycle,...patch,updatedAt:now()}; writeLifecycle(runRoot,next); return next; }
 function writeIterationScaffold(runId:string, runRoot:string, req:any) {
+  validateLaunchRequest(req);
   const art=join(runRoot,"artifacts");
   for(const d of [join(art,"iterations"),join(art,"variants"),join(art,"evaluations"),join(art,"synthesis")]) mkdirSync(d,{recursive:true});
   const source=req.sourceRunId?sourceRunContext({sourceRunId:req.sourceRunId}):null;
+  const iterationId=`iter-${runId}`;
+  const acceptanceGates=snapshotAcceptanceGates(req);
+  const lifecycle={
+    schemaVersion:"apb.managed-lifecycle.v1", runId, iterationId, requestId:req.id, state:"launching", createdAt:now(), updatedAt:now(),
+    repository:{path:req.repoPath}, objective:req.objective, boundedChangeRequest:req.changeText,
+    lineage:{sourceRunId:req.sourceRunId||null,sourceIterationId:req.sourceIterationId||null},
+    base:{ref:req.baseRef,commit:null}, validationPlan:{source:"runner-policy",commands:[],policy:["git diff --check from base commit","declared package test/build scripts when present"]},
+    acceptanceGates, dirtyRepoPolicy:{allowDirty:req.allowDirty===true,policy:req.allowDirty===true?"explicitly-allowed":"require-clean"}, limits:req.limits,
+    checkpoints:["preflight","after-variants","after-evaluation","before-mashup","after-validation"]
+  };
+  writeLifecycle(runRoot,lifecycle);
   const iteration={
     schemaVersion:"apb.iteration.v1",
-    id:`iter-${runId}`,
+    id:iterationId,
     runId,
     parentIterationId:req.sourceIterationId||null,
     sourceRunId:req.sourceRunId||null,
@@ -192,7 +225,9 @@ function writeIterationScaffold(runId:string, runRoot:string, req:any) {
     generation:req.generation||1,
     targetGenerations:req.targetGenerations||req.limits?.maxIterations||10,
     limits:req.limits,
-    requiredArtifacts:["variants/*.json","evaluations/*.json","synthesis/synthesis.json","gate-decisions.json"],
+    requestId:req.id,
+    acceptanceGates,
+    requiredArtifacts:["lifecycle-contract.json","variants/*.json","evaluations/*.json","synthesis/synthesis.json","gate-decisions.json","gate-report.json","handoff.json"],
     loopContract:{
       variantCount:req.limits.maxVariantsPerIteration,
       evaluatorCount:Math.min(3, Math.max(1, req.limits.maxParallelVariants)),
@@ -277,12 +312,52 @@ async function gitCmd(cwd:string, args:string[]): Promise<CmdResult> { return ru
 function safeBranchPart(x:string): string { return String(x).replace(/[^a-zA-Z0-9._/-]+/g,"-").replace(/^[-/]+|[-/]+$/g,"").slice(0,80) || "run"; }
 function writeRunJson(runRoot:string, patch:any){ const runPath=join(runRoot,"run.json"); const run=readJson(runPath,{}); writeFileSync(runPath, JSON.stringify({...run,...patch,id:run.id||patch.runId,runId:patch.runId||run.runId||run.id},null,2)); }
 function updateAgent(runId:string, agentId:string, patch:any){ const st=readState(); st.agents=st.agents&&typeof st.agents==="object"&&!Array.isArray(st.agents)?st.agents:{}; st.agents[agentId]={...(st.agents[agentId]||{}),id:agentId,...patch,updatedAt:now()}; writeState(st); }
+function reconcileIteration(req:any, runId:string, iterationId:string, status:string, extra:any={}){
+  const doc=readJson(ITERATIONS,{schemaVersion:"apb.iterations.v1",items:[]}); if(!Array.isArray(doc.items)) doc.items=[];
+  const old=doc.items.find((x:any)=>x.requestId===req.id||x.id===req.id||x.runId===runId);
+  const row={...(old||{}),id:iterationId,iterationId,requestId:req.id,runId,status,mode:req.type,objective:req.objective,steeringText:req.changeText,repoPath:req.repoPath,
+    acceptanceGateIds:Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:(old?.acceptanceGateIds||[]),
+    sourceRunId:req.sourceRunId||old?.sourceRunId||null,parentIterationId:req.type!=="fork"?(req.sourceIterationId||old?.parentIterationId||null):(old?.parentIterationId||null),
+    forkedFromIterationId:req.type==="fork"?(req.sourceIterationId||old?.forkedFromIterationId||null):(old?.forkedFromIterationId||null),updatedAt:now(),...extra};
+  if(old) Object.assign(old,row); else doc.items.unshift(row); doc.updatedAt=now(); writeFileSync(ITERATIONS,JSON.stringify(doc,null,2));
+}
+function preservedPaths(runRoot:string){ return [join(runRoot,"lifecycle-contract.json"),join(runRoot,"iteration-state.json"),join(runRoot,"artifacts"),join(runRoot,"logs"),join(runRoot,"worktrees")].filter(existsSync); }
+function writeHandoff(runId:string, runRoot:string, state:string, data:any={}){
+  const handoff={schemaVersion:"apb.handoff.v1",runId,iterationId:data.iterationId||readJson(join(runRoot,"iteration-state.json"),{}).id||null,state,generatedAt:now(),...data};
+  writeFileSync(join(runRoot,"artifacts","handoff.json"),JSON.stringify(handoff,null,2)); return handoff;
+}
 function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:string, extra:any={}){
   const st=readState(); st.status="blocked"; st.phase="blocked"; st.block={reason,since:now(),owner:"midnight-runner",suggestedAction,...extra}; st.lastAction=`Runner-managed iteration blocked: ${reason}`;
   for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"blocked",updatedAt:now()};
   writeState(st); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:st.block});
-  const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"blocked",blockedAt:now(),block:st.block}; control.requestedRunNow=false; writeControl(control); }
+  if(!existsSync(join(runRoot,"lifecycle-contract.json"))){
+    const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"blocked",blockedAt:now(),block:st.block}; control.requestedRunNow=false; writeControl(control); }
+    event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction); return;
+  }
+  patchLifecycle(runRoot,{state:"blocked",terminalAt:now(),blocker:reason});
+  const iter=readJson(join(runRoot,"iteration-state.json"),null); if(iter){ Object.assign(iter,{status:"blocked",blockedAt:now(),blocker:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2)); }
+  writeHandoff(runId,runRoot,"blocked",{iterationId:iter?.id||null,blocker:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:suggestedAction});
+  const control=readControl(), claimed=control.nextRunRequest?.claimedByRunId===runId?control.nextRunRequest:null;
+  if(claimed) control.nextRunRequest={...claimed,status:"blocked",blockedAt:now(),resultRunId:runId,resultIterationId:iter?.id||null,block:st.block};
+  if(control.autoIteration?.enabled) control.autoIteration={...control.autoIteration,enabled:false,stoppedAt:now(),stopReason:"managed-iteration-blocked",lastRunId:runId,lastIterationId:iter?.id||null};
+  control.requestedRunNow=false; writeControl(control);
+  const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}), lineageReq=claimed||{id:lifecycle.requestId||iter?.requestId||`request-${runId}`,type:iter?.mode||"managed",objective:iter?.objective||"Managed iteration",changeText:iter?.steeringText||"",repoPath:iter?.repoPath||null,sourceRunId:iter?.sourceRunId||null,sourceIterationId:iter?.parentIterationId||null};
+  reconcileIteration(lineageReq,runId,iter?.id||`iter-${runId}`,"blocked",{blocker:reason});
   event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction);
+}
+function pauseManagedRun(runId:string, runRoot:string, req:any, checkpoint:string, kind:"paused"|"stopped", reason:string){
+  const status="on-hold", st=readState(); st.status=status; st.phase=status; st.hold={reason,since:now(),owner:"midnight-runner",checkpoint,kind}; st.lastAction=`Runner-managed iteration ${kind} at ${checkpoint}: ${reason}`; writeState(st);
+  writeRunJson(runRoot,{runId,status,phase:status,heldAt:now(),hold:st.hold}); patchLifecycle(runRoot,{state:kind,terminalAt:now(),checkpoint,pauseReason:reason});
+  const iter=readJson(join(runRoot,"iteration-state.json"),{}); Object.assign(iter,{status:kind,pausedAt:now(),checkpoint,pauseReason:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2));
+  writeHandoff(runId,runRoot,kind,{iterationId:iter.id,checkpoint,[kind==="paused"?"pauseReason":"blocker"]:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:"Clear the pause/stop control, inspect preserved artifacts and worktrees, then issue a new continue-from-iteration request from this run."});
+  const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId) control.nextRunRequest={...control.nextRunRequest,status:kind,resultRunId:runId,resultIterationId:iter.id,[`${kind}At`]:now(),checkpoint,reason}; control.requestedRunNow=false; writeControl(control); reconcileIteration(req,runId,iter.id||`iter-${runId}`,kind,{checkpoint,reason});
+  event(kind==="paused"?"info":"warn","system",kind,st.lastAction,{runId,checkpoint,reason}); return {status:kind,runId,iterationId:iter.id};
+}
+function checkpointDisposition(runId:string, runRoot:string, req:any, checkpoint:string): any | null {
+  const control=readControl();
+  if(control.stop?.requested) return pauseManagedRun(runId,runRoot,req,checkpoint,"stopped",control.stop.reason||"Operator requested a graceful stop");
+  if(control.pause?.requested||control.runAdmission==="paused") return pauseManagedRun(runId,runRoot,req,checkpoint,"paused",control.pause?.reason||"Operator requested a checkpoint pause");
+  return null;
 }
 async function validateIterationRepo(req:any){
   const repoPath=req.repoPath;
@@ -294,7 +369,8 @@ async function validateIterationRepo(req:any){
   const baseRef=req.baseRef||"HEAD"; const base=await gitCmd(repoRoot,["rev-parse","--verify",`${baseRef}^{commit}`]); if(base.exitCode!==0) throw new Error(`baseRef is not a commit: ${baseRef}: ${base.stderr||base.stdout}`);
   const status=await gitCmd(repoRoot,["status","--porcelain=v1"]); if(status.exitCode!==0) throw new Error(`git status failed: ${status.stderr||status.stdout}`);
   if(status.stdout.trim() && !req.allowDirty) throw new Error(`target repo is dirty; clean it or set allowDirty explicitly. Dirty summary:\n${status.stdout.trim().slice(0,2000)}`);
-  return { repoRoot, baseRef, baseCommit:base.stdout.trim() };
+  const sourceHead=await gitCmd(repoRoot,["rev-parse","HEAD"]); if(sourceHead.exitCode!==0) throw new Error(`source HEAD could not be resolved: ${sourceHead.stderr||sourceHead.stdout}`);
+  return { repoRoot, baseRef, baseCommit:base.stdout.trim(), sourceHead:sourceHead.stdout.trim(), sourceStatus:status.stdout };
 }
 async function createWorktree(repoRoot:string, path:string, branch:string, baseCommit:string){
   if(existsSync(path)) throw new Error(`worktree path already exists: ${path}`);
@@ -308,15 +384,16 @@ async function ensureCommitted(path:string, message:string){
   const status=await gitCmd(path,["status","--porcelain=v1"]); if(status.stdout.trim()){ await gitCmd(path,["add","-A"]); const commit=await gitCmd(path,["commit","-m",message]); if(commit.exitCode!==0) throw new Error(`git commit failed: ${commit.stderr||commit.stdout}`); }
   const rev=await gitCmd(path,["rev-parse","HEAD"]); if(rev.exitCode!==0) throw new Error(`git rev-parse failed: ${rev.stderr||rev.stdout}`); return rev.stdout.trim();
 }
-function parseCommand(x:any): string[] | null { if(Array.isArray(x)) return x.map(String); if(typeof x==="string") return x.trim()?x.trim().split(/\s+/):null; return null; }
-function validationCommands(req:any, repoRoot:string, baseCommit:string): string[][] {
-  const raw=req.validationCommands||req.commands; const xs=Array.isArray(raw)?raw:[]; const cmds=xs.map(parseCommand).filter(Boolean) as string[][];
+async function validationCommands(repoRoot:string, baseCommit:string, worktreePath?:string): Promise<string[][]> {
+  const cmds:string[][]=[];
   cmds.push(["git","diff","--check",baseCommit,"HEAD"]);
-  if(existsSync(join(repoRoot,"package.json"))){ const pkg=readJson(join(repoRoot,"package.json"),{}); if(pkg.scripts?.test) cmds.push(["npm","test"]); if(pkg.scripts?.build) cmds.push(["npm","run","build"]); }
+  const scripts=new Set<string>(); const packageAtBase=await gitCmd(repoRoot,["show",`${baseCommit}:package.json`]); if(packageAtBase.exitCode===0){ try{ const pkg=JSON.parse(packageAtBase.stdout); if(pkg.scripts?.test) scripts.add("test"); if(pkg.scripts?.build) scripts.add("build"); }catch{} }
+  if(worktreePath&&existsSync(join(worktreePath,"package.json"))){ const pkg=readJson(join(worktreePath,"package.json"),{}); if(pkg.scripts?.test) scripts.add("test"); if(pkg.scripts?.build) scripts.add("build"); }
+  if(scripts.has("test")) cmds.push(["npm","test"]); if(scripts.has("build")) cmds.push(["npm","run","build"]);
   return cmds;
 }
 async function runValidations(cwd:string, cmds:string[][]){
-  const out:any[]=[]; for(const cmd of cmds){ const r=await runCmd(cmd,{cwd}); out.push({command:cmd.join(" "),exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0}); if(r.exitCode!==0) break; } return out;
+  const out:any[]=[]; for(const cmd of cmds){ const r=await runCmd(cmd,{cwd}); out.push({argv:cmd,command:cmd.join(" "),exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0}); if(r.exitCode!==0) break; } return out;
 }
 async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>Promise<any>){
   const results:any[]=[]; let next=0; const workers=Array.from({length:Math.max(1,Math.min(limit,items.length))},async()=>{ while(next<items.length){ const i=next++; try{ results[i]=await fn(items[i],i); }catch(err:any){ results[i]={error:err?.message||String(err)}; } } }); await Promise.all(workers); return results;
@@ -328,10 +405,39 @@ async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:st
   const pipe=async(stream:ReadableStream<Uint8Array>|null,path:string,kind:string)=>{ if(!stream)return; const dec=new TextDecoder(); for await(const chunk of stream){ const text=dec.decode(chunk); appendFileSync(path,text); for(const rawLine of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(-5)){ const line=redact(rawLine); if(line.startsWith("APB_TELEMETRY ")){ try{const payload=JSON.parse(line.slice("APB_TELEMETRY ".length)); event(payload.level||"info",payload.source||agentId,payload.type||"event",payload.message||"telemetry",{...(payload.data||{}),runId,agentId});}catch{} } else event(kind==="stderr"?"warn":"info",agentId,"agent-message",line,{runId,agentId,logPath:path,stream:kind}); } updateAgent(runId,agentId,{status:"running",lastMessage:redact(text.slice(-2000)),logPath:stdoutPath}); } };
   await Promise.all([pipe(proc.stdout,stdoutPath,"stdout"),pipe(proc.stderr,stderrPath,"stderr")]); return proc.exited;
 }
-function variantPrompt(req:any, v:WorktreeVariant, runRoot:string, baseCommit:string){ return `You are ${v.id}, one bounded Hermes Autonomous Project Builder variant agent.\nObjective: ${req.objective}\nChange request: ${req.changeText||"(none)"}\nRepo worktree: ${v.path}\nBase commit: ${baseCommit}\nRules: make one focused, shippable alternative; no unrelated features; no tech-stack churn; keep generated artifacts/logs/build output out of git. Commit your source/test/doc/config changes on this branch.\nBefore exit, write JSON to ${join(runRoot,"artifacts","variants",`${v.id}.json`)} with schemaVersion apb.variant.v1, variantId, title, claim, objectiveMapping, changes, risks, evidence, validationNotes. The runner will write ${v.id}.diff. Do not write outside the worktree except that artifact JSON.`; }
+function variantPrompt(req:any, v:WorktreeVariant, runRoot:string, baseCommit:string){ return `You are ${v.id}, one bounded Hermes Autonomous Project Builder variant agent.\nObjective: ${req.objective}\nChange request: ${req.changeText||"(none)"}\nRepo worktree: ${v.path}\nBase commit: ${baseCommit}\nRules: make one focused, shippable alternative; no unrelated features; no tech-stack churn; keep generated artifacts/logs/build output out of git. Commit your source/test/doc/config changes on this branch.\nBefore exit, write JSON to ${join(runRoot,"artifacts","variants",`${v.id}.json`)} with schemaVersion apb.variant.v1, variantId, title, claim, objectiveMapping, changes, risks, evidence, validationNotes, and budget containing numeric visualMotifChanges/newSections plus boolean techStackChurn/unrelatedFeatures. The runner will write ${v.id}.diff. Do not write outside the worktree except that artifact JSON.`; }
 function evaluatorPrompt(req:any, v:WorktreeVariant, runRoot:string){ return `You are evaluator for ${v.id}. Read ${join(runRoot,"artifacts","variants",`${v.id}.json`)} and ${join(runRoot,"artifacts","variants",`${v.id}.diff`)}. Score objectiveFit, userValue, visualQuality, implementationQuality, accessibility, performance from 0-100 and total 0-100. Hard-reject unrelated features, tech-stack churn, missing tests/evidence. Write ${join(runRoot,"artifacts","evaluations",`evaluation-${v.id}.json`)} with schemaVersion apb.evaluation.v1, variantId, scores, hardGateViolations, recommendation accept|reject|partial, rationale, evidenceArtifacts.`; }
-function readRequiredJson(path:string){ if(!existsSync(path)) throw new Error(`missing required JSON artifact: ${path}`); return readJson(path,null); }
-function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation?.hardGateViolations?.length&&["accept","partial"].includes(String(v.evaluation?.recommendation||"accept"))&&Number.isFinite(Number(v.evaluation?.scores?.total||v.evaluation?.score))).sort((a,b)=>Number(b.evaluation?.scores?.total||b.evaluation?.score||0)-Number(a.evaluation?.scores?.total||a.evaluation?.score||0))[0]||null; }
+function readRequiredJson(path:string){
+  if(!existsSync(path)) throw new Error(`missing required JSON artifact: ${path}`);
+  const value=readJson(path,null); if(!value||typeof value!=="object"||Array.isArray(value)) throw new Error(`malformed required JSON artifact: ${path}`); return value;
+}
+function readVariantArtifact(path:string, variantId:string){
+  const value=readRequiredJson(path);
+  if(value.schemaVersion!=="apb.variant.v1"||value.variantId!==variantId||typeof value.claim!=="string"||!value.claim.trim()||!Array.isArray(value.objectiveMapping)||!Array.isArray(value.changes)||!Array.isArray(value.evidence)||!value.budget||!Number.isInteger(value.budget.visualMotifChanges)||!Number.isInteger(value.budget.newSections)||typeof value.budget.techStackChurn!=="boolean"||typeof value.budget.unrelatedFeatures!=="boolean") throw new Error(`malformed variant artifact for ${variantId}: ${path}`);
+  return value;
+}
+function readEvaluationArtifact(path:string, variantId:string){
+  const value=readRequiredJson(path), scoreNames=["objectiveFit","userValue","visualQuality","implementationQuality","accessibility","performance","total"];
+  if(value.schemaVersion!=="apb.evaluation.v1"||value.variantId!==variantId||!value.scores||!scoreNames.every(name=>typeof value.scores[name]==="number"&&Number.isFinite(value.scores[name])&&value.scores[name]>=0&&value.scores[name]<=100)||!Array.isArray(value.hardGateViolations)||!Array.isArray(value.evidenceArtifacts)||typeof value.rationale!=="string"||!value.rationale.trim()||!["accept","reject","partial"].includes(value.recommendation)) throw new Error(`malformed or non-finite evaluator artifact for ${variantId}: ${path}`);
+  return value;
+}
+function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation.hardGateViolations.length&&v.evaluation.recommendation==="accept"&&Number.isFinite(Number(v.evaluation.scores.total))).sort((a,b)=>Number(b.evaluation.scores.total)-Number(a.evaluation.scores.total))[0]||null; }
+function artifactEvidence(runRoot:string, requested:string){
+  const raw=String(requested||"").replace(/\\/g,"/");
+  if(!raw||isAbsolute(raw)||raw.split("/").includes("..")) return {requested,path:null,present:false,reason:"unsafe-or-empty-artifact-path"};
+  const rel=raw.replace(/^\.\//,"").replace(/^artifacts\//,"");
+  if(!rel) return {requested,path:null,present:false,reason:"unsafe-or-empty-artifact-path"};
+  const artifactsRoot=join(runRoot,"artifacts"), path=join(artifactsRoot,rel); let present=false;
+  try{ const realRoot=realpathSync(artifactsRoot), realPath=realpathSync(path); present=lstatSync(path).isFile()&&(realPath===realRoot||realPath.startsWith(realRoot+sep))&&statSync(path).size>0; }catch{}
+  return {requested,path:`artifacts/${rel}`,present,reason:present?null:"missing-or-empty"};
+}
+function evaluateAcceptanceGates(runId:string, runRoot:string, gates:any[]){
+  return gates.map((gate:any)=>{
+    const evidence=(gate.requiredEvidence||[]).map((x:string)=>artifactEvidence(runRoot,x));
+    const passed=!gate.required||(evidence.length>0&&evidence.every((x:any)=>x.present));
+    return {schemaVersion:"apb.gate-decision.v1",id:gate.id,gateId:gate.id,runId,status:passed?"passed":"failed",decision:passed?"accepted":"blocked",required:gate.required,description:gate.description,evidence,decidedAt:now(),decidedBy:"midnight-runner"};
+  });
+}
 function shouldContinueAutoIteration(control:any): boolean {
   const auto=control.autoIteration||{};
   if(!auto.enabled || !["continuous","showcase-loop"].includes(String(auto.mode||""))) return false;
@@ -343,8 +449,7 @@ function shouldContinueAutoIteration(control:any): boolean {
 function scheduleContinuationRunner(){
   if(process.env.APB_DISABLE_AUTO_CONTINUATION==="1") return;
   try{
-    const logPath=join(LOGS,`continuous-runner-${Date.now()}.log`);
-    Bun.spawn(["bash","-lc",`sleep 2; ${JSON.stringify(process.execPath)} ${JSON.stringify(import.meta.path)} >> ${JSON.stringify(logPath)} 2>&1`],{cwd:HOME,env:{...process.env},stdout:"ignore",stderr:"ignore"});
+    Bun.spawn([process.execPath,import.meta.path],{cwd:HOME,env:{...process.env,APB_DELAY_START_MS:"2000"},stdout:"ignore",stderr:"ignore"});
   }catch(err:any){ log(`failed to spawn continuous follow-up runner: ${err?.message||err}`); }
 }
 function scheduleNextAutoIteration(previousRunId:string, result:any): boolean {
@@ -361,7 +466,7 @@ function scheduleNextAutoIteration(previousRunId:string, result:any): boolean {
     event("success","system","auto-iteration-complete",`Continuous showcase loop completed ${completed}/${target} generations`,{runId:previousRunId,completedGenerations:completed,targetGenerations:target});
     return false;
   }
-  control.nextRunRequest={schemaVersion:"apb.next-run-request.v1",id:`auto-cont-${Date.now()}`,type:"showcase-loop-generation",status:"pending",generation:completed+1,targetGenerations:target,sourceRunId:previousRunId,sourceIterationId:result?.iterationId||auto.lastIterationId||null,repoPath,baseRef:result?.commit||auto.lastCommit||"HEAD",objective,changeText:auto.changeText||`Generation ${completed+1}/${target}: continue one bounded catalogue iteration of the same Hermes showcase site. Preserve continuity, visible evidence, responsive polish, and avoid unrelated tech-stack churn.`,createdAt:now(),createdBy:"midnight-runner:auto-continuation",limits:{maxIterations:target,targetGenerations:target,maxVariantsPerIteration:clampInt(auto.maxVariantsPerIteration,3,1,5),maxParallelVariants:clampInt(auto.maxParallelVariants,3,1,5),maxAcceptedFeatures:clampInt(auto.maxAcceptedFeatures,4,1,4),maxVisualMotifChanges:clampInt(auto.maxVisualMotifChanges,1,0,1),maxNewSections:clampInt(auto.maxNewSections,1,0,1),stopAfterNoImprovement:clampInt(auto.stopAfterNoImprovement,1,1,3),minImprovementScore:auto.minImprovementScore||0.05}};
+  control.nextRunRequest={schemaVersion:"apb.next-run-request.v1",id:`auto-cont-${Date.now()}`,type:"showcase-loop-generation",status:"pending",generation:completed+1,targetGenerations:target,sourceRunId:previousRunId,sourceIterationId:result?.iterationId||auto.lastIterationId||null,repoPath,baseRef:result?.commit||auto.lastCommit||"HEAD",objective,changeText:auto.changeText||`Generation ${completed+1}/${target}: continue one bounded catalogue iteration of the same Hermes showcase site. Preserve continuity, visible evidence, responsive polish, and avoid unrelated tech-stack churn.`,acceptanceGateIds:Array.isArray(auto.acceptanceGateIds)?auto.acceptanceGateIds:[],createdAt:now(),createdBy:"midnight-runner:auto-continuation",limits:{maxIterations:target,targetGenerations:target,maxVariantsPerIteration:clampInt(auto.maxVariantsPerIteration,3,1,5),maxParallelVariants:clampInt(auto.maxParallelVariants,3,1,5),maxAcceptedFeatures:clampInt(auto.maxAcceptedFeatures,4,1,4),maxVisualMotifChanges:clampInt(auto.maxVisualMotifChanges,1,0,1),maxNewSections:clampInt(auto.maxNewSections,1,0,1),stopAfterNoImprovement:clampInt(auto.stopAfterNoImprovement,1,1,3),minImprovementScore:auto.minImprovementScore||0.05}};
   control.requestedRunNow=true; writeControl(control);
   event("info","system","auto-iteration-scheduled",`Scheduled showcase generation ${completed+1}/${target}`,{runId:previousRunId,completedGenerations:completed,targetGenerations:target,nextRunRequest:control.nextRunRequest.id});
   return true;
@@ -370,46 +475,71 @@ function scheduleNextAutoIteration(previousRunId:string, result:any): boolean {
 async function runManagedIterationLoop(runId:string, runRoot:string, req:any, iterationScaffold:any){
   try{
     const repo=await validateIterationRepo(req); const art=join(runRoot,"artifacts"); const wtRoot=join(runRoot,"worktrees"); mkdirSync(wtRoot,{recursive:true});
+    const cmds=await validationCommands(repo.repoRoot,repo.baseCommit);
+    patchLifecycle(runRoot,{state:"running",base:{ref:repo.baseRef,commit:repo.baseCommit},repository:{path:repo.repoRoot},validationPlan:{source:"runner-policy",commands:cmds.map(argv=>({argv})),policy:["git diff --check from base commit","declared package test/build scripts when present"]}});
     const iter={...iterationScaffold,status:"worktree-loop-running",repoRoot:repo.repoRoot,baseCommit:repo.baseCommit,worktreeRoot:wtRoot,updatedAt:now()}; writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(art,"iterations","iteration.json"),JSON.stringify(iter,null,2));
     writeRunJson(runRoot,{runId,status:"building",phase:"variant-generation",repoPath:repo.repoRoot,baseCommit:repo.baseCommit});
+    const preflightControl=checkpointDisposition(runId,runRoot,req,"preflight"); if(preflightControl) return preflightControl;
     const variants:WorktreeVariant[]=Array.from({length:req.limits.maxVariantsPerIteration},(_,i)=>({id:`variant-${i+1}`,index:i+1,path:join(wtRoot,`variant-${i+1}`),branch:`apb/${safeBranchPart(runId)}/variant-${i+1}`}));
     for(const v of variants){ await createWorktree(repo.repoRoot,v.path,v.branch,repo.baseCommit); event("info",v.id,"tool-call-end",`Created worktree ${v.branch}`,{runId,agentId:v.id,toolName:"git worktree"}); }
-    const cmds=validationCommands(req,repo.repoRoot,repo.baseCommit);
     await runBounded(variants,req.limits.maxParallelVariants,async(v)=>{
       updateAgent(runId,v.id,{label:`Variant ${v.index}`,role:"bounded variant generator",status:"running",currentPhase:"variant-generation",currentTask:req.objective,logPath:join(runRoot,"logs",`${v.id}.stdout.log`)});
       const code=await streamHermes(runId,runRoot,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0){ v.status="failed"; updateAgent(runId,v.id,{status:"blocked",lastMessage:`Hermes exited ${code}`}); return; }
       v.commit=await ensureCommitted(v.path,`APB ${runId} ${v.id}`); const diff=await gitCmd(v.path,["diff",repo.baseCommit,"HEAD"]); writeFileSync(join(art,"variants",`${v.id}.diff`),diff.stdout); v.diffPath=`artifacts/variants/${v.id}.diff`;
-      v.validation=await runValidations(v.path,cmds); const jsonPath=join(art,"variants",`${v.id}.json`); if(!existsSync(jsonPath)) writeFileSync(jsonPath,JSON.stringify({schemaVersion:"apb.variant.v1",variantId:v.id,status:"generated-by-runner",branch:v.branch,commit:v.commit,diffPath:v.diffPath,changes:[],evidence:[],warning:"variant agent did not write JSON; runner synthesized minimal record"},null,2));
-      v.json={...readJson(jsonPath,{}),variantId:v.id,branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); v.status=v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
+      v.validation=await runValidations(v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path)); const jsonPath=join(art,"variants",`${v.id}.json`);
+      v.json={...readVariantArtifact(jsonPath,v.id),branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); v.status=v.validation.length>0&&v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
     });
+    for(const v of variants){
+      if(!v.json) v.json=readVariantArtifact(join(art,"variants",`${v.id}.json`),v.id);
+      const diffPath=join(art,"variants",`${v.id}.diff`); if(!existsSync(diffPath)||statSync(diffPath).size===0||!v.commit||v.commit===repo.baseCommit) throw new Error(`variant ${v.id} is missing a non-empty committed diff`);
+      if(v.json.changes.length>req.limits.maxAcceptedFeatures||v.json.budget.visualMotifChanges>req.limits.maxVisualMotifChanges||v.json.budget.newSections>req.limits.maxNewSections||v.json.budget.techStackChurn||v.json.budget.unrelatedFeatures) throw new Error(`variant ${v.id} exceeds the contracted feature, motif, section, or scope budget`);
+    }
+    const afterVariants=checkpointDisposition(runId,runRoot,req,"after-variants"); if(afterVariants) return afterVariants;
+    writeRunJson(runRoot,{runId,status:"building",phase:"evaluation"});
     await runBounded(variants,Math.min(3,req.limits.maxParallelVariants),async(v)=>{
       updateAgent(runId,`evaluator-${v.index}`,{label:`Evaluator ${v.index}`,role:"variant evaluator",status:"running",currentPhase:"evaluation",currentTask:`Evaluate ${v.id}`});
-      let code=0; if(v.status!=="failed") code=await streamHermes(runId,runRoot,`evaluator-${v.index}`,v.path,evaluatorPrompt(req,v,runRoot),join(runRoot,"logs",`evaluator-${v.id}.stdout.log`),join(runRoot,"logs",`evaluator-${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
-      const p=join(art,"evaluations",`evaluation-${v.id}.json`); if(!existsSync(p)){ const passed=v.status==="valid"; writeFileSync(p,JSON.stringify({schemaVersion:"apb.evaluation.v1",variantId:v.id,scores:{objectiveFit:passed?70:0,userValue:passed?65:0,visualQuality:50,implementationQuality:passed?70:0,accessibility:50,performance:50,total:passed?62:0},hardGateViolations:passed?[]:[v.status||"failed"],recommendation:passed?"partial":"reject",rationale:code===0?"Runner synthesized evaluation because evaluator did not write JSON.":`Evaluator unavailable/exited ${code}.`},null,2)); }
-      v.evaluation=readJson(p,{}); updateAgent(runId,`evaluator-${v.index}`,{status:"completed",currentArtifact:`artifacts/evaluations/evaluation-${v.id}.json`});
+      const code=await streamHermes(runId,runRoot,`evaluator-${v.index}`,v.path,evaluatorPrompt(req,v,runRoot),join(runRoot,"logs",`evaluator-${v.id}.stdout.log`),join(runRoot,"logs",`evaluator-${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
+      if(code!==0) throw new Error(`evaluator for ${v.id} exited ${code}`);
+      const p=join(art,"evaluations",`evaluation-${v.id}.json`); v.evaluation=readEvaluationArtifact(p,v.id); updateAgent(runId,`evaluator-${v.index}`,{status:"completed",currentArtifact:`artifacts/evaluations/evaluation-${v.id}.json`});
     });
+    for(const v of variants){
+      v.evaluation=readEvaluationArtifact(join(art,"evaluations",`evaluation-${v.id}.json`),v.id);
+      const refs=new Set(v.evaluation.evidenceArtifacts.map((x:string)=>String(x).replace(/^\.\//,"")));
+      for(const required of [`artifacts/variants/${v.id}.json`,`artifacts/variants/${v.id}.diff`]) if(!refs.has(required)||!artifactEvidence(runRoot,required).present) throw new Error(`evaluator for ${v.id} is missing required evidence reference ${required}`);
+    }
+    const afterEvaluation=checkpointDisposition(runId,runRoot,req,"after-evaluation"); if(afterEvaluation) return afterEvaluation;
     const winner=chooseWinner(variants); if(!winner) throw new Error("no valid evaluated variant passed hard gates");
+    const beforeMashup=checkpointDisposition(runId,runRoot,req,"before-mashup"); if(beforeMashup) return beforeMashup;
     const mashup:{path:string;branch:string;commit?:string;validation?:any[]}={path:join(wtRoot,"mashup"),branch:`apb/${safeBranchPart(runId)}/mashup`}; await createWorktree(repo.repoRoot,mashup.path,mashup.branch,repo.baseCommit);
     updateAgent(runId,"mashup",{label:"Mashup Integrator",role:"synthesis/mashup",status:"running",currentPhase:"mashup",currentTask:`Cherry-pick ${winner.id}`});
     const cp=await gitCmd(mashup.path,["cherry-pick",winner.commit||"HEAD"]); if(cp.exitCode!==0){ await gitCmd(mashup.path,["cherry-pick","--abort"]); throw new Error(`mashup cherry-pick failed: ${cp.stderr||cp.stdout}`); }
-    mashup.validation=await runValidations(mashup.path,cmds); mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
+    mashup.validation=await runValidations(mashup.path,await validationCommands(repo.repoRoot,repo.baseCommit,mashup.path)); mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
     const synthesis={schemaVersion:"apb.synthesis.v1",status:mashup.validation.every((x:any)=>x.passed)?"accepted":"blocked",winnerVariantId:winner.id,winnerBranch:winner.branch,winnerCommit:winner.commit,mashupBranch:mashup.branch,mashupCommit:mashup.commit,mashupStrategy:"cherry-pick-winning-variant",acceptedFeatures:winner.json?.changes||winner.json?.features||[],rejectedFeatures:variants.filter(v=>v.id!==winner.id).map(v=>({variantId:v.id,reason:v.evaluation?.rationale||v.status})),rationale:`Selected ${winner.id} by highest valid evaluator score.`,validation:mashup.validation};
     writeFileSync(join(art,"synthesis","synthesis.json"),JSON.stringify(synthesis,null,2));
-    const passed=synthesis.status==="accepted"; const gateDecisions=[{schemaVersion:"apb.gate-decision.v1",id:`decision-${runId}-managed-loop`,runId,status:passed?"passed":"failed",decision:passed?"accepted":"blocked",evidenceArtifacts:["artifacts/synthesis/synthesis.json",`artifacts/variants/${winner.id}.json`,`artifacts/evaluations/evaluation-${winner.id}.json`],notes:passed?"Runner-managed worktree loop completed and mashup validations passed.":"Mashup validation failed.",decidedAt:now(),decidedBy:"midnight-runner"}]; writeFileSync(join(art,"gate-decisions.json"),JSON.stringify(gateDecisions,null,2));
-    const gateReport={schemaVersion:"apb.gate-report.v1",status:passed?"passed":"failed",runId,generatedAt:now(),repoPath:repo.repoRoot,baseCommit:repo.baseCommit,branch:mashup.branch,commit:mashup.commit,iteration:{id:iterationScaffold.id,winnerVariantId:winner.id,synthesisPath:"artifacts/synthesis/synthesis.json"},commands:mashup.validation}; writeFileSync(join(art,"gate-report.json"),JSON.stringify(gateReport,null,2));
-    const manifest={schemaVersion:"apb.artifact-manifest.v1",runId,generatedAt:now(),artifacts:["iterations/iteration.json","source-evidence.json",...variants.flatMap(v=>[`variants/${v.id}.json`,`variants/${v.id}.diff`,`evaluations/evaluation-${v.id}.json`]),"synthesis/synthesis.json","gate-decisions.json","gate-report.json"],gateReport:"artifacts/gate-report.json"}; writeFileSync(join(art,"artifact-manifest.json"),JSON.stringify(manifest,null,2));
+    const afterValidation=checkpointDisposition(runId,runRoot,req,"after-validation"); if(afterValidation) return afterValidation;
+    const finalSourceHead=await gitCmd(repo.repoRoot,["rev-parse","HEAD"]), finalSourceStatus=await gitCmd(repo.repoRoot,["status","--porcelain=v1"]);
+    if(finalSourceHead.exitCode!==0||finalSourceStatus.exitCode!==0||finalSourceHead.stdout.trim()!==repo.sourceHead||finalSourceStatus.stdout!==repo.sourceStatus) throw new Error("normal source branch or working tree changed during managed execution; completion is blocked and no automatic rollback was attempted");
+    const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}); const configuredDecisions=evaluateAcceptanceGates(runId,runRoot,lifecycle.acceptanceGates||[]);
+    const evidenceDecision={schemaVersion:"apb.gate-decision.v1",id:`managed-evidence-${runId}`,gateId:"managed-evidence-integrity",runId,status:"passed",decision:"accepted",required:true,evidence:variants.flatMap(v=>[`artifacts/variants/${v.id}.json`,`artifacts/variants/${v.id}.diff`,`artifacts/evaluations/evaluation-${v.id}.json`]),decidedAt:now(),decidedBy:"midnight-runner"};
+    const validationPassed=synthesis.status==="accepted"&&mashup.validation.length>0&&mashup.validation.every((x:any)=>x.passed); const validationDecision={schemaVersion:"apb.gate-decision.v1",id:`managed-validation-${runId}`,gateId:"managed-validation",runId,status:validationPassed?"passed":"failed",decision:validationPassed?"accepted":"blocked",required:true,evidence:["artifacts/synthesis/synthesis.json","artifacts/gate-report.json"],decidedAt:now(),decidedBy:"midnight-runner"};
+    const gateDecisions=[evidenceDecision,validationDecision,...configuredDecisions]; const passed=validationPassed&&configuredDecisions.every((x:any)=>x.status==="passed"); writeFileSync(join(art,"gate-decisions.json"),JSON.stringify(gateDecisions,null,2));
+    const gateReport={schemaVersion:"apb.gate-report.v1",status:passed?"passed":"failed",runId,generatedAt:now(),repoPath:repo.repoRoot,baseCommit:repo.baseCommit,branch:mashup.branch,commit:mashup.commit,iteration:{id:iterationScaffold.id,winnerVariantId:winner.id,synthesisPath:"artifacts/synthesis/synthesis.json"},commands:mashup.validation,gates:configuredDecisions}; writeFileSync(join(art,"gate-report.json"),JSON.stringify(gateReport,null,2));
+    const manifest={schemaVersion:"apb.artifact-manifest.v1",runId,generatedAt:now(),artifacts:["lifecycle-contract.json","iterations/iteration.json","source-evidence.json",...variants.flatMap(v=>[`variants/${v.id}.json`,`variants/${v.id}.diff`,`evaluations/evaluation-${v.id}.json`]),"synthesis/synthesis.json","gate-decisions.json","gate-report.json","handoff.json"],gateReport:"artifacts/gate-report.json",handoff:"artifacts/handoff.json"}; writeFileSync(join(art,"artifact-manifest.json"),JSON.stringify(manifest,null,2));
     iter.status=passed?"completed":"blocked"; iter.completedAt=now(); iter.winnerVariantId=winner.id; iter.mashupBranch=mashup.branch; iter.mashupCommit=mashup.commit; writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(art,"iterations","iteration.json"),JSON.stringify(iter,null,2));
-    if(!passed) throw new Error("mashup validation failed; see artifacts/synthesis/synthesis.json");
+    if(!passed) throw new Error(configuredDecisions.some((x:any)=>x.status!=="passed")?"required acceptance gate evidence is missing; see artifacts/gate-decisions.json":"mashup validation failed; see artifacts/synthesis/synthesis.json");
+    patchLifecycle(runRoot,{state:"completed",terminalAt:now(),accepted:{winnerVariantId:winner.id,branch:mashup.branch,commit:mashup.commit}});
+    writeHandoff(runId,runRoot,"completed",{iterationId:iterationScaffold.id,baseCommit:repo.baseCommit,accepted:{branch:mashup.branch,commit:mashup.commit},winner:{variantId:winner.id,branch:winner.branch,commit:winner.commit,score:winner.evaluation.scores.total},validations:mashup.validation,gates:gateDecisions,risks:Array.isArray(winner.json?.risks)?winner.json.risks:[],rollbackInstructions:`No source branch was changed. Remove worktrees under ${wtRoot} and branches under apb/${safeBranchPart(runId)}/ only after review.`,operatorNextAction:`Review with git -C ${repo.repoRoot} diff ${repo.baseCommit}..${mashup.commit}; if accepted, explicitly promote commit ${mashup.commit} from branch ${mashup.branch}.`});
     const st=readState(); st.status="completed"; st.phase="completed"; st.completedAt=now(); st.repoPath=repo.repoRoot; st.branch=mashup.branch; st.commit=mashup.commit; st.qualityGate={status:"passed",gateReportPath:`runs/${runId}/artifacts/gate-report.json`,commands:mashup.validation}; st.finalValidation=gateReport; st.lastAction=`Runner-managed iteration completed: ${winner.id} -> ${mashup.branch}`; for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()}; writeState(st);
     writeRunJson(runRoot,{runId,status:"completed",phase:"completed",completedAt:st.completedAt,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,qualityGate:st.qualityGate,finalValidation:gateReport});
-    const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"completed",completedAt:now(),resultRunId:runId,resultBranch:mashup.branch,resultCommit:mashup.commit}; control.requestedRunNow=false; writeControl(control); }
+    const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"completed",completedAt:now(),resultRunId:runId,resultIterationId:iterationScaffold.id,resultBranch:mashup.branch,resultCommit:mashup.commit}; control.requestedRunNow=false; writeControl(control); } reconcileIteration(req,runId,iterationScaffold.id,"completed",{completedAt:now(),commit:mashup.commit,branch:mashup.branch});
     event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return {status:"completed",runId,iterationId:iterationScaffold.id,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,winnerVariantId:winner.id,objective:req.objective};
-  }catch(err:any){ blockRun(runId,runRoot,err?.message||String(err),"Inspect run artifacts/logs and target repo/worktrees before retrying."); return {status:"blocked",runId}; }
+  }catch(err:any){ const reason=err?.message||String(err); writeFileSync(join(runRoot,"artifacts","failure.json"),JSON.stringify({schemaVersion:"apb.managed-failure.v1",runId,failedAt:now(),reason,preservedPaths:preservedPaths(runRoot)},null,2)); blockRun(runId,runRoot,reason,"Inspect the handoff, run artifacts/logs, and preserved worktrees; then issue an explicit continue-from-iteration request."); return {status:"blocked",runId}; }
 }
 
 
 async function main(){
+  const delay=clampInt(process.env.APB_DELAY_START_MS,0,0,10000); if(delay) await Bun.sleep(delay);
   ensure();
   if(!lock()){ log("another runner holds lock; exiting"); return; }
   try{
@@ -443,7 +573,7 @@ async function main(){
         event("info","system","held-unchanged",s.lastAction,{runId:s.currentRunId,fingerprint,suppressedTickCount:Number(prior.suppressedTickCount||0)+1}); log(s.lastAction); return;
       }
     }
-    if (s.currentRunId && ACTIVE.has(s.status)) {
+    if (s.currentRunId && ACTIVE.has(s.status) && !iterationRequest) {
       s.lastAction = `Hourly check: active project ${s.currentRunId} is ${s.status}; no new run started. Will check again next hour.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }
@@ -452,12 +582,22 @@ async function main(){
     const run={ id:runId, status:"inventory-scanning", startedAt:now(), timezone:TZ, selectedProject:null };
     writeFileSync(join(runRoot,"run.json"), JSON.stringify(run,null,2));
     let iterationScaffold:any = null;
-    if (iterationRequest) iterationScaffold = writeIterationScaffold(runId, runRoot, iterationRequest);
+    if (iterationRequest) {
+      try { iterationScaffold = writeIterationScaffold(runId, runRoot, iterationRequest); }
+      catch(err:any){
+        const reason=err?.message||String(err); writeLifecycle(runRoot,{schemaVersion:"apb.managed-lifecycle.v1",runId,iterationId:`iter-${runId}`,requestId:iterationRequest?.id||null,state:"rejected",createdAt:now(),updatedAt:now(),terminalAt:now(),rejectionReason:reason});
+        s={...s,currentRunId:runId,status:"blocked",phase:"blocked",startedAt:run.startedAt,agents:{}}; writeState(s);
+        if(control.nextRunRequest?.status==="pending"){ control.nextRunRequest={...control.nextRunRequest,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
+        blockRun(runId,runRoot,reason,"Correct the managed launch request and submit a new explicit iteration request."); return;
+      }
+    }
     if (control.nextRunRequest?.status === "pending") { control.nextRunRequest = { ...control.nextRunRequest, status:"running", claimedByRunId:runId, claimedAt:now() }; control.requestedRunNow=false; writeControl(control); }
     else if(control.requestedRunNow){ control.requestedRunNow=false; if(control.progressHandoff?.status==="pending") control.progressHandoff={...control.progressHandoff,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
     s = { ...s, schemaVersion:"apb.state.v1", currentRunId:runId, status:"inventory-scanning", phase:"inventory-scanning", startedAt:run.startedAt, completedAt:null, selectedProject:null, block:null, hold:null, currentTask:iterationRequest?"Bounded iteration workflow starting through Hermes CLI":"Scheduled workflow starting through Hermes CLI", task:iterationRequest?iterationRequest.objective:"Scheduled workflow starting through Hermes CLI", lastAction:iterationRequest?"Hourly runner created a bounded iteration run and is invoking Hermes workflow.":"Hourly runner created a new run and is invoking Hermes workflow.", iteration:iterationScaffold, agents:{orchestrator:{id:"orchestrator",label:"Main Orchestrator",role:"scheduled workflow orchestrator",status:"running",currentPhase:"inventory-scanning",currentTask:"Scan local build inventory and select candidate",lastMessage:"Hermes CLI process launched by hourly runner.",startedAt:now(),updatedAt:now(),logPath:join(runRoot,"logs","hermes.stdout.log")}} };
     writeState(s); event("info","system","state-change",s.lastAction,{runId, iteration: iterationScaffold?.id}); if (iterationScaffold) { const rr=readJson(join(runRoot,"run.json"),{}); Object.assign(rr,{iterationId:iterationScaffold.id,iterationKind:iterationRequest.type,generation:iterationRequest.generation||null,targetGenerations:iterationRequest.targetGenerations||null,parentIterationId:iterationRequest.sourceIterationId||null,sourceRunId:iterationRequest.sourceRunId||null,repoPath:iterationRequest.repoPath||rr.repoPath||null,objective:iterationRequest.objective}); writeFileSync(join(runRoot,"run.json"),JSON.stringify(rr,null,2)); } log(`starting run ${runId}`);
+    if(iterationScaffold) reconcileIteration(iterationRequest,runId,iterationScaffold.id,"running",{startedAt:run.startedAt});
     if (!existsSync(HERMES) || !existsSync(PROMPT) || !existsSync(TELEMETRY)) {
+      if(iterationRequest){ blockRun(runId,runRoot,"Hermes binary, runner prompt, or telemetry helper missing",`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`); return; }
       s.status="blocked"; s.block={reason:"Hermes binary, runner prompt, or telemetry helper missing",since:now(),owner:"midnight-runner",suggestedAction:`Check ${HERMES}, ${PROMPT}, and ${TELEMETRY}`}; s.lastAction="Scheduled workflow blocked before launch."; writeState(s); event("error","system","block",s.lastAction,{...s.block,runId,agentId:"orchestrator"}); return;
     }
     if (iterationRequest) {

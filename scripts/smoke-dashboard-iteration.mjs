@@ -58,7 +58,9 @@ try {
   if (detail.run?.id !== runId || detail.iterationState?.id !== `iter-${runId}` || detail.iterationArtifact?.data?.id !== `iter-${runId}`) throw new Error('detail lineage envelope missing');
   if (!detail.sourceEvidence || !Array.isArray(detail.artifacts) || !Array.isArray(detail.logs) || detail.redaction?.enabled !== true) throw new Error('detail product envelope incomplete');
   if (!detail.variants[0]._artifact?.path || !detail.evaluations[0]._artifact?.path) throw new Error('artifact metadata missing');
-  await post('continue-from-iteration', { runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture' });
+  const invalid = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'start-next-iteration', payload: { repoPath: 'relative/repo', objective: '', changeText: '' } }) });
+  if (invalid.status !== 400) throw new Error('malformed managed launch request was not rejected early');
+  await post('continue-from-iteration', { runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture', changeText: 'Complete one bounded fixture change.' });
   const control = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
   if (!control.nextRunRequest || !control.requestedRunNow) throw new Error('nextRunRequest not persisted');
   if (control.nextRunRequest.repoPath !== fixtureRepoPath || control.nextRunRequest.sourceIterationId !== `iter-${runId}` || control.nextRunRequest.sourceRunId !== runId) throw new Error('nextRunRequest source context not preserved');

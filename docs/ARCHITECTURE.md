@@ -129,14 +129,14 @@ Only operator intent commands flow back into `control.json`, `queue.json`, `gate
 
 The managed loop is deliberately bounded and reversible:
 
-1. **Preflight**: `repoPath` must be absolute, exist, be a git repo, resolve `baseRef`, and be clean unless `allowDirty` is true.
+1. **Launch contract and preflight**: before repository work, the runner validates the bounded request and writes `lifecycle-contract.json` plus `artifacts/lifecycle-contract.json` using `apb.managed-lifecycle.v1`. It snapshots repository path, objective, bounded change request, lineage, base ref, runner-selected validation policy, configured gates, dirty-repository policy, limits, and checkpoints. `repoPath` must then exist as an absolute Git repo, resolve `baseRef`, and be clean unless `allowDirty` is true.
 2. **Branching**: run-local worktrees live under `runs/<run-id>/worktrees/`; source branches use `apb/<runId>/variant-N` and `apb/<runId>/mashup`.
 3. **Divergence**: the runner launches up to `maxParallelVariants` Hermes variant agents, never exceeding the configured variant cap.
 4. **Evidence capture**: each variant must write `artifacts/variants/<variant-id>.json`; the runner captures `artifacts/variants/<variant-id>.diff` from git.
-5. **Evaluation**: evaluator agents write `artifacts/evaluations/evaluation-<variant-id>.json` with rubric scores, hard-gate notes, and evidence references.
+5. **Evaluation**: evaluator agents write `artifacts/evaluations/evaluation-<variant-id>.json` with finite rubric scores, hard-gate notes, and references to the real variant claim and diff. Missing/malformed records, partial/rejected recommendations, and hard-gate violations cannot win; the runner never synthesizes evaluator success.
 6. **Synthesis**: the runner chooses the best acceptable evidence-backed direction, creates the mashup worktree, cherry-picks or integrates the accepted change, and writes `artifacts/synthesis/synthesis.json`.
-7. **Gate closeout**: final checks produce `artifacts/gate-decisions.json`, `artifacts/gate-report.json`, and `artifacts/artifact-manifest.json`.
-8. **Lineage**: accepted commit/branch/source evidence update `iterations.json` and, in showcase-loop mode, queue the next generation until the target count or stop condition is reached.
+7. **Checkpoint and gate closeout**: control is re-read at preflight, after variants, after evaluation, before mashup, and after validation. A pause/stop preserves worktrees and writes an honest handoff. Runner-selected validations and every required snapshotted gate must pass with non-empty run-local evidence before `gate-decisions.json`, `gate-report.json`, and `artifact-manifest.json` can close successfully.
+8. **Handoff and lineage**: every terminal managed outcome writes `artifacts/handoff.json` using `apb.handoff.v1`. Accepted commit/branch/source evidence reconcile the original `iterations.json` request row to the real run/iteration and, in showcase-loop mode, queue the next generation until the target count or stop condition is reached.
 
 Generated worktrees, run logs, screenshots, browser traces, build output, databases, and model artifacts are runtime evidence. They belong under the run root or generated project artifacts, not in this repository unless intentionally curated as documentation assets.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { basename, extname, join, resolve, sep } from "path";
+import { basename, extname, isAbsolute, join, resolve, sep } from "path";
 
 const HOME = homedir();
 const PORT = Number(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_PORT || "9200");
@@ -202,6 +202,7 @@ function listIterations() {
       rejectedFeatures: lineage.rejectedFeatures || [],
       testResults: lineage.testResults || evidence.gateReport?.commands || [],
       acceptanceGateResults: lineage.acceptanceGateResults || evidence.gateReport?.acceptance || {},
+      acceptanceGateIds: lineage.acceptanceGateIds || (lineage.acceptanceGates || []).map((gate: any) => gate.id).filter(Boolean),
       nextRecommendedDirection: lineage.nextRecommendedDirection || evidence.run.nextRecommendedDirection || null,
       updatedAt: lineage.updatedAt || evidence.run.updatedAt || r.modifiedAt
     };
@@ -318,7 +319,16 @@ function normalizeIterationRequestPayload(type: string, payload: any, control: a
   const sourceRunId = payload.sourceRunId || payload.runId || null;
   const sourceIterationIdRaw = payload.sourceIterationId || payload.iterationId || null;
   const sourceIter = listIterations().find((x: any) => x.id === sourceIterationIdRaw || x.runId === sourceRunId);
-  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "Continue improving the selected autonomous project", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationCommands: payload.validationCommands || payload.commands || null, expectedArtifacts: ["artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json"] };
+  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", acceptanceGateIds: Array.isArray(payload.acceptanceGateIds) ? payload.acceptanceGateIds : (sourceIter?.acceptanceGateIds || []), createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationPolicy: "runner-selected-only", expectedArtifacts: ["artifacts/lifecycle-contract.json", "artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json", "artifacts/handoff.json"] };
+}
+function iterationRequestErrors(req: any) {
+  const errors: string[] = [];
+  if (!req.repoPath || typeof req.repoPath !== "string" || !isAbsolute(req.repoPath)) errors.push("repoPath must be an absolute path");
+  if (!String(req.objective || "").trim()) errors.push("objective is required");
+  if (!String(req.changeText || "").trim()) errors.push("bounded changeText is required");
+  if (!String(req.baseRef || "").trim()) errors.push("baseRef is required");
+  if (!req.limits || typeof req.limits !== "object") errors.push("iteration limits are required");
+  return errors;
 }
 function appendRunGateDecision(runId: string, decision: any) {
   const path = safeJoin(STATE_ROOT, "runs", runId, "artifacts", "gate-decisions.json");
@@ -413,9 +423,11 @@ async function handleCommand(req: Request) {
     const repoPath = payload.repoPath || payload.baseRepoPath || "/home/mojo/autonomous-projects/hermes-showcase-site";
     const objective = payload.objective || payload.text || control.currentObjective?.text || "Build the Hermes Unique Showcase Website through a visible 10-generation catalogue loop";
     const limits = { ...(control.autoIteration || {}), ...(payload.limits || {}), maxIterations: targetGenerations, targetGenerations, maxVariantsPerIteration: Math.min(Math.max(Number(payload.limits?.maxVariantsPerIteration || payload.maxVariantsPerIteration || 3), 1), 5), maxParallelVariants: Math.min(Math.max(Number(payload.limits?.maxParallelVariants || payload.maxParallelVariants || 3), 1), 5), maxAcceptedFeatures: Math.min(Math.max(Number(payload.limits?.maxAcceptedFeatures || payload.maxAcceptedFeatures || 4), 1), 4), maxVisualMotifChanges: Math.min(Math.max(Number(payload.limits?.maxVisualMotifChanges || payload.maxVisualMotifChanges || 1), 0), 1), maxNewSections: Math.min(Math.max(Number(payload.limits?.maxNewSections || payload.maxNewSections || 1), 0), 1), stopAfterNoImprovement: Math.min(Math.max(Number(payload.limits?.stopAfterNoImprovement || payload.stopAfterNoImprovement || 1), 1), 3), minImprovementScore: Number(payload.limits?.minImprovementScore || payload.minImprovementScore || 0.05) };
-    control.autoIteration = { ...(control.autoIteration || {}), ...limits, enabled: true, mode: "showcase-loop", repoPath, objective, targetGenerations, maxIterations: targetGenerations, completedGenerations: 0, currentGeneration: 1, sourceRunId: payload.sourceRunId || payload.runId || null, sourceIterationId: payload.sourceIterationId || payload.iterationId || null, lineageRootIterationId: payload.sourceIterationId || payload.iterationId || null, catalogueScope: payload.catalogueScope || { repoPath, objectiveKey: objective }, startedAt: now(), completedAt: null, stoppedAt: null, stopReason: null, updatedAt: now() };
+    const acceptanceGateIds = Array.isArray(payload.acceptanceGateIds) ? payload.acceptanceGateIds : gates.gates.map((gate: any) => gate.id).filter(Boolean);
+    control.autoIteration = { ...(control.autoIteration || {}), ...limits, enabled: true, mode: "showcase-loop", repoPath, objective, acceptanceGateIds, targetGenerations, maxIterations: targetGenerations, completedGenerations: 0, currentGeneration: 1, sourceRunId: payload.sourceRunId || payload.runId || null, sourceIterationId: payload.sourceIterationId || payload.iterationId || null, lineageRootIterationId: payload.sourceIterationId || payload.iterationId || null, catalogueScope: payload.catalogueScope || { repoPath, objectiveKey: objective }, startedAt: now(), completedAt: null, stoppedAt: null, stopReason: null, updatedAt: now() };
     control.pause = { requested: false, mode: "checkpoint", reason: null }; control.stop = { requested: false, mode: null, reason: null }; control.runAdmission = "enabled";
-    const req = normalizeIterationRequestPayload("start-next-iteration", { ...payload, repoPath, objective, baseRef: payload.baseRef || "HEAD", changeText: payload.changeText || `Generation 1/${targetGenerations}: start a bounded same-site showcase catalogue loop.`, limits }, control, actor);
+    const req = normalizeIterationRequestPayload("start-next-iteration", { ...payload, repoPath, objective, acceptanceGateIds, baseRef: payload.baseRef || "HEAD", changeText: payload.changeText || `Generation 1/${targetGenerations}: start a bounded same-site showcase catalogue loop.`, limits }, control, actor);
+    const requestErrors = iterationRequestErrors(req); if (requestErrors.length) return json({ error: "invalid managed launch request", details: requestErrors }, 400);
     req.type = "showcase-loop-generation"; req.generation = 1; req.targetGenerations = targetGenerations;
     control.nextRunRequest = req; control.requestedRunNow = true; control.currentObjective = { text: objective, source: "showcase-loop", queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
     upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { autoIteration: control.autoIteration, nextRunRequest: req, effective: "next_runner_tick" }));
@@ -425,6 +437,7 @@ async function handleCommand(req: Request) {
   if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
   if (["start-next-iteration", "continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) {
     const req = normalizeIterationRequestPayload(type, payload, control, actor);
+    const requestErrors = iterationRequestErrors(req); if (requestErrors.length) return json({ error: "invalid managed launch request", details: requestErrors }, 400);
     control.nextRunRequest = req; control.requestedRunNow = true; if (req.objective) control.currentObjective = { text: req.objective, source: req.type, queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
     upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { nextRunRequest: req, effective: "next_runner_tick" }));
   }

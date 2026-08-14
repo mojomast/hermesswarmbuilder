@@ -270,14 +270,18 @@ If the final approved spec/devplan fail these gates, do not proceed to build. Re
 8. Continuously update state/events/run artifacts/logs so the dashboard shows current project, phase, task, agents, blockers, spec adherence, devplan adherence, tool-call inputs/outputs, and subagent logs in real time.
 9. If blocked, spawn deblocker and record memo. If still blocked or over 24 hours old, preserve state and move to `on-hold`.
 10. Complete only when all P0/P1 are implemented, tests pass, docs are current, spec/devplan adherence is satisfied, and definition of done is met.
-11. Only after completion may Awesome Builds be updated with a completed/validated project card.
-12. Finish by calling:
+11. Before terminal completion, write the runner-owned completion evidence contract exactly:
+   - `$RUN_ROOT/artifacts/final-audit.md` (or `final-summary.md`) containing `Project:`, `Repo:`, `Commit:`, the implemented scope, validation results, known risks, rollback/recovery instructions, and the concrete next operator action.
+   - `$RUN_ROOT/artifacts/gate-report.json` with `schemaVersion: "apb.gate-report.v1"`, `runId: "$RUN_ID"`, `status: "passed"`, `repoPath`, `commit`, and a non-empty `commands` array whose entries include `command`, `exitCode`, and `passed`.
+   - Do not claim completion or set either run/state status to `completed` if a required acceptance gate, terminal artifact, or validation result is missing. Record a truthful block or hold instead.
+12. Only after completion may Awesome Builds be updated with a completed/validated project card.
+13. Finish by calling:
 
 ```bash
 python3 "$APB_TELEMETRY" complete \
   --run-id "$RUN_ID" \
   --agent-id orchestrator \
-  --message "Autonomous project run completed and validated"
+  --message "Autonomous project run completed and validated with final audit and passing gate report"
 ```
 
 Use concise progress artifacts. Make shit go brrrrr, but keep safety gates real.

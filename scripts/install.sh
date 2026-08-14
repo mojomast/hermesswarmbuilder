@@ -58,7 +58,7 @@ if [[ "$INSTALL_SERVICE" == "1" ]]; then
 fi
 
 if [[ "$INSTALL_CRON" == "1" ]]; then
-  CRON_LINE="0 * * * * $BUN_BIN $SCRIPTS_DIR/autonomous-project-midnight-runner.ts >> $STATE_ROOT/logs/midnight-runner.log 2>&1"
+  CRON_LINE="0 * * * * AUTONOMOUS_PROJECT_STATE_ROOT=$STATE_ROOT APB_CLASSIC_MAX_TURNS=24 APB_VARIANT_MAX_TURNS=18 APB_EVALUATOR_MAX_TURNS=8 $BUN_BIN $SCRIPTS_DIR/autonomous-project-midnight-runner.ts >> $STATE_ROOT/logs/midnight-runner.log 2>&1"
   TMP="$(mktemp)"
   crontab -l 2>/dev/null | grep -vF "$SCRIPTS_DIR/autonomous-project-midnight-runner.ts" | grep -vF "Hermes Swarm Builder midnight workflow" | grep -vF "Hermes Swarm Builder hourly workflow" > "$TMP" || true
   {

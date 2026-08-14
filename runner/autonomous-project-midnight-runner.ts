@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync } from "fs";
+import { createHash } from "crypto";
 import { homedir } from "os";
 import { isAbsolute, join } from "path";
+
+// Run artifacts can contain source paths and operational evidence; keep them owner-only.
+process.umask(0o077);
 
 const HOME = homedir();
 const ROOT = process.env.AUTONOMOUS_PROJECT_STATE_ROOT || process.env.AUTONOMOUS_PROJECTS_STATE_ROOT || join(HOME, ".hermes", "autonomous-projects");
@@ -15,9 +19,11 @@ const TELEMETRY = join(ROOT, "telemetry.py");
 const CONTROL = join(ROOT, "control.json");
 const QUEUE = join(ROOT, "queue.json");
 const GATES = join(ROOT, "gates.json");
+const ADMISSION = join(ROOT, "runner-admission.json");
 const HERMES = process.env.HERMES_BIN || join(HOME, ".local", "bin", "hermes");
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || "local";
 const ACTIVE = new Set(["inventory-scanning","selecting","repo-created","spec-drafting","spec-review","spec-approved","devplan-drafting","devplan-review","devplan-approved","building","blocked","deblocking"]);
+const HELD = new Set(["on-hold","held","blocked","deblocking"]);
 
 function now(){ return new Date().toISOString(); }
 function ensure(){ for (const p of [ROOT,RUNS,LOGS,join(ROOT,"artifacts")]) mkdirSync(p,{recursive:true}); }
@@ -52,12 +58,60 @@ function defaultControl(): any { return { schemaVersion:"apb.control.v1", runAdm
 function writeControl(c:any){ c.schemaVersion="apb.control.v1"; c.updatedAt=now(); writeFileSync(CONTROL, JSON.stringify(c,null,2)); }
 function readControl(): any { return { ...defaultControl(), ...readJson(CONTROL,{}) }; }
 function readQueue(): any { const q=readJson(QUEUE,{schemaVersion:"apb.queue.v1",items:[]}); if(!Array.isArray(q.items)) q.items=[]; return q; }
+function writeQueue(q:any){ q.schemaVersion="apb.queue.v1"; q.updatedAt=now(); writeFileSync(QUEUE, JSON.stringify(q,null,2)); }
 function readGates(): any { const g=readJson(GATES,{schemaVersion:"apb.gates.v1",gates:[]}); if(!Array.isArray(g.gates)) g.gates=[]; return g; }
 function event(level:string, source:string, type:string, message:string, data:any={}){ appendFileSync(EVENTS, JSON.stringify({ id:`evt-${Date.now()}-${Math.random().toString(16).slice(2)}`, ts:now(), level, source, type, message:redact(message), runId:data?.runId, agentId:data?.agentId, data })+"\n"); }
 function nextHourlyLocal(){ const d=new Date(); d.setHours(d.getHours()+1,0,0,0); return d.toISOString(); }
 function lock(){ try { mkdirSync(LOCK); writeFileSync(join(LOCK,"pid"), String(process.pid)); return true; } catch { return false; } }
 function unlock(){ try { rmSync(LOCK,{recursive:true,force:true}); } catch {} }
 function createRunId(){ const d=new Date(); const pad=(n:number)=>String(n).padStart(2,"0"); return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
+
+function canonical(value:any): any {
+  if(Array.isArray(value)) return value.map(canonical);
+  if(value && typeof value==="object") return Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])]));
+  return value;
+}
+function digest(value:any): string { return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex"); }
+function pinnedItem(control:any, queue:any): any | null { return queue.items?.find((x:any)=>x.id===control.pinnedQueueItemId)||queue.items?.find((x:any)=>x.status==="pinned")||null; }
+function stableBlockers(state:any): any[] {
+  return (Array.isArray(state?.blockers)?state.blockers:[]).map((b:any)=>({id:b?.id||null,code:b?.code||null,status:b?.status||null,severity:b?.severity||null,summary:b?.summary||null}));
+}
+async function admissionFingerprint(state:any, control:any, queue:any): Promise<string> {
+  const pinned=pinnedItem(control,queue);
+  const repoPath=pinned?.target?.preferredRepo||state?.repoPath||null;
+  let repo:any=null;
+  if(repoPath && existsSync(repoPath)){
+    const head=await gitCmd(repoPath,["rev-parse","HEAD"]);
+    const status=await gitCmd(repoPath,["status","--porcelain=v1"]);
+    repo={path:repoPath,head:head.exitCode===0?head.stdout.trim():null,statusDigest:status.exitCode===0?digest(status.stdout.split(/\r?\n/).filter(Boolean).sort()):null};
+  }
+  return digest({
+    state:{status:normalizeStatus(state?.status),phase:normalizeStatus(state?.phase),currentRunId:state?.currentRunId||null,holdReason:state?.hold?.reason||null,blockReason:state?.block?.reason||null,blockers:stableBlockers(state)},
+    control:{runAdmission:control?.runAdmission,pinnedQueueItemId:control?.pinnedQueueItemId||null,currentObjective:control?.currentObjective?.text||null,nextRunRequest:control?.nextRunRequest||null,requestedRunNow:!!control?.requestedRunNow,activeSteering:(control?.activeSteering||[]).map((x:any)=>({id:x.id,scope:x.scope,priority:x.priority,text:x.text,status:x.status||"active"}))},
+    queue:(queue?.items||[]).map((x:any)=>({id:x.id,status:x.status,title:x.title,objective:x.objective,updatedAt:x.updatedAt||null})),repo
+  });
+}
+function writeAdmissionReceipt(fingerprint:string, disposition:string, prior:any={}, extra:any={}){
+  writeFileSync(ADMISSION,JSON.stringify({schemaVersion:"apb.runner-admission.v1",fingerprint,disposition,firstObservedAt:prior?.fingerprint===fingerprint?prior.firstObservedAt||now():now(),lastObservedAt:now(),suppressedTickCount:prior?.fingerprint===fingerprint?Number(prior.suppressedTickCount||0):0,...extra},null,2));
+}
+function deferHeldPinnedItem(runId:string, state:any): boolean {
+  const control=readControl(), queue=readQueue(), pinned=pinnedItem(control,queue);
+  if(!pinned) return false;
+  const reason=state?.hold?.reason||state?.block?.reason||"Pinned project reached a held terminal disposition";
+  queue.items=queue.items.map((x:any)=>x.id===pinned.id?{...x,previousStatus:x.status,status:"held",heldAt:now(),heldByRunId:runId,heldReason:reason}:x);
+  writeQueue(queue);
+  control.pinnedQueueItemId=null;
+  if(control.currentObjective?.queueItemId===pinned.id || String(control.currentObjective?.text||"").toLowerCase().includes(String(pinned.title||"").toLowerCase())) control.currentObjective=null;
+  const active=Array.isArray(control.activeSteering)?control.activeSteering:[];
+  const retired=active.filter((x:any)=>x?.scope==="next_run"||String(x?.text||"").toLowerCase().includes(String(pinned.title||"").toLowerCase()));
+  control.activeSteering=active.filter((x:any)=>!retired.includes(x));
+  if(retired.length) control.steeringHistory=[...(Array.isArray(control.steeringHistory)?control.steeringHistory:[]),...retired.map((x:any)=>({...x,status:"deferred",deferredAt:now(),deferredReason:reason}))];
+  control.requestedRunNow=true;
+  control.progressHandoff={status:"pending",sourceRunId:runId,deferredQueueItemId:pinned.id,reason:"Rotate away from unchanged held work and select a different actionable project",createdAt:now()};
+  writeControl(control);
+  event("warn","system","queue-item-deferred",`Deferred held pinned project ${pinned.title||pinned.id}; next run must select different actionable work`,{runId,queueItemId:pinned.id,reason});
+  return true;
+}
 
 function queueIdeaText(item:any, gates:any[]): string {
   const wanted=new Set(item?.acceptanceGateIds||[]);
@@ -74,12 +128,13 @@ function sourceRunContext(req:any): any {
 }
 function steeringSnapshot(runRoot:string): string {
   const control=readControl(), queue=readQueue(), gates=readGates();
-  const pinned=queue.items.find((x:any)=>x.id===control.pinnedQueueItemId)||queue.items.find((x:any)=>x.status==="pinned");
+  const pinned=pinnedItem(control,queue);
   if(pinned){ writeFileSync(join(runRoot,"idea.txt"), queueIdeaText(pinned,gates.gates)); }
   const req=control.nextRunRequest || null;
   const source=sourceRunContext(req);
   const loopRules={maxVariants:req?.limits?.maxVariantsPerIteration||control.autoIteration?.maxVariantsPerIteration||3,maxAcceptedFeatures:req?.limits?.maxAcceptedFeatures||control.autoIteration?.maxAcceptedFeatures||4,maxVisualMotifChanges:req?.limits?.maxVisualMotifChanges||control.autoIteration?.maxVisualMotifChanges||1,maxNewSections:req?.limits?.maxNewSections||control.autoIteration?.maxNewSections||1,stopAfterNoImprovement:req?.limits?.stopAfterNoImprovement||control.autoIteration?.stopAfterNoImprovement||1};
-  return `\n\n# Dashboard steering/control snapshot\n\nControl: ${JSON.stringify(control,null,2)}\n\nPinned/queued item: ${JSON.stringify(pinned||null,null,2)}\n\nNext run request: ${JSON.stringify(req,null,2)}\n\nSource run context for continuation/fork: ${JSON.stringify(source,null,2)}\n\nBounded iteration rules: ${JSON.stringify(loopRules,null,2)}\n\nAcceptance gates: ${JSON.stringify(gates.gates||[],null,2)}\n\nActive queue: ${JSON.stringify((queue.items||[]).slice(0,10),null,2)}\n\nIf a pinned queue item exists, treat it as the hard selector override. If nextRunRequest exists, it overrides generic selection: continue/fork from its source run, preserve repo/commit continuity, apply only the requested bounded change, record iteration evidence, and do not churn tech stack. Honor pause/stop/hold requests at safe checkpoints.\n`;
+  const packet={control:{runAdmission:control.runAdmission,currentObjective:control.currentObjective||null,nextRunRequest:req,requestedRunNow:!!control.requestedRunNow,activeSteering:control.activeSteering||[],progressHandoff:control.progressHandoff||null},pinnedItem:pinned||null,heldItems:(queue.items||[]).filter((x:any)=>["held","deferred","blocked"].includes(x.status)).map((x:any)=>({id:x.id,title:x.title,status:x.status,heldReason:x.heldReason||null,target:x.target||null})),actionableQueue:(queue.items||[]).filter((x:any)=>["queued","pinned","ready"].includes(x.status)).slice(0,6),nextRunRequest:req,sourceRunContext:source,boundedIterationRules:loopRules,acceptanceGates:(gates.gates||[]).slice(0,12)};
+  return `\n\n# Bounded dashboard steering packet\n\n${JSON.stringify(packet,null,2)}\n\nDo not select held/deferred queue items unless a new explicit nextRunRequest or materially changed authority/evidence makes them actionable. If no pin/request exists, select a genuinely different actionable project or unfinished project slice with a clean progress path. Never repeat an unchanged hold review. A pin is a hard override only while its status is pinned. Honor pause/stop at safe checkpoints.\n`;
 }
 function clampInt(value:any, fallback:number, min:number, max:number): number {
   const n=Number(value);
@@ -88,7 +143,7 @@ function clampInt(value:any, fallback:number, min:number, max:number): number {
 }
 function resolveIterationRequest(control:any, state:any, queue:any): any | null {
   const req=control.nextRunRequest && control.nextRunRequest.status !== "completed" ? control.nextRunRequest : null;
-  const pinned=queue.items?.find((x:any)=>x.id===control.pinnedQueueItemId)||queue.items?.find((x:any)=>x.status==="pinned");
+  const pinned=pinnedItem(control,queue);
   const auto=control.autoIteration?.enabled ? control.autoIteration : null;
   const source=req||auto;
   if(!source) return null;
@@ -170,18 +225,42 @@ function parseFinalSummary(runRoot:string): any {
   const commands=[...txt.matchAll(/`(npm [^`]+|bun [^`]+|python[^`]+)`/g)].map(m=>({name:m[1],exitCode:0}));
   return {project, repoPath, commit, commands, summaryPath:path.endsWith("final-audit.md")?"artifacts/final-audit.md":"artifacts/final-summary.md"};
 }
-function writeCompletionEvidence(runId:string, runRoot:string){
-  const summary=parseFinalSummary(runRoot);
-  const gateReport={schemaVersion:"apb.gate-report.v1", status:"passed", runId, generatedAt:now(), project:summary.project||null, repoPath:summary.repoPath||null, commit:summary.commit||null, commands:summary.commands||[], acceptance:{specSatisfied:true, devplanSatisfied:true, finalSummaryPresent:existsSync(join(runRoot,"artifacts","final-summary.md")), finalAuditPresent:existsSync(join(runRoot,"artifacts","final-audit.md"))}};
-  writeFileSync(join(runRoot,"artifacts","gate-report.json"), JSON.stringify(gateReport,null,2));
-  const artifacts=existsSync(join(runRoot,"artifacts"))?Array.from(new Set([summary.summaryPath?.replace(/^artifacts\//,"")||"final-summary.md","gate-report.json"])):[];
-  writeFileSync(join(runRoot,"artifacts","artifact-manifest.json"), JSON.stringify({schemaVersion:"apb.artifact-manifest.v1",runId,generatedAt:now(),artifacts,gateReport:"artifacts/gate-report.json",finalSummary:summary.summaryPath||"artifacts/final-summary.md"},null,2));
+function terminalAuditEvidence(runRoot:string, gateReport:any): boolean {
+  const paths=[join(runRoot,"artifacts","final-summary.md"),join(runRoot,"artifacts","final-audit.md")].filter(existsSync);
+  return paths.some(path=>{
+    const text=readFileSync(path,"utf8");
+    const repo=(text.match(/(?:Repo|Repository):\s*`?([^`\n]+)`?/i)||[])[1]?.trim();
+    const commit=(text.match(/Commit:\s*`?([0-9a-f]{7,40})`?/i)||[])[1]?.trim();
+    return !!repo && !!commit && repo===gateReport.repoPath && commit===gateReport.commit &&
+      /(?:Implemented scope|Summary):\s*\S/i.test(text) && /Validation:\s*\S/i.test(text) &&
+      /Known risks:\s*\S/i.test(text) && /(?:Rollback|Recovery):\s*\S/i.test(text) &&
+      /Next operator action:\s*\S/i.test(text);
+  });
+}
+function hasPassingCompletionGateReport(runId:string, gateReport:any): boolean {
+  if(!gateReport || gateReport.schemaVersion!=="apb.gate-report.v1" || gateReport.runId!==runId || gateReport.status!=="passed") return false;
+  if(typeof gateReport.repoPath!=="string" || !gateReport.repoPath.trim() || !isAbsolute(gateReport.repoPath) || !existsSync(gateReport.repoPath) || typeof gateReport.commit!=="string" || !gateReport.commit.trim()) return false;
+  const rev=Bun.spawnSync(["git","rev-parse","--verify",`${gateReport.commit}^{commit}`],{cwd:gateReport.repoPath,stdout:"ignore",stderr:"ignore"});
+  return rev.exitCode===0 && Array.isArray(gateReport.commands) && gateReport.commands.length>0 && gateReport.commands.every((command:any)=>
+    command && typeof command.command==="string" && command.command.trim() && command.exitCode===0 && command.passed===true
+  );
+}
+function writeCompletionEvidence(runId:string, runRoot:string): boolean {
   const st=readState();
-  st.status="completed"; st.phase="completed"; st.completedAt=st.completedAt||now(); st.selectedProject=summary.project||st.selectedProject; st.currentProject=summary.project||st.currentProject; st.repoPath=summary.repoPath||st.repoPath; st.commit=summary.commit||st.commit; st.qualityGate={status:"passed",gateReportPath:`runs/${runId}/artifacts/gate-report.json`,commands:gateReport.commands}; st.finalValidation=gateReport;
+  const runPath=join(runRoot,"run.json");
+  const run=readJson(runPath,{id:runId});
+  const gatePath=join(runRoot,"artifacts","gate-report.json");
+  const gateReport=readJson(gatePath,null);
+  if(normalizeStatus(st.status)!=="completed" || normalizeStatus(run.status)!=="completed" || !hasPassingCompletionGateReport(runId,gateReport) || !terminalAuditEvidence(runRoot,gateReport)) return false;
+  const summary=parseFinalSummary(runRoot);
+  const artifacts=Array.from(new Set([summary.summaryPath?.replace(/^artifacts\//,"")||"final-summary.md","gate-report.json"]));
+  writeFileSync(join(runRoot,"artifacts","artifact-manifest.json"), JSON.stringify({schemaVersion:"apb.artifact-manifest.v1",runId,generatedAt:now(),artifacts,gateReport:"artifacts/gate-report.json",finalSummary:summary.summaryPath||"artifacts/final-summary.md"},null,2));
+  st.completedAt=st.completedAt||now(); st.selectedProject=summary.project||st.selectedProject; st.currentProject=summary.project||st.currentProject; st.repoPath=summary.repoPath||st.repoPath; st.commit=summary.commit||st.commit; st.qualityGate={status:"passed",gateReportPath:`runs/${runId}/artifacts/gate-report.json`,commands:gateReport.commands||[]}; st.finalValidation=gateReport;
   for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()};
-  st.lastAction=`Hermes workflow completed and gate report was written for ${runId}`;
+  st.lastAction=`Hermes workflow completed with explicit passing evidence for ${runId}`;
   writeState(st);
-  const runPath=join(runRoot,"run.json"); const run=readJson(runPath,{id:runId}); Object.assign(run,{id:runId,runId,status:"completed",phase:"completed",completedAt:st.completedAt,selectedProject:st.selectedProject,currentProject:st.currentProject,repoPath:st.repoPath,commit:st.commit,qualityGate:st.qualityGate,finalValidation:st.finalValidation}); writeFileSync(runPath,JSON.stringify(run,null,2));
+  Object.assign(run,{id:runId,runId,status:"completed",phase:"completed",completedAt:st.completedAt,selectedProject:st.selectedProject,currentProject:st.currentProject,repoPath:st.repoPath,commit:st.commit,qualityGate:st.qualityGate,finalValidation:st.finalValidation}); writeFileSync(runPath,JSON.stringify(run,null,2));
+  return true;
 }
 
 type CmdResult = { exitCode:number; stdout:string; stderr:string };
@@ -244,7 +323,8 @@ async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>
 }
 async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:string, query:string, stdoutPath:string, stderrPath:string, extraEnv:Record<string,string>={}){
   writeFileSync(stdoutPath,""); writeFileSync(stderrPath,"");
-  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--source","autonomous-project-builder","--max-turns","35","--toolsets","terminal,file,web","--query",query],{cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_RUN_ROOT:runRoot,AUTONOMOUS_PROJECT_STATE:STATE,AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"),AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId,...extraEnv},stdout:"pipe",stderr:"pipe"});
+  const maxTurns=agentId.startsWith("evaluator-")?clampInt(process.env.APB_EVALUATOR_MAX_TURNS,8,4,16):clampInt(process.env.APB_VARIANT_MAX_TURNS,18,8,30);
+  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(maxTurns),"--toolsets","terminal,file,web","--query",query],{cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_RUN_ROOT:runRoot,AUTONOMOUS_PROJECT_STATE:STATE,AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"),AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId,...extraEnv},stdout:"pipe",stderr:"pipe"});
   const pipe=async(stream:ReadableStream<Uint8Array>|null,path:string,kind:string)=>{ if(!stream)return; const dec=new TextDecoder(); for await(const chunk of stream){ const text=dec.decode(chunk); appendFileSync(path,text); for(const rawLine of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(-5)){ const line=redact(rawLine); if(line.startsWith("APB_TELEMETRY ")){ try{const payload=JSON.parse(line.slice("APB_TELEMETRY ".length)); event(payload.level||"info",payload.source||agentId,payload.type||"event",payload.message||"telemetry",{...(payload.data||{}),runId,agentId});}catch{} } else event(kind==="stderr"?"warn":"info",agentId,"agent-message",line,{runId,agentId,logPath:path,stream:kind}); } updateAgent(runId,agentId,{status:"running",lastMessage:redact(text.slice(-2000)),logPath:stdoutPath}); } };
   await Promise.all([pipe(proc.stdout,stdoutPath,"stdout"),pipe(proc.stderr,stderrPath,"stderr")]); return proc.exited;
 }
@@ -261,6 +341,7 @@ function shouldContinueAutoIteration(control:any): boolean {
   return completed < target;
 }
 function scheduleContinuationRunner(){
+  if(process.env.APB_DISABLE_AUTO_CONTINUATION==="1") return;
   try{
     const logPath=join(LOGS,`continuous-runner-${Date.now()}.log`);
     Bun.spawn(["bash","-lc",`sleep 2; ${JSON.stringify(process.execPath)} ${JSON.stringify(import.meta.path)} >> ${JSON.stringify(logPath)} 2>&1`],{cwd:HOME,env:{...process.env},stdout:"ignore",stderr:"ignore"});
@@ -335,7 +416,10 @@ async function main(){
     let s=readState();
     s.nextHourlyRunTime = nextHourlyLocal();
     s.lastRunTime = now();
-    const control=readControl();
+    let control=readControl();
+    let queue=readQueue();
+    let iterationRequest=resolveIterationRequest(control,s,queue);
+    let explicitWake=!!control.requestedRunNow || control.nextRunRequest?.status==="pending";
     if (control.runAdmission === "paused" || control.pause?.requested) {
       s.status = s.status || "idle"; s.phase = s.phase || s.status; s.hold = { reason: control.pause?.reason || "Dashboard hold/pause requested", since: control.pause?.requestedAt || now(), owner:"dashboard" };
       s.lastAction = "Hourly runner skipped launch because dashboard steering has paused/held new runs.";
@@ -345,6 +429,20 @@ async function main(){
       s.status="on-hold"; s.phase="on-hold"; s.hold={reason:control.stop.reason||"Dashboard stop requested",since:control.stop.requestedAt||now(),owner:"dashboard"};
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
     }
+    if (HELD.has(s.status) && !explicitWake && pinnedItem(control,queue)) {
+      deferHeldPinnedItem(s.currentRunId||"unknown",s);
+      control=readControl(); queue=readQueue(); iterationRequest=resolveIterationRequest(control,s,queue); explicitWake=true;
+      s.status="idle"; s.phase="idle"; s.lastAction="Held pinned work was deferred before model launch; selecting a different actionable project."; writeState(s);
+    }
+    if (HELD.has(s.status) && !explicitWake) {
+      const fingerprint=await admissionFingerprint(s,control,queue);
+      const prior=readJson(ADMISSION,{});
+      if(prior.fingerprint===fingerprint && ["held","held-unchanged"].includes(prior.disposition)){
+        s.lastAction="Hourly runner skipped an unchanged held state before LLM launch."; writeState(s);
+        writeAdmissionReceipt(fingerprint,"held-unchanged",prior,{suppressedTickCount:Number(prior.suppressedTickCount||0)+1,runId:s.currentRunId||null});
+        event("info","system","held-unchanged",s.lastAction,{runId:s.currentRunId,fingerprint,suppressedTickCount:Number(prior.suppressedTickCount||0)+1}); log(s.lastAction); return;
+      }
+    }
     if (s.currentRunId && ACTIVE.has(s.status)) {
       s.lastAction = `Hourly check: active project ${s.currentRunId} is ${s.status}; no new run started. Will check again next hour.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
@@ -353,10 +451,10 @@ async function main(){
     const runRoot=join(RUNS,runId); mkdirSync(join(runRoot,"logs"),{recursive:true}); mkdirSync(join(runRoot,"artifacts"),{recursive:true});
     const run={ id:runId, status:"inventory-scanning", startedAt:now(), timezone:TZ, selectedProject:null };
     writeFileSync(join(runRoot,"run.json"), JSON.stringify(run,null,2));
-    const iterationRequest = resolveIterationRequest(control, s, readQueue());
     let iterationScaffold:any = null;
     if (iterationRequest) iterationScaffold = writeIterationScaffold(runId, runRoot, iterationRequest);
     if (control.nextRunRequest?.status === "pending") { control.nextRunRequest = { ...control.nextRunRequest, status:"running", claimedByRunId:runId, claimedAt:now() }; control.requestedRunNow=false; writeControl(control); }
+    else if(control.requestedRunNow){ control.requestedRunNow=false; if(control.progressHandoff?.status==="pending") control.progressHandoff={...control.progressHandoff,status:"running",claimedByRunId:runId,claimedAt:now()}; writeControl(control); }
     s = { ...s, schemaVersion:"apb.state.v1", currentRunId:runId, status:"inventory-scanning", phase:"inventory-scanning", startedAt:run.startedAt, completedAt:null, selectedProject:null, block:null, hold:null, currentTask:iterationRequest?"Bounded iteration workflow starting through Hermes CLI":"Scheduled workflow starting through Hermes CLI", task:iterationRequest?iterationRequest.objective:"Scheduled workflow starting through Hermes CLI", lastAction:iterationRequest?"Hourly runner created a bounded iteration run and is invoking Hermes workflow.":"Hourly runner created a new run and is invoking Hermes workflow.", iteration:iterationScaffold, agents:{orchestrator:{id:"orchestrator",label:"Main Orchestrator",role:"scheduled workflow orchestrator",status:"running",currentPhase:"inventory-scanning",currentTask:"Scan local build inventory and select candidate",lastMessage:"Hermes CLI process launched by hourly runner.",startedAt:now(),updatedAt:now(),logPath:join(runRoot,"logs","hermes.stdout.log")}} };
     writeState(s); event("info","system","state-change",s.lastAction,{runId, iteration: iterationScaffold?.id}); if (iterationScaffold) { const rr=readJson(join(runRoot,"run.json"),{}); Object.assign(rr,{iterationId:iterationScaffold.id,iterationKind:iterationRequest.type,generation:iterationRequest.generation||null,targetGenerations:iterationRequest.targetGenerations||null,parentIterationId:iterationRequest.sourceIterationId||null,sourceRunId:iterationRequest.sourceRunId||null,repoPath:iterationRequest.repoPath||rr.repoPath||null,objective:iterationRequest.objective}); writeFileSync(join(runRoot,"run.json"),JSON.stringify(rr,null,2)); } log(`starting run ${runId}`);
     if (!existsSync(HERMES) || !existsSync(PROMPT) || !existsSync(TELEMETRY)) {
@@ -370,12 +468,14 @@ async function main(){
       }
       return;
     }
-    const query = readFileSync(PROMPT,"utf8") + steeringSnapshot(runRoot) + (iterationRequest ? iterationPromptAppend(iterationRequest) : "");
+    const budgetContract=`\n\n# Hard efficiency contract\n- Parent budget: at most ${clampInt(process.env.APB_CLASSIC_MAX_TURNS,24,8,40)} model turns.\n- The mandatory spec, devplan, audit, build, and test roles in the workflow contract take precedence over any generic child-session count; keep every role focused, avoid duplicate rediscovery, and cap concurrency at 2.\n- Use only the review rounds required by the base workflow, plus one bounded correction round only when concrete failing evidence requires it.\n- Persist full evidence to files; return compact summaries and paths.\n- Do not re-audit unchanged held work. If blocked, record a truthful hold once and exit.\n- Prefer implementation plus tests over repeated planning prose.\n`;
+    const query = readFileSync(PROMPT,"utf8") + steeringSnapshot(runRoot) + budgetContract;
     const stdoutPath = join(runRoot,"logs","hermes.stdout.log");
     const stderrPath = join(runRoot,"logs","hermes.stderr.log");
     writeFileSync(stdoutPath, ""); writeFileSync(stderrPath, "");
     event("info","orchestrator","tool-call-start","Launching Hermes scheduled workflow",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",action:"scheduled autonomous project workflow"});
-    const proc = Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--source","autonomous-project-builder","--max-turns","90","--toolsets","terminal,file,web,delegation","--query",query], { cwd: HOME, env: { ...process.env, AUTONOMOUS_PROJECT_RUN_ID: runId, AUTONOMOUS_PROJECT_STATE_ROOT: ROOT, AUTONOMOUS_PROJECT_RUN_ROOT: runRoot, AUTONOMOUS_PROJECT_EVENTS: EVENTS, AUTONOMOUS_PROJECT_STATE: STATE, AUTONOMOUS_PROJECT_TELEMETRY: TELEMETRY }, stdout: "pipe", stderr: "pipe" });
+    const classicMaxTurns=clampInt(process.env.APB_CLASSIC_MAX_TURNS,24,8,40);
+    const proc = Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(classicMaxTurns),"--toolsets","terminal,file,web,delegation","--query",query], { cwd: HOME, env: { ...process.env, AUTONOMOUS_PROJECT_RUN_ID: runId, AUTONOMOUS_PROJECT_STATE_ROOT: ROOT, AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT, AUTONOMOUS_PROJECT_RUN_ROOT: runRoot, AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"), AUTONOMOUS_PROJECT_EVENTS: EVENTS, AUTONOMOUS_PROJECT_STATE: STATE, AUTONOMOUS_PROJECT_TELEMETRY: TELEMETRY, APB_AGENT_ID:"orchestrator" }, stdout: "pipe", stderr: "pipe" });
     const streamToLog = async (stream: ReadableStream<Uint8Array> | null, path: string, source: string) => {
       if (!stream) return;
       const decoder = new TextDecoder();
@@ -406,8 +506,26 @@ async function main(){
     if (exitCode !== 0) {
       final.status="blocked"; final.block={reason:`Hermes workflow exited with code ${exitCode}`, since:now(), owner:"midnight-runner", suggestedAction:"Inspect hermes stdout/stderr logs in run directory"}; final.lastAction="Hermes workflow failed; preserved run for inspection."; writeState(final); event("error","system","block",final.lastAction,final.block); event("error","orchestrator","tool-call-error","Hermes scheduled workflow failed",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",error:final.block.reason}); log(final.lastAction); return;
     }
-    writeCompletionEvidence(runId, runRoot);
+    const finalRun=readJson(join(runRoot,"run.json"),{});
+    if(HELD.has(normalizeStatus(final.status)) || HELD.has(normalizeStatus(finalRun.status))){
+      if(!HELD.has(normalizeStatus(final.status))){ final.status=normalizeStatus(finalRun.status); final.phase=normalizeStatus(finalRun.phase||finalRun.status); writeState(final); }
+      const deferred=deferHeldPinnedItem(runId,final);
+      const receiptControl=readControl(), receiptQueue=readQueue();
+      const fingerprint=await admissionFingerprint(readState(),receiptControl,receiptQueue);
+      writeAdmissionReceipt(fingerprint,"held",readJson(ADMISSION,{}),{runId,deferredPinnedItem:deferred});
+      event("warn","orchestrator","tool-call-end",`Hermes workflow preserved held disposition for ${runId}`,{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",status:"held",deferredPinnedItem:deferred});
+      log(`preserved held disposition for ${runId}`);
+      if(deferred) scheduleContinuationRunner();
+      return;
+    }
+    if(!writeCompletionEvidence(runId, runRoot)){
+      blockRun(runId,runRoot,"Hermes exited successfully without an explicit completed disposition and passing gate report","Resume from preserved artifacts or select a different actionable project; do not infer product completion from process exit.");
+      const fingerprint=await admissionFingerprint(readState(),readControl(),readQueue());
+      writeAdmissionReceipt(fingerprint,"held",readJson(ADMISSION,{}),{runId,reason:"missing-explicit-completion-evidence"});
+      return;
+    }
     const doneControl=readControl(); if (doneControl.nextRunRequest?.claimedByRunId === runId) { doneControl.nextRunRequest = { ...doneControl.nextRunRequest, status:"completed", completedAt:now() }; doneControl.requestedRunNow=false; writeControl(doneControl); }
+    else if(doneControl.progressHandoff?.claimedByRunId===runId){ doneControl.progressHandoff={...doneControl.progressHandoff,status:"completed",completedAt:now()}; writeControl(doneControl); }
     event("success","orchestrator","tool-call-end",`Hermes workflow process exited successfully for ${runId}`,{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",status:"done"}); log(`completed process for ${runId}`);
   } finally { unlock(); }
 }

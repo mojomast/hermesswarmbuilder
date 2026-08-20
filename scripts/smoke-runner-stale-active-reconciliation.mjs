@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const repo = resolve(new URL('..', import.meta.url).pathname);
 const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
 
-function runCase({ name, lifecycleState, control, expectedState, expectedRun, expectedAgentStatus, expectRestartBlock = false }) {
+function runCase({ name, lifecycleState, control, agentStatus = 'running', expectedState, expectedRun, expectedAgentStatus, expectRestartBlock = false }) {
   const home = mkdtempSync(join(tmpdir(), `hsb-runner-stale-active-${name}-`));
   const root = join(home, 'state');
   const runId = `run-${name}`;
@@ -16,7 +16,7 @@ function runCase({ name, lifecycleState, control, expectedState, expectedRun, ex
     mkdirSync(join(runRoot, 'artifacts'), { recursive: true });
     writeJson(join(root, 'state.json'), {
       schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'inventory-scanning', phase: 'inventory-scanning', agents: {
-        orchestrator: { id: 'orchestrator', status: 'running' }
+        orchestrator: { id: 'orchestrator', status: agentStatus }
       }
     });
     writeJson(join(runRoot, 'run.json'), { id: runId, runId, status: 'inventory-scanning', phase: 'inventory-scanning' });
@@ -49,6 +49,8 @@ runCase({ name: 'completed-lifecycle', lifecycleState: 'completed', expectedStat
 runCase({ name: 'paused-lifecycle', lifecycleState: 'paused', expectedState: 'on-hold', expectedRun: 'on-hold', expectedAgentStatus: 'on-hold' });
 runCase({ name: 'stopped-lifecycle', lifecycleState: 'stopped', expectedState: 'on-hold', expectedRun: 'on-hold', expectedAgentStatus: 'on-hold' });
 runCase({ name: 'blocked-lifecycle', lifecycleState: 'blocked', expectedState: 'blocked', expectedRun: 'blocked' });
+// An orphaned active run with no terminal lifecycle evidence must not leave starting agents active.
+runCase({ name: 'orphaned-starting-agent', agentStatus: 'starting', expectedState: 'blocked', expectedRun: 'blocked', expectedAgentStatus: 'blocked', expectRestartBlock: true });
 // Control dispositions run after interrupted ownership is reconciled, so neither leaves a stale active run.
 runCase({ name: 'paused-admission', control: { runAdmission: 'paused', pause: { requested: true, reason: 'fixture pause' } }, expectedState: 'on-hold', expectedRun: 'blocked', expectRestartBlock: true });
 runCase({ name: 'stopped-admission', control: { stop: { requested: true, reason: 'fixture stop' } }, expectedState: 'on-hold', expectedRun: 'blocked', expectRestartBlock: true });

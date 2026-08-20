@@ -558,7 +558,7 @@ function writeHandoff(runId:string, runRoot:string, state:string, data:any={}){
 }
 function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:string, extra:any={}){
   const st=readState(); st.status="blocked"; st.phase="blocked"; st.block={reason,since:now(),owner:"midnight-runner",suggestedAction,...extra}; st.lastAction=`Runner-managed iteration blocked: ${reason}`;
-  for(const [id,a] of Object.entries(st.agents||{})) if((a as any)?.status==="running") (st.agents as any)[id]={...(a as any),status:"blocked",updatedAt:now()};
+  for(const [id,a] of Object.entries(st.agents||{})) if(["running","starting"].includes((a as any)?.status)) (st.agents as any)[id]={...(a as any),status:"blocked",updatedAt:now()};
   writeState(st); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:st.block});
   if(!existsSync(join(runRoot,"lifecycle-contract.json"))){
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"blocked",blockedAt:now(),block:st.block}; control.requestedRunNow=false; writeControl(control); }

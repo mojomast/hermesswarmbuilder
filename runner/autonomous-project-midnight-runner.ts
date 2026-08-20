@@ -438,6 +438,11 @@ function writeCompletionEvidence(runId:string, runRoot:string): boolean {
 }
 
 type CmdResult = { exitCode:number; stdout:string; stderr:string; timedOut?:boolean; timeoutMs?:number };
+type TimeoutEvidence = { scope:TimeoutScope; command?:string; timeoutMs:number; exitCode:124 };
+class RunnerTimeoutError extends Error {
+  timeout:TimeoutEvidence;
+  constructor(message:string, timeout:TimeoutEvidence){ super(message); this.name="RunnerTimeoutError"; this.timeout=timeout; }
+}
 type WorktreeVariant = { id:string; index:number; path:string; branch:string; commit?:string; status?:string; json?:any; diffPath?:string; validation?:any[]; evaluation?:any };
 
 type TimeoutScope="command"|"classic"|"variant"|"evaluator";
@@ -530,7 +535,7 @@ function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:s
   }
   patchLifecycle(runRoot,{state:"blocked",terminalAt:now(),blocker:reason});
   const iter=readJson(join(runRoot,"iteration-state.json"),null); if(iter){ Object.assign(iter,{status:"blocked",blockedAt:now(),blocker:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2)); }
-  writeHandoff(runId,runRoot,"blocked",{iterationId:iter?.id||null,blocker:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:suggestedAction});
+  writeHandoff(runId,runRoot,"blocked",{iterationId:iter?.id||null,blocker:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:suggestedAction,...extra});
   const control=readControl(), claimed=control.nextRunRequest?.claimedByRunId===runId?control.nextRunRequest:null;
   if(claimed) control.nextRunRequest={...claimed,status:"blocked",blockedAt:now(),resultRunId:runId,resultIterationId:iter?.id||null,block:st.block};
   if(control.autoIteration?.enabled) control.autoIteration={...control.autoIteration,enabled:false,stoppedAt:now(),stopReason:"managed-iteration-blocked",lastRunId:runId,lastIterationId:iter?.id||null};
@@ -588,11 +593,16 @@ async function validationCommands(repoRoot:string, baseCommit:string, worktreePa
   if(scripts.has("test")) cmds.push(["npm","test"]); if(scripts.has("build")) cmds.push(["npm","run","build"]);
   return cmds;
 }
-async function runValidations(cwd:string, cmds:string[][]){
-  const out:any[]=[]; for(const cmd of cmds){ const r=await runCmd(cmd,{cwd}); out.push({argv:cmd,command:cmd.join(" "),exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,...(r.timedOut?{timeoutMs:r.timeoutMs}: {})}); if(r.exitCode!==0) break; } return out;
+async function runValidations(runId:string, cwd:string, cmds:string[][]){
+  const out:any[]=[]; for(const cmd of cmds){
+    const r=await runCmd(cmd,{cwd}), command=cmd.join(" ");
+    out.push({argv:cmd,command,exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,...(r.timedOut?{timeoutMs:r.timeoutMs}: {})});
+    if(r.timedOut){ const timeout:TimeoutEvidence={scope:"command",command,timeoutMs:r.timeoutMs||timeoutMs("command"),exitCode:124}; const reason=`Validation command timed out after ${timeout.timeoutMs}ms: ${command}`; event("error","validation","runner-timeout",reason,{runId,...timeout}); throw new RunnerTimeoutError(reason,timeout); }
+    if(r.exitCode!==0) break;
+  } return out;
 }
 async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>Promise<any>){
-  const results:any[]=[]; let next=0; const workers=Array.from({length:Math.max(1,Math.min(limit,items.length))},async()=>{ while(next<items.length){ const i=next++; try{ results[i]=await fn(items[i],i); }catch(err:any){ results[i]={error:err?.message||String(err)}; } } }); await Promise.all(workers); return results;
+  const results:any[]=[]; let next=0; const workers=Array.from({length:Math.max(1,Math.min(limit,items.length))},async()=>{ while(next<items.length){ const i=next++; try{ results[i]=await fn(items[i],i); }catch(err:any){ results[i]={error:err?.message||String(err),...(err?.timeout?{timeout:err.timeout}:{})}; } } }); await Promise.all(workers); return results;
 }
 async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:string, query:string, stdoutPath:string, stderrPath:string, extraEnv:Record<string,string>={}){
   writeFileSync(stdoutPath,""); writeFileSync(stderrPath,"");
@@ -688,10 +698,10 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
       const code=await streamHermes(runId,runRoot,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0){ v.status="failed"; updateAgent(runId,v.id,{status:"blocked",lastMessage:`Hermes exited ${code}`}); return; }
       v.commit=await ensureCommitted(v.path,`APB ${runId} ${v.id}`); const diff=await gitCmd(v.path,["diff",repo.baseCommit,"HEAD"]); writeFileSync(join(art,"variants",`${v.id}.diff`),diff.stdout); v.diffPath=`artifacts/variants/${v.id}.diff`;
-      v.validation=await runValidations(v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path)); const jsonPath=join(art,"variants",`${v.id}.json`);
+      v.validation=await runValidations(runId,v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path)); const jsonPath=join(art,"variants",`${v.id}.json`);
       v.json={...readVariantArtifact(jsonPath,v.id),branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); v.status=v.validation.length>0&&v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
     });
-    const variantError=variantRuns.find((result:any)=>result?.error); if(variantError) throw new Error(variantError.error);
+    const variantError=variantRuns.find((result:any)=>result?.error); if(variantError) { if(variantError.timeout) throw new RunnerTimeoutError(variantError.error,variantError.timeout); throw new Error(variantError.error); }
     for(const v of variants){
       if(!v.json) v.json=readVariantArtifact(join(art,"variants",`${v.id}.json`),v.id);
       const diffPath=join(art,"variants",`${v.id}.diff`); if(!existsSync(diffPath)||statSync(diffPath).size===0||!v.commit||v.commit===repo.baseCommit) throw new Error(`variant ${v.id} is missing a non-empty committed diff`);
@@ -717,7 +727,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const mashup:{path:string;branch:string;commit?:string;validation?:any[]}={path:join(wtRoot,"mashup"),branch:`apb/${safeBranchPart(runId)}/mashup`}; await createWorktree(repo.repoRoot,mashup.path,mashup.branch,repo.baseCommit);
     updateAgent(runId,"mashup",{label:"Mashup Integrator",role:"synthesis/mashup",status:"running",currentPhase:"mashup",currentTask:`Cherry-pick ${winner.id}`});
     const cp=await gitCmd(mashup.path,["cherry-pick",winner.commit||"HEAD"]); if(cp.exitCode!==0){ await gitCmd(mashup.path,["cherry-pick","--abort"]); throw new Error(`mashup cherry-pick failed: ${cp.stderr||cp.stdout}`); }
-    mashup.validation=await runValidations(mashup.path,await validationCommands(repo.repoRoot,repo.baseCommit,mashup.path)); mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
+    mashup.validation=await runValidations(runId,mashup.path,await validationCommands(repo.repoRoot,repo.baseCommit,mashup.path)); mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
     const synthesis={schemaVersion:"apb.synthesis.v1",status:mashup.validation.every((x:any)=>x.passed)?"accepted":"blocked",winnerVariantId:winner.id,winnerBranch:winner.branch,winnerCommit:winner.commit,mashupBranch:mashup.branch,mashupCommit:mashup.commit,mashupStrategy:"cherry-pick-winning-variant",acceptedFeatures:winner.json?.changes||winner.json?.features||[],rejectedFeatures:variants.filter(v=>v.id!==winner.id).map(v=>({variantId:v.id,reason:v.evaluation?.rationale||v.status})),rationale:`Selected ${winner.id} by highest valid evaluator score.`,validation:mashup.validation};
     writeFileSync(join(art,"synthesis","synthesis.json"),JSON.stringify(synthesis,null,2));
     const afterValidation=checkpointDisposition(runId,runRoot,req,"after-validation"); if(afterValidation) return afterValidation;
@@ -738,7 +748,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"completed",completedAt:now(),resultRunId:runId,resultIterationId:iterationScaffold.id,resultBranch:mashup.branch,resultCommit:mashup.commit}; control.requestedRunNow=false; writeControl(control); } reconcileIteration(req,runId,iterationScaffold.id,"completed",{completedAt:now(),commit:mashup.commit,branch:mashup.branch});
     reconcileProjectRun(runId,runRoot,"completed",iterationScaffold.id,{completedAt:now(),resultBranch:mashup.branch,resultCommit:mashup.commit});
     event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return {status:"completed",runId,iterationId:iterationScaffold.id,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,winnerVariantId:winner.id,objective:req.objective};
-  }catch(err:any){ const reason=err?.message||String(err); writeFileSync(join(runRoot,"artifacts","failure.json"),JSON.stringify({schemaVersion:"apb.managed-failure.v1",runId,failedAt:now(),reason,preservedPaths:preservedPaths(runRoot)},null,2)); blockRun(runId,runRoot,reason,"Inspect the handoff, run artifacts/logs, and preserved worktrees; then issue an explicit continue-from-iteration request."); return {status:"blocked",runId}; }
+  }catch(err:any){ const reason=err?.message||String(err), timeout=err?.timeout; writeFileSync(join(runRoot,"artifacts","failure.json"),JSON.stringify({schemaVersion:"apb.managed-failure.v1",runId,failedAt:now(),reason,...(timeout?{timeout}:{}),preservedPaths:preservedPaths(runRoot)},null,2)); blockRun(runId,runRoot,reason,"Inspect the handoff, run artifacts/logs, and preserved worktrees; then issue an explicit continue-from-iteration request.",timeout?{timeout}:{}); return {status:"blocked",runId}; }
 }
 
 
@@ -782,7 +792,7 @@ async function main(){
         event("info","system","held-unchanged",s.lastAction,{runId:s.currentRunId,fingerprint,suppressedTickCount:Number(prior.suppressedTickCount||0)+1}); log(s.lastAction); return;
       }
     }
-    if (s.currentRunId && ACTIVE.has(s.status) && !iterationRequest) {
+    if (s.currentRunId && ACTIVE.has(s.status) && !iterationRequest && !explicitWake) {
       s.lastAction = `Hourly check: active project ${s.currentRunId} is ${s.status}; no new run started. Will check again next hour.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }

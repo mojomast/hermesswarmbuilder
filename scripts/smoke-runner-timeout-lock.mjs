@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 const repo = resolve(new URL('..', import.meta.url).pathname);
 const fixtures = [];
 const cleanupPids = [];
+const cleanupWatchers = [];
 function json(path) { return JSON.parse(readFileSync(path, 'utf8')); }
 function writeJson(path, value) { writeFileSync(path, JSON.stringify(value, null, 2)); }
 function git(cwd, args) {
@@ -25,11 +26,28 @@ function fixture(name, paused = true) {
   writeFileSync(join(root, 'telemetry.py'), '# fixture\n');
   return { home, root };
 }
+function managedFixture(name, packageJson=null) {
+  const f=fixture(name,false), project=join(f.home,'project'); mkdirSync(project);
+  git(project,['init']); git(project,['config','user.email','smoke@example.test']); git(project,['config','user.name','Smoke Test']);
+  writeFileSync(join(project,'README.md'),`# ${name}\n`);
+  if(packageJson) writeJson(join(project,'package.json'),packageJson);
+  git(project,['add','.']); git(project,['commit','-m','initial fixture']);
+  const request={schemaVersion:'apb.next-run-request.v1',id:`request-${name}`,status:'pending',type:'continue',sourceRunId:'source-run',sourceIterationId:'source-iteration',repoPath:project,baseRef:'HEAD',objective:`Exercise ${name}`,changeText:'Make one deterministic fixture change.',limits:{maxIterations:1,maxVariantsPerIteration:1,maxParallelVariants:1,maxAcceptedFeatures:1,maxVisualMotifChanges:0,maxNewSections:0,stopAfterNoImprovement:1}};
+  writeJson(join(f.root,'control.json'),{schemaVersion:'apb.control.v1',runAdmission:'enabled',pause:{requested:false},stop:{requested:false},activeSteering:[],requestedRunNow:true,nextRunRequest:request,autoIteration:{enabled:false}});
+  writeJson(join(f.root,'iterations.json'),{schemaVersion:'apb.iterations.v1',items:[{id:request.id,status:'requested'}]});
+  return {...f,project,request};
+}
+function writeManagedHermes(path, timeoutAgent='') {
+  writeFileSync(path,`#!/usr/bin/env node\nconst fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');\nconst id=process.env.APB_AGENT_ID; console.log('fixture '+id+' started');\nif(id===process.env.TIMEOUT_AGENT) setInterval(()=>{},1000);\nif(id.startsWith('variant-')){ fs.appendFileSync(path.join(process.cwd(),'README.md'),'fixture change\\n'); const p=path.join(process.env.AUTONOMOUS_PROJECT_ARTIFACTS,'variants',id+'.json'); fs.writeFileSync(p,JSON.stringify({schemaVersion:'apb.variant.v1',variantId:id,title:'fixture',claim:'fixture change',objectiveMapping:['fixture'],changes:['README'],risks:[],evidence:['README.md'],validationNotes:[],budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}})); }\nelse { const variantId='variant-'+id.split('-')[1],p=path.join(process.env.AUTONOMOUS_PROJECT_ARTIFACTS,'evaluations','evaluation-'+variantId+'.json'); fs.writeFileSync(p,JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId,scores:{objectiveFit:90,userValue:90,visualQuality:90,implementationQuality:90,accessibility:90,performance:90,total:90},hardGateViolations:[],recommendation:'accept',rationale:'fixture passed',evidenceArtifacts:['artifacts/variants/'+variantId+'.json','artifacts/variants/'+variantId+'.diff']})); }\n`, 'utf8');
+  chmodSync(path,0o755);
+  return {TIMEOUT_AGENT:timeoutAgent};
+}
 function run(f, extraEnv = {}) {
   return spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd:repo, env:{...process.env, HOME:f.home, AUTONOMOUS_PROJECT_STATE_ROOT:f.root, APB_DISABLE_AUTO_CONTINUATION:'1', ...extraEnv}, encoding:'utf8', timeout:5000 });
 }
 function runAsync(f, extraEnv = {}) {
   const child=spawn('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd:repo, env:{...process.env, HOME:f.home, AUTONOMOUS_PROJECT_STATE_ROOT:f.root, APB_DISABLE_AUTO_CONTINUATION:'1', ...extraEnv}, stdio:['ignore','pipe','pipe'] });
+  if(Number.isInteger(child.pid)) cleanupPids.push(child.pid);
   let stdout='',stderr=''; child.stdout.on('data',chunk=>stdout+=chunk); child.stderr.on('data',chunk=>stderr+=chunk);
   return {child,done:new Promise((resolve,reject)=>{ child.once('error',reject); child.once('exit',(status,signal)=>resolve({status,signal,stdout,stderr})); })};
 }
@@ -81,7 +99,7 @@ try {
   await waitUntil(()=>existsSync(join(wrongReleaseLock,'owner.json')),'runner-owned lock before replacement');
   rmSync(wrongReleaseLock,{recursive:true,force:true}); mkdirSync(wrongReleaseLock);
   writeJson(join(wrongReleaseLock,'owner.json'),{schemaVersion:'apb.runner-lock.v1',pid:process.pid,token:'replacement-owner',createdAt:new Date().toISOString(),startIdentity:null});
-  const lockEvents=[]; const watcher=watch(wrongRelease.root,(eventType,filename)=>{ if(String(filename).startsWith('autonomous-project.lock')) lockEvents.push({eventType,filename:String(filename)}); });
+  const lockEvents=[]; const watcher=watch(wrongRelease.root,(eventType,filename)=>{ if(String(filename).startsWith('autonomous-project.lock')) lockEvents.push({eventType,filename:String(filename)}); }); cleanupWatchers.push(watcher);
   assertRunnerOk(await releasing.done,'wrong-owner release'); watcher.close();
   if(!existsSync(wrongReleaseLock) || json(join(wrongReleaseLock,'owner.json')).token!=='replacement-owner') throw new Error('wrong-owner release removed the replacement lock');
   if(lockEvents.length) throw new Error(`wrong-owner release destructively renamed a lock before token verification: ${JSON.stringify(lockEvents)}`);
@@ -109,8 +127,8 @@ try {
   const normalExitElapsed = Date.now() - normalExitStarted;
   assertRunnerOk(normalExitResult, 'normal exit inherited pipe');
   if(normalExitElapsed >= 1000) throw new Error(`normal Hermes exit waited ${normalExitElapsed}ms for a descendant-held pipe`);
-  const normalExitPid=Number(readFileSync(normalExitPidPath,'utf8'));
-  if(alive(normalExitPid)) { cleanupPids.push(normalExitPid); throw new Error(`normal-exit stream descendant ${normalExitPid} survived bounded drain cleanup`); }
+  const normalExitPid=Number(readFileSync(normalExitPidPath,'utf8')); cleanupPids.push(normalExitPid);
+  if(alive(normalExitPid)) throw new Error(`normal-exit stream descendant ${normalExitPid} survived bounded drain cleanup`);
   const normalExitCleanup=json(normalExitCleanupPath);
   if(!normalExitCleanup.lockPresent || !normalExitCleanup.termObserved) throw new Error('runner did not TERM the residual process group while retaining its lock');
   if(existsSync(join(normalExitPipe.root,'autonomous-project.lock'))) throw new Error('normal-exit cleanup left runner lock behind');
@@ -138,8 +156,8 @@ try {
   const managedExitElapsed=Date.now()-managedExitStarted;
   assertRunnerOk(managedExitResult,'managed normal exit inherited pipe');
   if(managedExitElapsed>=1000) throw new Error(`managed normal Hermes exit waited ${managedExitElapsed}ms for a descendant-held pipe`);
-  const managedExitPid=Number(readFileSync(managedExitPidPath,'utf8'));
-  if(alive(managedExitPid)) { cleanupPids.push(managedExitPid); throw new Error(`managed normal-exit stream descendant ${managedExitPid} survived bounded drain cleanup`); }
+  const managedExitPid=Number(readFileSync(managedExitPidPath,'utf8')); cleanupPids.push(managedExitPid);
+  if(alive(managedExitPid)) throw new Error(`managed normal-exit stream descendant ${managedExitPid} survived bounded drain cleanup`);
   if(!json(managedExitCleanupPath).lockPresent) throw new Error('runner unlocked before managed residual process-group cleanup');
   if(existsSync(join(managedExitPipe.root,'autonomous-project.lock'))) throw new Error('managed normal-exit cleanup left runner lock behind');
   const managedExitState=json(join(managedExitPipe.root,'state.json'));
@@ -156,6 +174,32 @@ try {
     writeJson(join(identityUnreadableLock, 'owner.json'), { schemaVersion:'apb.runner-lock.v1', pid:process.pid, token:'identity-owner', createdAt:new Date().toISOString(), startIdentity:'expected-start' });
     assertRunnerOk(run(identityUnreadable, { APB_PROC_ROOT:join(identityUnreadable.home, 'missing-proc') }), 'unreadable live owner identity');
     if(!existsSync(identityUnreadableLock) || json(join(identityUnreadableLock, 'owner.json')).token !== 'identity-owner') throw new Error('kill-confirmed v1 owner was called stale when process identity could not be read');
+
+    const commandTimed = managedFixture('command-timeout',{scripts:{test:'node -e "setInterval(()=>{},1000)"'}});
+    const commandHermes=join(commandTimed.home,'command-hermes.cjs'); writeManagedHermes(commandHermes);
+    const commandResult=run(commandTimed,{HERMES_BIN:commandHermes,APB_COMMAND_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50'});
+    assertRunnerOk(commandResult,'managed validation command timeout');
+    const commandState=json(join(commandTimed.root,'state.json')), commandRunId=commandState.currentRunId, commandRunRoot=join(commandTimed.root,'runs',commandRunId);
+    if(commandState.status!=='blocked'||commandState.block?.timeout?.scope!=='command'||commandState.block?.timeout?.command!=='npm test'||commandState.block?.timeout?.timeoutMs!==150||commandState.block?.timeout?.exitCode!==124) throw new Error(`validation command timeout was not retained as structured block evidence: ${JSON.stringify(commandState.block)}`);
+    const commandEvents=readFileSync(join(commandTimed.root,'events.jsonl'),'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+    if(!commandEvents.some(e=>e.type==='runner-timeout'&&e.data?.scope==='command'&&e.data?.command==='npm test'&&e.data?.timeoutMs===150&&e.data?.exitCode===124)) throw new Error('validation command runner-timeout event evidence missing');
+    const commandHandoff=json(join(commandRunRoot,'artifacts','handoff.json')), commandIteration=json(join(commandRunRoot,'iteration-state.json')), commandControl=json(join(commandTimed.root,'control.json'));
+    if(commandHandoff.state!=='blocked'||commandHandoff.timeout?.scope!=='command'||commandIteration.status!=='blocked'||commandControl.nextRunRequest?.status!=='blocked'||commandControl.requestedRunNow!==false) throw new Error('validation command timeout lifecycle/iteration/handoff/control evidence incomplete');
+    if(!existsSync(join(commandRunRoot,'worktrees','variant-1'))||!readFileSync(join(commandRunRoot,'logs','variant-1.stdout.log'),'utf8').includes('fixture variant-1 started')) throw new Error('validation command timeout did not retain worktree and variant log');
+
+    for(const [scope,agent,envName] of [['variant','variant-1','APB_VARIANT_TIMEOUT_MS'],['evaluator','evaluator-1','APB_EVALUATOR_TIMEOUT_MS']]) {
+      const managedTimed=managedFixture(`${scope}-timeout`), managedHermes=join(managedTimed.home,`${scope}-hermes.cjs`);
+      writeManagedHermes(managedHermes,agent);
+      const managedResult=run(managedTimed,{HERMES_BIN:managedHermes,TIMEOUT_AGENT:agent,[envName]:'150',APB_TERMINATION_GRACE_MS:'50'});
+      assertRunnerOk(managedResult,`managed ${scope} timeout`);
+      const managedState=json(join(managedTimed.root,'state.json')), managedRunId=managedState.currentRunId, managedRunRoot=join(managedTimed.root,'runs',managedRunId);
+      if(managedState.status!=='blocked'||!managedState.block?.reason?.includes(`Hermes ${scope} ${agent} timed out after 150ms`)) throw new Error(`managed ${scope} timeout did not block with scoped reason: ${JSON.stringify(managedState.block)}`);
+      const managedEvents=readFileSync(join(managedTimed.root,'events.jsonl'),'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+      if(!managedEvents.some(e=>e.type==='runner-timeout'&&e.data?.scope===scope&&e.data?.agentId===agent&&e.data?.timeoutMs===150&&e.data?.exitCode===124)) throw new Error(`managed ${scope} runner-timeout event evidence missing`);
+      const managedLifecycle=json(join(managedRunRoot,'lifecycle-contract.json')), managedIteration=json(join(managedRunRoot,'iteration-state.json')), managedHandoff=json(join(managedRunRoot,'artifacts','handoff.json')), managedControl=json(join(managedTimed.root,'control.json'));
+      if(managedLifecycle.state!=='blocked'||managedIteration.status!=='blocked'||managedHandoff.state!=='blocked'||!managedHandoff.blocker.includes(`Hermes ${scope}`)||managedControl.nextRunRequest?.status!=='blocked'||managedControl.requestedRunNow!==false) throw new Error(`managed ${scope} timeout lifecycle/iteration/handoff/control evidence incomplete`);
+      if(!existsSync(join(managedRunRoot,'worktrees','variant-1'))||!readFileSync(join(managedRunRoot,'logs',scope==='variant'?'variant-1.stdout.log':'evaluator-variant-1.stdout.log'),'utf8').includes(`fixture ${agent} started`)) throw new Error(`managed ${scope} timeout did not retain worktree and scoped log`);
+    }
 
     const resistant = fixture('term-resistant-stream-descendant', false);
     const resistantHermes = join(resistant.home, 'resistant-hermes.cjs');
@@ -174,9 +218,11 @@ try {
     const timed = fixture('classic-timeout', false);
     const fakeHermes = join(timed.home, 'fake-hermes.cjs');
     const descendantPid = join(timed.home, 'descendant.pid');
-    writeFileSync(fakeHermes, `#!/usr/bin/env node\nconst fs=require('node:fs'),cp=require('node:child_process');\nconst child=cp.spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});\nfs.writeFileSync(process.env.DESCENDANT_PID,String(child.pid));\nconsole.log('fixture parent and descendant started');\nsetInterval(()=>{},1000);\n`);
+    const classicInvocations = join(timed.home, 'classic-invocations');
+    writeFileSync(fakeHermes, `#!/usr/bin/env node\nconst fs=require('node:fs'),cp=require('node:child_process');\nconst count=fs.existsSync(process.env.INVOCATIONS)?Number(fs.readFileSync(process.env.INVOCATIONS,'utf8'))+1:1; fs.writeFileSync(process.env.INVOCATIONS,String(count));\nif(count>1){ console.log('explicit recovery launched a fresh classic run'); process.exit(7); }\nconst child=cp.spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});\nfs.writeFileSync(process.env.DESCENDANT_PID,String(child.pid));\nconsole.log('fixture parent and descendant started');\nsetInterval(()=>{},1000);\n`);
     chmodSync(fakeHermes, 0o755);
-    const result = run(timed, { HERMES_BIN:fakeHermes, DESCENDANT_PID:descendantPid, APB_CLASSIC_TIMEOUT_MS:'250', APB_TERMINATION_GRACE_MS:'100' });
+    const result = run(timed, { HERMES_BIN:fakeHermes, DESCENDANT_PID:descendantPid, INVOCATIONS:classicInvocations, APB_CLASSIC_TIMEOUT_MS:'250', APB_TERMINATION_GRACE_MS:'100' });
+    if(existsSync(descendantPid)) cleanupPids.push(Number(readFileSync(descendantPid,'utf8')));
     assertRunnerOk(result, 'classic timeout');
     const state = json(join(timed.root, 'state.json'));
     if(state.status !== 'blocked' || !state.block?.reason?.includes('timed out after 250ms')) throw new Error(`classic timeout did not produce blocked timeout evidence: ${JSON.stringify(state.block)}`);
@@ -188,10 +234,19 @@ try {
     if(alive(childPid)) throw new Error(`classic timeout left descendant process ${childPid} alive`);
     const runId = readdirSync(join(timed.root, 'runs')).sort().at(-1);
     if(json(join(timed.root, 'runs', runId, 'run.json')).status !== 'blocked') throw new Error('classic timeout run evidence was not blocked');
+    assertRunnerOk(run(timed, { HERMES_BIN:fakeHermes, DESCENDANT_PID:descendantPid, INVOCATIONS:classicInvocations, APB_CLASSIC_TIMEOUT_MS:'250', APB_TERMINATION_GRACE_MS:'100' }), 'ordinary tick after classic timeout');
+    if(Number(readFileSync(classicInvocations,'utf8'))!==1 || readdirSync(join(timed.root,'runs')).length!==1) throw new Error('ordinary hourly tick automatically retried blocked classic work');
+    const recoveryControl=json(join(timed.root,'control.json')); recoveryControl.requestedRunNow=true; writeJson(join(timed.root,'control.json'),recoveryControl);
+    assertRunnerOk(run(timed, { HERMES_BIN:fakeHermes, DESCENDANT_PID:descendantPid, INVOCATIONS:classicInvocations, APB_CLASSIC_TIMEOUT_MS:'250', APB_TERMINATION_GRACE_MS:'100' }), 'explicit classic timeout recovery');
+    const recoveredRuns=readdirSync(join(timed.root,'runs')).sort();
+    if(Number(readFileSync(classicInvocations,'utf8'))!==2 || recoveredRuns.length!==2) throw new Error('explicit wake did not launch a fresh classic run after timeout');
+    if(!existsSync(join(timed.root,'runs',runId,'logs','hermes.stdout.log'))) throw new Error('explicit recovery discarded previous classic timeout artifacts');
+    if(!readFileSync(join(timed.root,'runs',recoveredRuns.at(-1),'logs','hermes.stdout.log'),'utf8').includes('explicit recovery launched')) throw new Error('fresh classic recovery run log missing');
   }
 
   console.log('smoke-runner-timeout-lock ok');
 } finally {
+  for(const watcher of cleanupWatchers) { try { watcher.close(); } catch {} }
   for(const pid of cleanupPids) { try { process.kill(pid,'SIGKILL'); } catch {} }
   for(const path of fixtures) rmSync(path, { recursive:true, force:true });
 }

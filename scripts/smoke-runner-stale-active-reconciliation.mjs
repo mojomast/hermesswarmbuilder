@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const repo = resolve(new URL('..', import.meta.url).pathname);
 const writeJson = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2));
 
-function runCase({ name, lifecycleState, control, expectedState, expectedRun, expectRestartBlock = false }) {
+function runCase({ name, lifecycleState, control, expectedState, expectedRun, expectedAgentStatus, expectRestartBlock = false }) {
   const home = mkdtempSync(join(tmpdir(), `hsb-runner-stale-active-${name}-`));
   const root = join(home, 'state');
   const runId = `run-${name}`;
@@ -37,6 +37,7 @@ function runCase({ name, lifecycleState, control, expectedState, expectedRun, ex
     const run = JSON.parse(readFileSync(join(runRoot, 'run.json'), 'utf8'));
     if (state.status !== expectedState || state.phase !== expectedState) throw new Error(`${name}: expected state ${expectedState}, got ${state.status}/${state.phase}`);
     if (run.status !== expectedRun || run.phase !== expectedRun) throw new Error(`${name}: expected run ${expectedRun}, got ${run.status}/${run.phase}`);
+    if (expectedAgentStatus && state.agents?.orchestrator?.status !== expectedAgentStatus) throw new Error(`${name}: expected reconciled orchestrator ${expectedAgentStatus}, got ${state.agents?.orchestrator?.status}`);
     if (expectRestartBlock && !String(run.block?.reason || '').includes('restarted')) throw new Error(`${name}: interrupted run did not record restart reconciliation`);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -45,7 +46,8 @@ function runCase({ name, lifecycleState, control, expectedState, expectedRun, ex
 
 // Simulates a crash after terminal lifecycle persistence but before global state/run.json persistence.
 runCase({ name: 'completed-lifecycle', lifecycleState: 'completed', expectedState: 'completed', expectedRun: 'completed' });
-runCase({ name: 'paused-lifecycle', lifecycleState: 'paused', expectedState: 'on-hold', expectedRun: 'on-hold' });
+runCase({ name: 'paused-lifecycle', lifecycleState: 'paused', expectedState: 'on-hold', expectedRun: 'on-hold', expectedAgentStatus: 'on-hold' });
+runCase({ name: 'stopped-lifecycle', lifecycleState: 'stopped', expectedState: 'on-hold', expectedRun: 'on-hold', expectedAgentStatus: 'on-hold' });
 runCase({ name: 'blocked-lifecycle', lifecycleState: 'blocked', expectedState: 'blocked', expectedRun: 'blocked' });
 // Control dispositions run after interrupted ownership is reconciled, so neither leaves a stale active run.
 runCase({ name: 'paused-admission', control: { runAdmission: 'paused', pause: { requested: true, reason: 'fixture pause' } }, expectedState: 'on-hold', expectedRun: 'blocked', expectRestartBlock: true });

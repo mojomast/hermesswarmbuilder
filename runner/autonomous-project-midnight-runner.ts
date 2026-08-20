@@ -814,9 +814,10 @@ function recoverInterruptedActiveRun(state:any): boolean {
     for(const [id,a] of Object.entries(state.agents||{})) if((a as any)?.status==="running") (state.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()};
     writeState(state); writeRunJson(runRoot,{runId,status:"completed",phase:"completed",completedAt:terminalAt}); return true;
   }
-  if(lifecycleState==="paused"){
-    const hold={reason:lifecycle?.pauseReason||"Recovered paused lifecycle projection after runner restart.",since:terminalAt,owner:"midnight-runner"};
-    state.status="on-hold"; state.phase="on-hold"; state.hold=hold; state.lastAction="Recovered paused lifecycle projection after runner restart.";
+  if(lifecycleState==="paused"||lifecycleState==="stopped"){
+    const disposition=lifecycleState==="stopped"?"stopped":"paused", hold={reason:lifecycle?.pauseReason||`Recovered ${disposition} lifecycle projection after runner restart.`,since:terminalAt,owner:"midnight-runner",kind:disposition};
+    state.status="on-hold"; state.phase="on-hold"; state.hold=hold; state.lastAction=`Recovered ${disposition} lifecycle projection after runner restart.`;
+    for(const [id,a] of Object.entries(state.agents||{})) if((a as any)?.status==="running") (state.agents as any)[id]={...(a as any),status:"on-hold",updatedAt:now()};
     writeState(state); writeRunJson(runRoot,{runId,status:"on-hold",phase:"on-hold",heldAt:terminalAt,hold}); return true;
   }
   if(lifecycleState==="blocked"){

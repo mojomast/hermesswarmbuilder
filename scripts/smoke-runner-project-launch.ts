@@ -177,7 +177,9 @@ if(agent.startsWith('variant-')) {
   writeJson(join(root, "gates.json"), { schemaVersion: "apb.gates.v1", gates: [{ id: "approved-gate", description: "MUTATED GATE", severity: "must", requiredEvidence: ["artifacts/never-exists"] }] });
   const sourceHead = git(project, ["rev-parse", "HEAD"]); const sourceStatus = git(project, ["status", "--porcelain=v1"]);
   await runRunner();
-  launch = jsonFile(join(root, "project-plans", managedDraft.planId, "launches", `${managed.launched.launch.launchId}.json`)); runRoot = join(root, "runs", launch.runId);
+  launch = jsonFile(join(root, "project-plans", managedDraft.planId, "launches", `${managed.launched.launch.launchId}.json`));
+  assert(typeof launch.runId === "string" && launch.runId.length > 0, `managed launch did not retain a scalar run id: ${JSON.stringify(launch)}`);
+  runRoot = join(root, "runs", launch.runId);
   const managedRun = jsonFile(join(runRoot, "run.json")); const lifecycle = jsonFile(join(runRoot, "lifecycle-contract.json")); const iteration = jsonFile(join(runRoot, "iteration-state.json")); const row = jsonFile(join(root, "iterations.json")).items.find((item: any) => item.runId === launch.runId);
   detail = await request(`/api/project-plans/${managedDraft.planId}`);
   assert(detail.ledger.state === "completed" && detail.ledger.activeLaunchId === null, "managed terminal reconciliation retained active launch ownership");

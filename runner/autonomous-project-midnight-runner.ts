@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { createHash, randomUUID } from "crypto";
 import { homedir } from "os";
 import { isAbsolute, join, sep } from "path";
+import { LaunchAuthority, withProjectionLock } from "../dashboard/src/launch-authority";
 
 // Run artifacts can contain source paths and operational evidence; keep them owner-only.
 process.umask(0o077);
@@ -27,6 +28,8 @@ const HERMES = process.env.HERMES_BIN || join(HOME, ".local", "bin", "hermes");
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || "local";
 const ACTIVE = new Set(["inventory-scanning","selecting","repo-created","spec-drafting","spec-review","spec-approved","devplan-drafting","devplan-review","devplan-approved","building","blocked","deblocking"]);
 const HELD = new Set(["on-hold","held","blocked","deblocking"]);
+let launchAuthority: LaunchAuthority | null = null;
+function authority(): LaunchAuthority { if(!launchAuthority) throw new Error("launch authority is not initialized"); return launchAuthority; }
 
 function now(){ return new Date().toISOString(); }
 function writeRunnerParity(){ writeFileSync(RUNNER_PARITY,JSON.stringify({schemaVersion:"apb.runner-parity.v1",protocol:"queue-clear.v1",sourceDigest:createHash("sha256").update(readFileSync(import.meta.path)).digest("hex"),observedAt:now()},null,2)); }
@@ -59,7 +62,14 @@ function readJson(path:string, fallback:any): any { try { return JSON.parse(read
 function readState(): any { return normalizeState(readJson(STATE,{ currentRunId:null, status:"idle", updatedAt:now(), agents:{} })); }
 function writeState(s:any){ s=normalizeState(s); s.updatedAt=now(); s.timezone=TZ; writeFileSync(STATE, JSON.stringify(s,null,2)); }
 function defaultControl(): any { return { schemaVersion:"apb.control.v1", runAdmission:"enabled", pause:{requested:false}, stop:{requested:false}, activeSteering:[], pinnedQueueItemId:null, currentObjective:null, nextRunRequest:null, requestedRunNow:false, autoIteration:{enabled:false,mode:"manual",targetGenerations:10,completedGenerations:0,currentGeneration:0,repoPath:null,objective:null,maxIterations:10,maxVariantsPerIteration:3,maxParallelVariants:3,maxAcceptedFeatures:4,maxVisualMotifChanges:1,maxNewSections:1,stopAfterNoImprovement:1,minImprovementScore:0.05,lastRunId:null,lastIterationId:null,lastCommit:null,lastBranch:null,startedAt:null,completedAt:null,stoppedAt:null,stopReason:null} }; }
-function writeControl(c:any){ c.schemaVersion="apb.control.v1"; c.updatedAt=now(); writeFileSync(CONTROL, JSON.stringify(c,null,2)); }
+function writeControl(c:any){
+  withProjectionLock(ROOT,()=>{
+    const current=readJson(CONTROL,{}), currentPointer=current.projectLaunchRequest, incomingPointer=c.projectLaunchRequest;
+    const rank=(status:any)=>status==="pending"?0:status==="running"?1:["completed","paused","blocked","rejected"].includes(status)?2:-1;
+    const preservePointer=currentPointer && (!incomingPointer || (currentPointer.launchId===incomingPointer.launchId && rank(currentPointer.status)>rank(incomingPointer.status)));
+    const next={...current,...c,...(preservePointer?{projectLaunchRequest:currentPointer}:{})}; next.schemaVersion="apb.control.v1"; next.updatedAt=now(); writeFileSync(CONTROL, JSON.stringify(next,null,2));
+  });
+}
 function readControl(): any { return { ...defaultControl(), ...readJson(CONTROL,{}) }; }
 function readQueue(): any { const q=readJson(QUEUE,{schemaVersion:"apb.queue.v1",items:[]}); if(!Array.isArray(q.items)) q.items=[]; return q; }
 function writeQueue(q:any){ q.schemaVersion="apb.queue.v1"; q.updatedAt=now(); writeFileSync(QUEUE, JSON.stringify(q,null,2)); }
@@ -196,15 +206,9 @@ function loadProjectLaunch(pointer:any): ProjectLaunchBinding {
   validateApprovedProjectContent(plan.content,pointer.pipelineType);
   const identity={planId,revision:pointer.revision,planDigest,approvalId,approvalDigest,launchId,requestId,pipelineType:pointer.pipelineType}; return {pointer,plan,approval,launch,ledger,content:plan.content,identity};
 }
-function writeProjectPlanIndex(ledger:any,content:any){ const path=join(PROJECT_PLANS,"index.json"), index=readJson(path,{schemaVersion:"apb.project-plan-index.v1",plans:{}}); index.plans=index.plans||{}; index.plans[ledger.planId]={...(index.plans[ledger.planId]||{}),planId:ledger.planId,title:content.title,pipelineType:content.pipelineType,state:ledger.state,version:ledger.version,currentRevision:ledger.currentRevision,currentDigest:ledger.currentDigest,activeLaunchId:ledger.activeLaunchId,updatedAt:ledger.updatedAt}; index.updatedAt=now(); writeFileSync(path,JSON.stringify(index,null,2)); }
 function updateProjectLaunch(binding:ProjectLaunchBinding,status:"running"|"paused"|"blocked"|"completed",runId:string,iterationId:string|null=null,extra:any={}){
-  const ts=now(), {identity}=binding; const launchPath=join(PROJECT_PLANS,identity.planId,"launches",`${identity.launchId}.json`), ledgerPath=join(PROJECT_PLANS,identity.planId,"ledger.json");
-  const launch=readExactProjectJson(launchPath,"project launch"); if(launch.launchId!==identity.launchId||launch.requestId!==identity.requestId||launch.planDigest!==identity.planDigest||launch.approvalId!==identity.approvalId) throw new Error("project launch identity changed during execution");
-  if(status==="running"&&!(launch.status==="requested"&&launch.runId===null)) throw new Error("project launch was already claimed");
-  if(status!=="running"&&launch.runId!==runId) throw new Error("project launch run identity changed during execution");
-  Object.assign(launch,{status,runId,iterationId:iterationId||launch.iterationId||null,updatedAt:ts,...extra}); writeFileSync(launchPath,JSON.stringify(launch,null,2));
-  const ledger=readExactProjectJson(ledgerPath,"project plan ledger"); if(ledger.planId!==identity.planId||ledger.currentRevision!==identity.revision||ledger.currentDigest!==identity.planDigest||ledger.activeLaunchId!==identity.launchId) throw new Error("project plan ledger identity changed during execution"); Object.assign(ledger,{version:Number(ledger.version||0)+1,state:status,activeLaunchId:status==="running"?identity.launchId:null,updatedAt:ts}); writeFileSync(ledgerPath,JSON.stringify(ledger,null,2)); writeProjectPlanIndex(ledger,binding.content);
-  const control=readControl(); if(control.projectLaunchRequest?.launchId===identity.launchId){ const current=control.projectLaunchRequest; if(current.requestId!==identity.requestId||current.planDigest!==identity.planDigest) throw new Error("project launch control pointer identity changed during execution"); control.projectLaunchRequest={...current,status,runId,iterationId:iterationId||current.iterationId||null,updatedAt:ts,...extra}; writeControl(control); }
+  const result=status==="running"?authority().claim(binding.identity,runId,iterationId):authority().transition(binding.identity,status,runId,iterationId,extra);
+  if(status==="running"&&result.status==="already-claimed"&&result.record.runId!==runId) throw new Error("project launch was already claimed");
 }
 function snapshotProjectLaunch(runRoot:string,binding:ProjectLaunchBinding){ const dir=join(runRoot,"artifacts","project-plan"); mkdirSync(dir,{recursive:true}); for(const [name,value] of [["approved-project-plan.json",binding.plan],["project-plan-approval.json",binding.approval],["project-launch.json",binding.launch]] as any){ writeFileSync(join(runRoot,name),JSON.stringify(value,null,2)); writeFileSync(join(dir,name),JSON.stringify(value,null,2)); } }
 function projectManagedRequest(binding:ProjectLaunchBinding): any { const content=binding.content, lineage=content.lineage; return {id:binding.identity.requestId,type:"project-plan",status:"pending",repoPath:content.repository.path,baseRef:content.repository.baseRef,expectedBaseCommit:content.repository.baseCommit,objective:content.objective,changeText:content.boundedScope,limits:{...content.limits},snapshottedAcceptanceGates:content.acceptanceGates.map((gate:any)=>({...gate,requiredEvidence:[...gate.requiredEvidence]})),acceptanceGateIds:content.acceptanceGates.map((gate:any)=>gate.id),allowDirty:false,generation:1,targetGenerations:content.limits.maxIterations,sourceRunId:lineage.sourceRunId,sourceIterationId:lineage.sourceIterationId,projectLaunch:{...binding.identity,lineage:{...lineage}}}; }
@@ -537,13 +541,15 @@ function safeBranchPart(x:string): string { return String(x).replace(/[^a-zA-Z0-
 function writeRunJson(runRoot:string, patch:any){ const runPath=join(runRoot,"run.json"); const run=readJson(runPath,{}); writeFileSync(runPath, JSON.stringify({...run,...patch,id:run.id||patch.runId,runId:patch.runId||run.runId||run.id},null,2)); }
 function updateAgent(runId:string, agentId:string, patch:any){ const st=readState(); st.agents=st.agents&&typeof st.agents==="object"&&!Array.isArray(st.agents)?st.agents:{}; st.agents[agentId]={...(st.agents[agentId]||{}),id:agentId,...patch,updatedAt:now()}; writeState(st); }
 function reconcileIteration(req:any, runId:string, iterationId:string, status:string, extra:any={}){
-  const doc=readJson(ITERATIONS,{schemaVersion:"apb.iterations.v1",items:[]}); if(!Array.isArray(doc.items)) doc.items=[];
-  const old=doc.items.find((x:any)=>x.requestId===req.id||x.id===req.id||x.runId===runId);
-  const row={...(old||{}),id:iterationId,iterationId,requestId:req.id,runId,status,mode:req.type,objective:req.objective,steeringText:req.changeText,repoPath:req.repoPath,
-    acceptanceGateIds:Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:(old?.acceptanceGateIds||[]),
-    sourceRunId:req.sourceRunId||old?.sourceRunId||null,parentIterationId:req.type!=="fork"?(req.sourceIterationId||old?.parentIterationId||null):(old?.parentIterationId||null),
-    forkedFromIterationId:req.type==="fork"?(req.sourceIterationId||old?.forkedFromIterationId||null):(old?.forkedFromIterationId||null),...(req.projectLaunch?{projectLaunch:{...req.projectLaunch},planId:req.projectLaunch.planId,revision:req.projectLaunch.revision,planDigest:req.projectLaunch.planDigest,approvalId:req.projectLaunch.approvalId,launchId:req.projectLaunch.launchId}:{}),updatedAt:now(),...extra};
-  if(old) Object.assign(old,row); else doc.items.unshift(row); doc.updatedAt=now(); writeFileSync(ITERATIONS,JSON.stringify(doc,null,2));
+  withProjectionLock(ROOT,()=>{
+    const doc=readJson(ITERATIONS,{schemaVersion:"apb.iterations.v1",items:[]}); if(!Array.isArray(doc.items)) doc.items=[];
+    const old=doc.items.find((x:any)=>x.requestId===req.id||x.id===req.id||x.runId===runId);
+    const row={...(old||{}),id:iterationId,iterationId,requestId:req.id,runId,status,mode:req.type,objective:req.objective,steeringText:req.changeText,repoPath:req.repoPath,
+      acceptanceGateIds:Array.isArray(req.acceptanceGateIds)?req.acceptanceGateIds:(old?.acceptanceGateIds||[]),
+      sourceRunId:req.sourceRunId||old?.sourceRunId||null,parentIterationId:req.type!=="fork"?(req.sourceIterationId||old?.parentIterationId||null):(old?.parentIterationId||null),
+      forkedFromIterationId:req.type==="fork"?(req.sourceIterationId||old?.forkedFromIterationId||null):(old?.forkedFromIterationId||null),...(req.projectLaunch?{projectLaunch:{...req.projectLaunch},planId:req.projectLaunch.planId,revision:req.projectLaunch.revision,planDigest:req.projectLaunch.planDigest,approvalId:req.projectLaunch.approvalId,launchId:req.projectLaunch.launchId}:{}),updatedAt:now(),...extra};
+    if(old) Object.assign(old,row); else doc.items.unshift(row); doc.updatedAt=now(); writeFileSync(ITERATIONS,JSON.stringify(doc,null,2));
+  });
 }
 function preservedPaths(runRoot:string){ return [join(runRoot,"lifecycle-contract.json"),join(runRoot,"iteration-state.json"),join(runRoot,"artifacts"),join(runRoot,"logs"),join(runRoot,"worktrees")].filter(existsSync); }
 function writeHandoff(runId:string, runRoot:string, state:string, data:any={}){
@@ -805,6 +811,7 @@ async function main(){
   if(!lock()){ log("another runner holds lock; exiting"); return; }
   try{
     writeRunnerParity();
+    launchAuthority=new LaunchAuthority(ROOT); launchAuthority.recoverStrandedRunning(); launchAuthority.reconcile();
     let s=readState();
     s.nextHourlyRunTime = nextHourlyLocal();
     s.lastRunTime = now();
@@ -823,13 +830,13 @@ async function main(){
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
     }
     const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
-    if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery){
+    if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery&&(!explicitWake||s.status!=="blocked"||s.block?.timeout)){
       s.lastAction=`Hourly check: active project ${s.currentRunId} is ${s.status}; no verified timeout recovery request was admitted.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }
     if(control.projectLaunchRequest?.status==="pending"){
       try { projectBinding=loadProjectLaunch(control.projectLaunchRequest); if(projectBinding.identity.pipelineType==="managed") iterationRequest=projectManagedRequest(projectBinding); else iterationRequest=null; }
-      catch(err:any){ const reason=err?.message||String(err); control.projectLaunchRequest={...control.projectLaunchRequest,status:"rejected",rejectedAt:now(),rejectionReason:reason}; writeControl(control); s.status="blocked"; s.phase="blocked"; s.block={reason:`Project launch rejected before runner work: ${reason}`,since:now(),owner:"midnight-runner",suggestedAction:"Inspect the immutable project plan, approval, launch, ledger, and control pointer; create a newly approved launch after correcting the records."}; s.lastAction="Runner rejected a stale, malformed, tampered, or unapproved project launch pointer before Hermes work."; writeState(s); event("error","system","project-launch-rejected",s.lastAction,{planId:control.projectLaunchRequest?.planId||null,launchId:control.projectLaunchRequest?.launchId||null,reason}); log(s.lastAction); return; }
+      catch(err:any){ const reason=err?.message||String(err); const rejectedLaunchId=control.projectLaunchRequest?.launchId; try { if(rejectedLaunchId) authority().rejectRequested(rejectedLaunchId,{rejectedAt:now(),rejectionReason:reason}); } catch { control.projectLaunchRequest={...control.projectLaunchRequest,status:"rejected",rejectedAt:now(),rejectionReason:reason}; writeControl(control); } s.status="blocked"; s.phase="blocked"; s.block={reason:`Project launch rejected before runner work: ${reason}`,since:now(),owner:"midnight-runner",suggestedAction:"Inspect the immutable project plan, approval, launch, ledger, and control pointer; create a newly approved launch after correcting the records."}; s.lastAction="Runner rejected a stale, malformed, tampered, or unapproved project launch pointer before Hermes work."; writeState(s); event("error","system","project-launch-rejected",s.lastAction,{planId:control.projectLaunchRequest?.planId||null,launchId:rejectedLaunchId||null,reason}); log(s.lastAction); return; }
     }
     if (HELD.has(s.status) && !explicitWake && pinnedItem(control,queue)) {
       deferHeldPinnedItem(s.currentRunId||"unknown",s);

@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
 import { ProjectPlanError, ProjectPlanStore } from "./project-plans";
 import { PlanAssistanceError, PlanAssistanceStore } from "./plan-assistance";
+import { withProjectionLock } from "./launch-authority";
 
 const HOME = homedir();
 const PORT = Number(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_PORT || "9200");
@@ -346,14 +347,16 @@ function appendRunGateDecision(runId: string, decision: any) {
 }
 
 function upsertIterationFromRequest(req: any, status = "requested") {
-  const doc = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
-  if (!Array.isArray(doc.items)) doc.items = [];
-  const id = req.id || uid("iter");
-  const old = doc.items.find((x: any) => x.id === id);
-  const row = { ...(old || {}), id, runId: req.resultRunId || old?.runId || null, sourceRunId: req.sourceRunId || old?.sourceRunId || null, parentIterationId: req.type === "continue" ? (req.sourceIterationId || null) : old?.parentIterationId || null, forkedFromIterationId: req.type === "fork" ? (req.sourceIterationId || null) : old?.forkedFromIterationId || null, mode: req.type || old?.mode || "continue", objective: req.objective || old?.objective || "Continue autonomous iteration", steeringText: req.changeText || req.notes || old?.steeringText || null, repoPath: req.repoPath || old?.repoPath || null, generation: req.generation || old?.generation || null, targetGenerations: req.targetGenerations || old?.targetGenerations || req.limits?.targetGenerations || null, status, updatedAt: now() };
-  if (old) Object.assign(old, row); else doc.items.unshift(row);
-  doc.updatedAt = now(); writeJson(paths.iterations, doc);
-  return row;
+  return withProjectionLock(STATE_ROOT, () => {
+    const doc = safeReadJson(paths.iterations, { schemaVersion: "apb.iterations.v1", items: [] });
+    if (!Array.isArray(doc.items)) doc.items = [];
+    const id = req.id || uid("iter");
+    const old = doc.items.find((x: any) => x.id === id);
+    const row = { ...(old || {}), id, runId: req.resultRunId || old?.runId || null, sourceRunId: req.sourceRunId || old?.sourceRunId || null, parentIterationId: req.type === "continue" ? (req.sourceIterationId || null) : old?.parentIterationId || null, forkedFromIterationId: req.type === "fork" ? (req.sourceIterationId || null) : old?.forkedFromIterationId || null, mode: req.type || old?.mode || "continue", objective: req.objective || old?.objective || "Continue autonomous iteration", steeringText: req.changeText || req.notes || old?.steeringText || null, repoPath: req.repoPath || old?.repoPath || null, generation: req.generation || old?.generation || null, targetGenerations: req.targetGenerations || old?.targetGenerations || req.limits?.targetGenerations || null, status, updatedAt: now() };
+    if (old) Object.assign(old, row); else doc.items.unshift(row);
+    doc.updatedAt = now(); writeJson(paths.iterations, doc);
+    return row;
+  });
 }
 
 function tailFile(path: string, lines = 400) {
@@ -397,7 +400,15 @@ function defaultGates() { return { schemaVersion: "apb.gates.v1", updatedAt: now
 function readControl() { return { ...defaultControl(), ...safeReadJson(paths.control, defaultControl()) }; }
 function readQueue() { const q = safeReadJson(paths.queue, defaultQueue()); if (!Array.isArray(q.items)) q.items = []; return { ...defaultQueue(), ...q, items: q.items }; }
 function readGates() { const g = safeReadJson(paths.gates, defaultGates()); if (!Array.isArray(g.gates)) g.gates = []; return { ...defaultGates(), ...g, gates: g.gates }; }
-function writeControl(c: any) { c.schemaVersion = "apb.control.v1"; c.updatedAt = now(); writeJson(paths.control, c); }
+function writeControl(c: any) {
+  withProjectionLock(STATE_ROOT, () => {
+    const current = safeReadJson(paths.control, {}), currentPointer = current.projectLaunchRequest, incomingPointer = c.projectLaunchRequest;
+    const rank = (status: any) => status === "pending" ? 0 : status === "running" ? 1 : ["completed", "paused", "blocked", "rejected"].includes(status) ? 2 : -1;
+    const preservePointer = currentPointer && (!incomingPointer || (currentPointer.launchId === incomingPointer.launchId && rank(currentPointer.status) > rank(incomingPointer.status)));
+    const next = { ...current, ...c, ...(preservePointer ? { projectLaunchRequest: currentPointer } : {}) };
+    next.schemaVersion = "apb.control.v1"; next.updatedAt = now(); writeJson(paths.control, next);
+  });
+}
 function writeQueue(q: any) { q.schemaVersion = "apb.queue.v1"; q.updatedAt = now(); q.items = (q.items || []).sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0) || (a.rank || 9999) - (b.rank || 9999)); writeJson(paths.queue, q); }
 function writeGates(g: any) { g.schemaVersion = "apb.gates.v1"; g.updatedAt = now(); writeJson(paths.gates, g); }
 function runnerParity() {

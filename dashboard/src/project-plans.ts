@@ -1,6 +1,7 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { createHash, randomUUID } from "crypto";
 import { isAbsolute, join, resolve } from "path";
+import { LaunchAuthority, withProjectionLock } from "./launch-authority";
 
 export const PLAN_SCHEMA = "apb.project-plan.v1";
 const ACTOR = "local-operator";
@@ -205,11 +206,13 @@ export class ProjectPlanStore {
   private root: string;
   private indexPath: string;
   private idempotencyPath: string;
+  private launchAuthority: LaunchAuthority;
   constructor(private stateRoot: string) {
     this.root = join(stateRoot, "project-plans"); this.indexPath = join(this.root, "index.json"); this.idempotencyPath = join(this.root, "idempotency.json");
     mkdirSync(this.root, { recursive: true });
     if (!existsSync(this.indexPath)) atomicJson(this.indexPath, { schemaVersion: "apb.project-plan-index.v1", updatedAt: now(), plans: {} });
     if (!existsSync(this.idempotencyPath)) atomicJson(this.idempotencyPath, { schemaVersion: "apb.project-plan-idempotency.v1", records: {} });
+    this.launchAuthority = new LaunchAuthority(stateRoot); this.launchAuthority.reconcile();
   }
   private planRoot(planId: string) { return join(this.root, assertId(planId, "planId")); }
   private revisionPath(planId: string, revision: number) { return join(this.planRoot(planId), "revisions", `${String(revision).padStart(6, "0")}.json`); }
@@ -224,7 +227,7 @@ export class ProjectPlanStore {
     index.plans ||= {}; index.plans[ledger.planId] = { planId: ledger.planId, title: revision.content.title, pipelineType: revision.content.pipelineType, state: ledger.state, version: ledger.version, currentRevision: ledger.currentRevision, currentDigest: ledger.currentDigest, activeLaunchId: ledger.activeLaunchId, updatedAt: ledger.updatedAt };
     index.updatedAt = now(); atomicJson(this.indexPath, index);
   }
-  private saveLedger(ledger: any, revision: any) { atomicJson(join(this.planRoot(ledger.planId), "ledger.json"), ledger); this.updateIndex(ledger, revision); }
+  private saveLedger(ledger: any, revision: any) { withProjectionLock(this.stateRoot, () => { atomicJson(join(this.planRoot(ledger.planId), "ledger.json"), ledger); this.updateIndex(ledger, revision); }); }
   private exactSubject(payload: any, ledger: any) {
     if (payload.revision !== ledger.currentRevision || payload.planDigest !== ledger.currentDigest) throw new ProjectPlanError("revision or digest does not match the current plan", 409);
   }
@@ -309,13 +312,13 @@ export class ProjectPlanStore {
       if (ledger.activeLaunchId) return { planId, ledger, launch: readJson(join(this.planRoot(planId), "launches", `${ledger.activeLaunchId}.json`)) };
       const revision = this.revision(planId, ledger.currentRevision); const approval = readJson(join(this.planRoot(planId), "decisions", `${ledger.effectiveApprovalId}.json`));
       if (approval.revision !== revision.revision || approval.planDigest !== revision.contentDigest || approval.decision !== "approved") throw new ProjectPlanError("effective approval does not bind the current revision", 409);
-      const controlPath = join(this.stateRoot, "control.json"); const control = readJson(controlPath, { schemaVersion: "apb.control.v1" });
-      if (["pending", "running"].includes(control.projectLaunchRequest?.status)) throw new ProjectPlanError("another project launch is already pending or running", 409);
       const launchId = newId("launch"), requestId = newId("request"); const launch = { schemaVersion: "apb.project-launch.v1", launchId, idempotencyKey: assertId(idempotencyKey, "idempotencyKey"), planId, revision: revision.revision, planDigest: revision.contentDigest, approvalId: approval.decisionId, approvalDigest: approval.recordDigest, pipelineType: revision.content.pipelineType, status: "requested", requestedAt: now(), requestedBy: ACTOR, requestId, runId: null, iterationId: null };
-      exclusiveJson(join(this.planRoot(planId), "launches", `${launchId}.json`), launch);
-      Object.assign(ledger, { version: ledger.version + 1, state: "launch-requested", activeLaunchId: launchId, updatedAt: now() }); this.saveLedger(ledger, revision);
-      control.projectLaunchRequest = { schemaVersion: "apb.project-launch-pointer.v1", planId, revision: revision.revision, planDigest: revision.contentDigest, approvalId: approval.decisionId, launchId, requestId, pipelineType: revision.content.pipelineType, status: "pending" }; control.updatedAt = now(); atomicJson(controlPath, control);
-      this.audit(type, { planId, revision: revision.revision, state: ledger.state, launchId }); return { planId, ledger, launch };
+      let admitted;
+      try { admitted = this.launchAuthority.admit(launch, ledger.version); }
+      catch (error: any) { throw new ProjectPlanError(error?.message || String(error), 409); }
+      const durableLedger = this.ledger(planId), durableLaunch = readJson(join(this.planRoot(planId), "launches", `${admitted.record.launchId}.json`));
+      if (admitted.status === "admitted") this.audit(type, { planId, revision: revision.revision, state: durableLedger.state, launchId: durableLaunch.launchId });
+      return { planId, ledger: durableLedger, launch: durableLaunch };
     }
     if (type === "project-plan.archive") {
       exactKeys(payload, new Set(["planId"]), "payload"); if (ledger.activeLaunchId || ["launch-requested", "running"].includes(ledger.state)) throw new ProjectPlanError("active plans cannot be archived", 409); const revision = this.revision(planId, ledger.currentRevision); Object.assign(ledger, { version: ledger.version + 1, state: "archived", effectiveApprovalId: null, updatedAt: now() }); this.saveLedger(ledger, revision); this.audit(type, { planId, revision: revision.revision, state: ledger.state }); return { planId, ledger };

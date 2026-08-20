@@ -805,9 +805,25 @@ function verifiedActiveTimeoutRecovery(state:any, control:any): "classic"|"manag
 }
 function recoverInterruptedActiveRun(state:any): boolean {
   const runId=state?.currentRunId;
-  if(!runId||!ACTIVE.has(state?.status)||normalizeStatus(state.status)==="blocked") return false;
+  if(!runId||!ACTIVE.has(state?.status)) return false;
   const runRoot=join(RUNS,runId), lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
-  if(["completed","paused","blocked"].includes(normalizeStatus(lifecycle?.state))) return false;
+  const lifecycleState=normalizeStatus(lifecycle?.state), terminalAt=lifecycle?.terminalAt||now();
+  if(lifecycleState==="completed"){
+    state.status="completed"; state.phase="completed"; state.completedAt=terminalAt; state.lastAction="Recovered completed lifecycle projection after runner restart.";
+    for(const [id,a] of Object.entries(state.agents||{})) if((a as any)?.status==="running") (state.agents as any)[id]={...(a as any),status:"completed",updatedAt:now()};
+    writeState(state); writeRunJson(runRoot,{runId,status:"completed",phase:"completed",completedAt:terminalAt}); return true;
+  }
+  if(lifecycleState==="paused"){
+    const hold={reason:lifecycle?.pauseReason||"Recovered paused lifecycle projection after runner restart.",since:terminalAt,owner:"midnight-runner"};
+    state.status="on-hold"; state.phase="on-hold"; state.hold=hold; state.lastAction="Recovered paused lifecycle projection after runner restart.";
+    writeState(state); writeRunJson(runRoot,{runId,status:"on-hold",phase:"on-hold",heldAt:terminalAt,hold}); return true;
+  }
+  if(lifecycleState==="blocked"){
+    const block={reason:lifecycle?.blocker||"Recovered blocked lifecycle projection after runner restart.",since:terminalAt,owner:"midnight-runner"};
+    state.status="blocked"; state.phase="blocked"; state.block=block; state.lastAction="Recovered blocked lifecycle projection after runner restart.";
+    for(const [id,a] of Object.entries(state.agents||{})) if((a as any)?.status==="running") (state.agents as any)[id]={...(a as any),status:"blocked",updatedAt:now()};
+    writeState(state); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:terminalAt,block}); return true;
+  }
   mkdirSync(runRoot,{recursive:true});
   blockRun(runId,runRoot,"Runner restarted with an active run that lacks terminal lifecycle evidence","Inspect preserved run artifacts and explicitly resume or launch new work; do not retain an interrupted run as active.");
   return true;
@@ -819,18 +835,23 @@ async function main(){
   ensure();
   if(!lock()){ log("another runner holds lock; exiting"); return; }
   try{
+    launchAuthority=new LaunchAuthority(ROOT);
+    let s=readState(), control=readControl();
+    const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
+    const interruptedRunRecovered=!activeRecovery&&recoverInterruptedActiveRun(s);
+    if(interruptedRunRecovered) s=readState();
     writeRunnerParity();
-    launchAuthority=new LaunchAuthority(ROOT); launchAuthority.recoverStrandedRunning(); launchAuthority.reconcile();
-    let s=readState();
+    launchAuthority.recoverStrandedRunning(); launchAuthority.reconcile();
+    s=readState();
     s.nextHourlyRunTime = nextHourlyLocal();
     s.lastRunTime = now();
-    let control=readControl();
+    control=readControl();
     let queue=readQueue();
     let projectBinding:ProjectLaunchBinding|null=null;
     let iterationRequest=resolveIterationRequest(control,s,queue);
     let explicitWake=!!control.requestedRunNow || control.nextRunRequest?.status==="pending" || control.projectLaunchRequest?.status==="pending";
     if (control.runAdmission === "paused" || control.pause?.requested) {
-      s.status = s.status || "idle"; s.phase = s.phase || s.status; s.hold = { reason: control.pause?.reason || "Dashboard hold/pause requested", since: control.pause?.requestedAt || now(), owner:"dashboard" };
+      s.status = "on-hold"; s.phase = "on-hold"; s.hold = { reason: control.pause?.reason || "Dashboard hold/pause requested", since: control.pause?.requestedAt || now(), owner:"dashboard" };
       s.lastAction = "Hourly runner skipped launch because dashboard steering has paused/held new runs.";
       writeState(s); event("info","system","hold",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }
@@ -838,8 +859,7 @@ async function main(){
       s.status="on-hold"; s.phase="on-hold"; s.hold={reason:control.stop.reason||"Dashboard stop requested",since:control.stop.requestedAt||now(),owner:"dashboard"};
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
     }
-    const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
-    if(!activeRecovery && recoverInterruptedActiveRun(s)) return;
+    if(interruptedRunRecovered) return;
     if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery&&(!explicitWake||s.status!=="blocked"||s.block?.timeout)){
       s.lastAction=`Hourly check: active project ${s.currentRunId} is ${s.status}; no verified timeout recovery request was admitted.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;

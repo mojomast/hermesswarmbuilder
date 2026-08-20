@@ -237,6 +237,13 @@ export class ProjectPlanStore {
   private idempotent(type: string, key: unknown, subject: unknown, action: () => any): any {
     const idempotencyKey = assertId(key, "idempotencyKey");
     const doc = readJson(this.idempotencyPath, { schemaVersion: "apb.project-plan-idempotency.v1", records: {} });
+    const ready = process.env.APB_TEST_PLAN_IDEMPOTENCY_READY, proceed = process.env.APB_TEST_PLAN_IDEMPOTENCY_CONTINUE;
+    if (ready && proceed) {
+      writeFileSync(ready, "ready");
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(proceed) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      if (!existsSync(proceed)) throw new Error("timed out waiting for project-plan idempotency test barrier");
+    }
     const subjectDigest = canonicalDigest("apb.project-plan-command-subject.v1", { type, subject });
     const existing = doc.records?.[idempotencyKey];
     if (existing) {
@@ -255,15 +262,17 @@ export class ProjectPlanStore {
   }
   getRevision(planId: string, revision: number) { return this.revision(planId, revision); }
   command(envelopeRaw: unknown): any {
-    rejectExecutableShape(envelopeRaw);
-    const envelope = object(envelopeRaw, "command");
-    exactKeys(envelope, new Set(["schemaVersion", "type", "idempotencyKey", "expectedVersion", "payload", "actor"]), "command");
-    if (envelope.schemaVersion !== "apb.project-plan-command.v1") throw new ProjectPlanError("unsupported project plan command schemaVersion");
-    const type = boundedString(envelope.type, "type", 100, true); const payload = object(envelope.payload, "payload");
-    if (!type.startsWith("project-plan.")) throw new ProjectPlanError("unknown project plan command type");
-    const needIdempotency = new Set(["project-plan.create", "project-plan.approve", "project-plan.launch", "project-plan.clone", "project-plan.fork"]).has(type);
-    if (needIdempotency) return this.idempotent(type, envelope.idempotencyKey, { expectedVersion: envelope.expectedVersion ?? null, payload }, () => this.execute(type, payload, envelope.expectedVersion, envelope.idempotencyKey));
-    return this.execute(type, payload, envelope.expectedVersion);
+    return withProjectionLock(this.stateRoot, () => {
+      rejectExecutableShape(envelopeRaw);
+      const envelope = object(envelopeRaw, "command");
+      exactKeys(envelope, new Set(["schemaVersion", "type", "idempotencyKey", "expectedVersion", "payload", "actor"]), "command");
+      if (envelope.schemaVersion !== "apb.project-plan-command.v1") throw new ProjectPlanError("unsupported project plan command schemaVersion");
+      const type = boundedString(envelope.type, "type", 100, true); const payload = object(envelope.payload, "payload");
+      if (!type.startsWith("project-plan.")) throw new ProjectPlanError("unknown project plan command type");
+      const needIdempotency = new Set(["project-plan.create", "project-plan.approve", "project-plan.launch", "project-plan.clone", "project-plan.fork"]).has(type);
+      if (needIdempotency) return this.idempotent(type, envelope.idempotencyKey, { expectedVersion: envelope.expectedVersion ?? null, payload }, () => this.execute(type, payload, envelope.expectedVersion, envelope.idempotencyKey));
+      return this.execute(type, payload, envelope.expectedVersion);
+    });
   }
   private execute(type: string, payload: Record<string, any>, expectedVersion: unknown, idempotencyKey?: string): any {
     if (type === "project-plan.create") {

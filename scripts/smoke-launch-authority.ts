@@ -48,7 +48,22 @@ try {
   assert(readJson(ledgerPath).version === first.record.ledgerVersion, "ledger version did not recover from authority");
   assert(readJson(controlPath).projectLaunchRequest.status === "running", "running control pointer did not recover");
 
+  // Freeze a second process after it reads the running authority generation.
+  // A terminal transition must win when the stale reconciler subsequently gets
+  // the projection lock; otherwise it would restore the old running generation.
+  const staleReady = join(root, "stale-authority.ready"), staleProceed = join(root, "stale-authority.continue");
+  const staleReconciler = Bun.spawn(["bun", "scripts/smoke-launch-authority-worker.ts", "reconcile", root], {
+    cwd: join(import.meta.dir, ".."), stdout: "pipe", stderr: "pipe",
+    env: { ...process.env, APB_TEST_AUTHORITY_RECONCILE_READY: staleReady, APB_TEST_AUTHORITY_RECONCILE_CONTINUE: staleProceed }
+  });
+  waitFor(staleReady);
   const terminal = authority.transition(identity, "completed", "run-fixture", "iter-run-fixture", { resultCommit: "abc123" });
+  writeFileSync(staleProceed, "continue");
+  assert(await staleReconciler.exited === 0, "stale authority reconciler failed");
+  assert(readJson(launchPath).status === "completed" && readJson(ledgerPath).state === "completed", "stale authority reconciliation overwrote the terminal launch generation");
+  assert(readJson(controlPath).projectLaunchRequest.status === "completed", "stale authority reconciliation overwrote the terminal control generation");
+  assert(readJson(iterationsPath).items.find((row: any) => row.launchId === launchId)?.status === "completed", "stale authority reconciliation overwrote the terminal iteration generation");
+
   assert(terminal.status === "transitioned", "terminal transition failed");
   assert(readJson(launchPath).status === "completed" && readJson(ledgerPath).activeLaunchId === null, "terminal launch/ledger projections are stale");
   assert(readJson(controlPath).projectLaunchRequest.status === "completed", "terminal control projection is stale");

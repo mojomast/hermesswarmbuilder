@@ -9,6 +9,7 @@ const STATUS = new Set([...ACTIVE, ...TERMINAL]);
 const now = () => new Date().toISOString();
 const monotonicUpdatedAt = (current: unknown, incoming: string) => typeof current === "string" && current > incoming ? current : incoming;
 const readJson = (path: string, fallback: any = null) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; } };
+const heldProjectionLocks = new Map<string, number>();
 function atomicJson(path: string, value: unknown) {
   mkdirSync(resolve(path, ".."), { recursive: true });
   const temp = `${path}.tmp-${process.pid}-${randomUUID()}`;
@@ -18,7 +19,14 @@ function atomicJson(path: string, value: unknown) {
 
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 export function withProjectionLock<T>(root: string, action: () => T): T {
-  const lock = join(root, ".launch-projection.lock");
+  const lockRoot = resolve(root);
+  const held = heldProjectionLocks.get(lockRoot);
+  if (held) {
+    heldProjectionLocks.set(lockRoot, held + 1);
+    try { return action(); }
+    finally { heldProjectionLocks.set(lockRoot, held); }
+  }
+  const lock = join(lockRoot, ".launch-projection.lock");
   const token = randomUUID();
   const deadline = Date.now() + 10_000;
   while (true) {
@@ -44,8 +52,10 @@ export function withProjectionLock<T>(root: string, action: () => T): T {
       pause(10);
     }
   }
+  heldProjectionLocks.set(lockRoot, 1);
   try { return action(); }
   finally {
+    heldProjectionLocks.delete(lockRoot);
     const owner = readJson(join(lock, "owner.json"), null);
     if (owner?.token === token) rmSync(lock, { recursive: true, force: true });
   }
@@ -243,7 +253,20 @@ export class LaunchAuthority {
   }
 
   private reconcileRecord(record: LaunchRecord) {
-    withProjectionLock(this.root, () => this.projectRecord(record));
+    const ready = process.env.APB_TEST_AUTHORITY_RECONCILE_READY, proceed = process.env.APB_TEST_AUTHORITY_RECONCILE_CONTINUE;
+    if (ready && proceed) {
+      writeFileSync(ready, "ready");
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(proceed) && Date.now() < deadline) pause(10);
+      if (!existsSync(proceed)) throw new Error("timed out waiting for authority reconciliation test barrier");
+    }
+    withProjectionLock(this.root, () => {
+      // The authority row is the sole generation owner. Refresh it only after
+      // acquiring the projection lock so an older caller cannot overwrite a
+      // projection that a later transition already committed.
+      const current = this.get(record.launchId);
+      if (current) this.projectRecord(current);
+    });
   }
 
   private projectRecord(record: LaunchRecord) {

@@ -1,3 +1,5 @@
+import { deriveOperationsHubState } from './operations-hub-state.js';
+
 const stateNames=["idle","inventory-scanning","selecting","repo-created","spec-drafting","spec-review","spec-approved","devplan-drafting","devplan-review","devplan-approved","building","blocked","deblocking","on-hold","completed","published"];
 const shortState={"inventory-scanning":"scan","repo-created":"repo","spec-drafting":"spec","spec-review":"spec review","spec-approved":"spec ok","devplan-drafting":"devplan","devplan-review":"plan review","devplan-approved":"plan ok",building:"build",deblocking:"deblock","on-hold":"hold",completed:"done"};
 const theme={idle:"",selecting:"info","inventory-scanning":"info","repo-created":"info","spec-drafting":"active","spec-review":"review","spec-approved":"success","devplan-drafting":"active","devplan-review":"review","devplan-approved":"success",building:"active",blocked:"danger",deblocking:"warning","on-hold":"warning",completed:"success",published:"success"};
@@ -12,7 +14,8 @@ function scrollBottom(el){if(el)requestAnimationFrame(()=>{el.scrollTop=el.scrol
 function preserveFollow(el,fn){const follow=model.followConsole&&isNearBottom(el); const top=el?.scrollTop??0; fn(); if(follow)scrollBottom(el); else if(el)requestAnimationFrame(()=>{el.scrollTop=top})}
 function focusKey(el=document.activeElement){if(!el||el===document.body)return null; return {id:el.id, name:el.getAttribute('name'), data:[...el.attributes||[]].filter(a=>a.name.startsWith('data-')).map(a=>`[${a.name}="${CSS.escape(a.value)}"]`).join(''), tag:el.tagName, start:el.selectionStart, end:el.selectionEnd}}
 function restoreFocus(k){if(!k)return; let el=k.id?$(k.id):null; if(!el&&k.data)el=document.querySelector(`${k.tag}${k.data}`); if(!el&&k.name)el=document.querySelector(`${k.tag}[name="${CSS.escape(k.name)}"]`); if(el&&document.activeElement!==el){el.focus({preventScroll:true}); if(k.start!=null&&el.setSelectionRange)try{el.setSelectionRange(k.start,k.end)}catch{}}}
-function stableRender(fn){const scroll=[...document.querySelectorAll('.panel-scroll')].map(el=>[el,el.scrollTop,isNearBottom(el)]); const fk=focusKey(); fn(); requestAnimationFrame(()=>{for(const [el,top,bottom] of scroll){if(el.id==='consoleContent'&&model.followConsole&&bottom)el.scrollTop=el.scrollHeight; else el.scrollTop=top} restoreFocus(fk)})}
+let skipNextFocusRestore=false;
+function stableRender(fn){const scroll=[...document.querySelectorAll('.panel-scroll')].map(el=>[el,el.scrollTop,isNearBottom(el)]); const fk=focusKey(); fn(); requestAnimationFrame(()=>{for(const [el,top,bottom] of scroll){if(el.id==='consoleContent'&&model.followConsole&&bottom)el.scrollTop=el.scrollHeight; else el.scrollTop=top} if(skipNextFocusRestore){skipNextFocusRestore=false;return} restoreFocus(fk)})}
 
 function clipText(v,n=4000){const s=typeof v==='string'?v:JSON.stringify(v,null,2); return s&&s.length>n?s.slice(0,n)+`\n… truncated ${s.length-n} chars`:s}
 function fmt(s){if(!s)return'—';try{return new Date(s).toLocaleTimeString()}catch{return s}} function dt(s){if(!s)return'—';try{return new Date(s).toLocaleString()}catch{return s}} function dur(start,end){if(!start)return'—';const ms=(end?Date.parse(end):Date.now())-Date.parse(start);if(!Number.isFinite(ms)||ms<0)return'—';const h=Math.floor(ms/36e5),m=Math.floor(ms%36e5/6e4),sec=Math.floor(ms%6e4/1000);return h?`${h}h ${m}m`:`${m}m ${sec}s`}
@@ -197,9 +200,10 @@ function renderRuns(){
     keyAttr: 'data-run',
     emptyHTML: '<div class="empty">No runs recorded.</div>',
     getItemKey: r => r.id,
-    renderItem: r => `<div class="run-row ${r.id===active?'active':''}" data-run="${esc(r.id)}"><div class="row-main">${dot(r.status)}<span class="row-title">${esc(r.id)}</span></div><div class="row-sub">${esc(r.selectedProject||'no project')} · ${dt(r.startedAt)}</div></div>`,
+    renderItem: r => `<button type="button" class="run-row ${r.id===active?'active':''}" data-run="${esc(r.id)}" aria-current="${r.id===active?'true':'false'}"><div class="row-main">${dot(r.status)}<span class="row-title">${esc(r.id)}</span></div><div class="row-sub">${esc(r.selectedProject||'no project')} · ${dt(r.startedAt)}</div></button>`,
     updateItem: (el, r) => {
       el.className = `run-row ${r.id===active?'active':''}`;
+      el.setAttribute('aria-current',r.id===active?'true':'false');
       const dotSpan = el.querySelector('.dot');
       if(dotSpan) {
         dotSpan.className = `dot ${theme[r.status]||r.status||''}`;
@@ -224,24 +228,12 @@ function showSteeringError(error){
   steeringErrorTimer=setTimeout(()=>{el.hidden=true;el.textContent=''},6000);
 }
 function currentObjective(control, pinned){return control.currentObjective?.text||pinned?.objective||model.state?.task||model.state?.currentTask||model.state?.currentProject||'No objective selected yet'}
-function deriveOperationsHub(){
-  const state=model.state||{},control=model.control||{},queue=(model.queue?.items||[]),pinned=queue.find(x=>x.id===control.pinnedQueueItemId)||queue.find(x=>x.status==='pinned');
-  const selectedRunId=model.selectedRunId||state.currentRunId||model.runs?.[0]?.id||null;
-  const activeQueue=queue.filter(item=>!['archived','cleared','completed'].includes(item.status));
-  const pendingRequest=control.nextRunRequest&& !['completed','cancelled','rejected'].includes(control.nextRunRequest.status);
-  const pendingPlans=planning.lastRefresh?planning.items.filter(plan=>!['archived','completed'].includes(plan.state)).length:null;
-  const hold=state.hold||state.block||state.blocker||control.pause?.requested&&control.pause||control.stop?.requested&&control.stop;
-  const holdReason=hold&&(hold.reason||hold.message||hold.text)||null;
-  const workflow=workflowStatus(state);
-  const status=state.block||state.blocker||workflow==='blocked'?'blocked':control.runAdmission==='paused'||state.hold||workflow==='on-hold'?'on hold':control.stop?.requested?'stopping':control.pause?.requested?'pause requested':pendingRequest?'request pending':workflow;
-  const hasBlockOrHold=['blocked','on hold','pause requested','stopping'].includes(status);
-  const safeAction=hasBlockOrHold?{type:'mission-control',label:'Review blocker'}:pendingRequest?{type:'focus-current',label:'Focus queued request'}:selectedRunId?{type:'inspect-run',label:'Inspect current run'}:activeQueue.length?{type:'focus-current',label:'Focus queue'}:{type:'project-planner',label:'Open Project Planner'};
-  return {selectedRunId,objective:currentObjective(control,pinned),holdReason,hasBlockOrHold,queueCount:activeQueue.length,pendingRequestCount:pendingRequest?1:0,pendingPlans,status,safeAction};
-}
+function deriveOperationsHub(){return deriveOperationsHubState({state:model.state,control:model.control,queue:model.queue,plans:planning.items,plansLoaded:!!planning.lastRefresh,runs:model.runs,selectedRunId:model.selectedRunId,workflow:workflowStatus(model.state||{})})}
 function renderOperationsHub(){
   const hub=$('operationsHub');if(!hub)return;
   const summary=deriveOperationsHub(),planCount=summary.pendingPlans==null?'—':summary.pendingPlans;
-  hub.innerHTML=`<div class="operations-hub-summary"><div class="operations-hub-status" role="status" aria-live="polite"><span class="eyebrow">Operations Hub</span><b id="operationsHubTitle">${dot(summary.status)}${esc(summary.status)}</b><span class="muted">${esc(summary.selectedRunId||'no run selected')}</span></div><div class="operations-hub-objective"><span class="eyebrow">Objective</span><strong title="${esc(summary.objective)}">${esc(summary.objective)}</strong><small>${summary.holdReason?`Blocker / hold: ${esc(summary.holdReason)}`:summary.hasBlockOrHold?'Blocker / hold reason not reported.':'No blocker or hold reported.'}</small></div><div class="operations-hub-counts" aria-label="Pending operations"><span><b>${esc(summary.pendingRequestCount)}</b> request</span><span><b>${esc(summary.queueCount)}</b> queue</span><span><b>${esc(planCount)}</b> plans</span></div><div class="operations-hub-actions"><button class="primary" data-operations-action="${esc(summary.safeAction.type)}">${esc(summary.safeAction.label)}</button><button data-operations-action="inspect-run">Inspect selected run</button><button data-operations-action="mission-control">Mission Control</button><button data-operations-action="project-planner">Project Planner</button><button data-operations-action="focus-current">Focus queue/current run</button></div></div>`;
+  const unavailable=[];const disabled=(available,reason)=>{if(available)return'';unavailable.push(reason);return` disabled aria-disabled="true" aria-describedby="operationsHubNotice" title="${esc(reason)}"`};
+  hub.innerHTML=`<div class="operations-hub-summary"><div class="operations-hub-status" role="status" aria-live="polite"><span class="eyebrow">Operations Hub</span><b id="operationsHubTitle">${dot(summary.status)}${esc(summary.status)}</b><span class="muted">${esc(summary.selectedRunLabel)}${summary.selectedRunId?`: ${esc(summary.selectedRunId)}`:''}</span></div><div class="operations-hub-objective"><span class="eyebrow">Objective</span><strong title="${esc(summary.objective)}">${esc(summary.objective)}</strong><small>${summary.holdReason?`Blocker / hold: ${esc(summary.holdReason)}`:summary.hasBlockOrHold?'Blocker / hold reason not reported.':'No blocker or hold reported.'}</small></div><div class="operations-hub-counts" aria-label="Actionable operations"><span><b>${esc(summary.pendingRequestCount)}</b> actionable request</span><span><b>${esc(summary.queueCount)}</b> actionable queue</span><span><b>${esc(planCount)}</b> plans</span></div><div class="operations-hub-actions"><button class="primary" data-operations-action="${esc(summary.safeAction.type)}">${esc(summary.safeAction.label)}</button><button data-operations-action="inspect-run"${disabled(summary.actionAvailability.inspectRun,'No current or selected run is available to inspect.')}>Inspect selected run</button><button data-operations-action="mission-control">Mission Control</button><button data-operations-action="project-planner">Project Planner</button><button data-operations-action="focus-current"${disabled(summary.actionAvailability.focusCurrent,'No actionable queue item, current run, or selected run is available to focus.')}>Focus queue/current run</button><span id="operationsHubNotice" class="sr-only" role="status" aria-live="polite">${esc(unavailable.join(' '))}</span></div></div>`;
 }
 function renderSteering(){
   const c=$('steeringCockpit'); if(!c)return;
@@ -805,7 +797,9 @@ let renderQueued=false; function scheduleRender(){if(renderQueued)return; render
 function renderAll(){stableRender(()=>{renderTop();renderOperationsHub();renderSteering();renderRuns();renderAgentIndex();renderDeck();renderAgentStack();renderInspector();renderConsole();applyDashboardLayoutPrefs()})}
 async function loadRunResources(force=false){if(!model.selectedRunId){model.artifacts=[];model.logs=[];return false} const now=Date.now(); if(!force&&now-model.lastResourceLoad<30000)return false; model.lastResourceLoad=now; let artifacts=[],logs=[]; try{artifacts=await getJson(`/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts`)}catch{} try{logs=await getJson(`/api/runs/${encodeURIComponent(model.selectedRunId)}/logs`)}catch{} const sig=resourceSig(artifacts)+'|'+resourceSig(logs); if(!force&&sig===model.resourceSig)return false; model.resourceSig=sig; model.artifacts=artifacts; model.logs=logs; return true}
 async function refresh(){try{const [state,runs,events,control,queue,gates,audit,iterationsDoc]=await Promise.all([getJson('/api/state'),getJson('/api/runs'),getJson('/api/events?limit=250'+(model.eventCursor?`&after=${encodeURIComponent(model.eventCursor)}`:'')),getJson('/api/control'),getJson('/api/queue'),getJson('/api/gates'),getJson('/api/audit?limit=50'),getJson('/api/iterations')]); model.state=state; model.runs=runs; model.control=control; model.queue=queue; model.gates=gates; model.audit=audit; model.iterations=iterationsDoc.items||[]; if(!model.selectedRunId)model.selectedRunId=model.state.currentRunId||(model.runs[0]?.id??null); ingestEvents(events); await Promise.all([loadRunResources(true),refreshPlans(false)]); scheduleRender()}catch(e){if($('streamState')) $('streamState').textContent='API error'}}
-let eventSource=null,pollTimer=null; function pushRaw(x){model.raw.push(x); model.raw=model.raw.slice(-80)} function startPolling(){if(pollTimer)return; pollTimer=setInterval(refresh,4000)} function connect(){try{if(eventSource)eventSource.close(); const es=new EventSource('/api/stream'); eventSource=es; es.addEventListener('open',()=>{$('streamState')&&($('streamState').textContent='SSE live'); if(pollTimer){clearInterval(pollTimer); pollTimer=null}}); es.addEventListener('state',e=>{const p=JSON.parse(e.data); pushRaw({type:'state',ts:new Date().toISOString(),payload:p}); if(!model.paused){model.state=p; if(!model.selectedRunId)model.selectedRunId=p.currentRunId; scheduleRender()}}); es.addEventListener('events',e=>{const p=JSON.parse(e.data); pushRaw({type:'events',ts:new Date().toISOString(),payload:p}); if(!model.paused){ingestEvents(p); scheduleRender()}}); es.addEventListener('heartbeat',e=>{pushRaw({type:'heartbeat',ts:new Date().toISOString(),payload:JSON.parse(e.data)}); if(!model.paused){if(model.selectedRunId)loadRunResources(false).then(changed=>{if(changed)scheduleRender()});if(Date.now()-planning.lastRefresh>5000)refreshPlans(false)}}); es.onerror=()=>{$('streamState')&&($('streamState').textContent='SSE disconnected; polling'); es.close(); eventSource=null; startPolling()}}catch{startPolling()}}
+let hubRefreshPromise=null;
+function refreshHubData(){if(hubRefreshPromise)return hubRefreshPromise;hubRefreshPromise=Promise.all([getJson('/api/control'),getJson('/api/queue'),refreshPlans(false)]).then(([control,queue])=>{model.control=control;model.queue=queue;scheduleRender()}).catch(()=>{}).finally(()=>{hubRefreshPromise=null});return hubRefreshPromise}
+let eventSource=null,pollTimer=null; function pushRaw(x){model.raw.push(x); model.raw=model.raw.slice(-80)} function startPolling(){if(pollTimer)return; pollTimer=setInterval(refresh,4000)} function connect(){try{if(eventSource)eventSource.close(); const es=new EventSource('/api/stream'); eventSource=es; es.addEventListener('open',()=>{$('streamState')&&($('streamState').textContent='SSE live'); if(pollTimer){clearInterval(pollTimer); pollTimer=null}refreshHubData()}); es.addEventListener('state',e=>{const p=JSON.parse(e.data); pushRaw({type:'state',ts:new Date().toISOString(),payload:p}); if(!model.paused){model.state=p; if(!model.selectedRunId)model.selectedRunId=p.currentRunId; scheduleRender();refreshHubData()}}); es.addEventListener('events',e=>{const p=JSON.parse(e.data); pushRaw({type:'events',ts:new Date().toISOString(),payload:p}); if(!model.paused){ingestEvents(p); scheduleRender()}}); es.addEventListener('heartbeat',e=>{pushRaw({type:'heartbeat',ts:new Date().toISOString(),payload:JSON.parse(e.data)}); if(!model.paused){if(model.selectedRunId)loadRunResources(false).then(changed=>{if(changed)scheduleRender()});if(Date.now()-planning.lastRefresh>5000)refreshHubData()}}); es.onerror=()=>{$('streamState')&&($('streamState').textContent='SSE disconnected; polling'); es.close(); eventSource=null; startPolling()}}catch{startPolling()}}
 
 // --- Global Delegation Handler ---
 function initGlobalDelegation() {
@@ -974,21 +968,24 @@ document.addEventListener('submit',async e=>{
     catch(err){showSteeringError(err)}
   }
 });
+function announceOperationsHub(message){const notice=$('operationsHubNotice');if(notice)notice.textContent=message}
+function focusOperationsDestination(target,{block='nearest'}={}){if(!target)return false;skipNextFocusRestore=true;if(!target.matches('button,a,input,select,textarea,[tabindex]'))target.setAttribute('tabindex','-1');target.focus({preventScroll:true});target.scrollIntoView({behavior:'smooth',block});return true}
 document.addEventListener('click',async e=>{
   const operationsAction=e.target.closest('[data-operations-action]')?.dataset.operationsAction;
   if(operationsAction){
     const summary=deriveOperationsHub();
     if(operationsAction==='inspect-run'){
-      if(!summary.selectedRunId)return;
-      model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);model.inspector='run';setPref('hermes.apb.dashboard.inspectorTab',model.inspector);model.lastInspectorKey=null;await loadRunResources(true);renderAll();document.querySelector('.inspector-pane')?.scrollIntoView({behavior:'smooth',block:'nearest'});return;
+      if(!summary.selectedRunId){announceOperationsHub('Inspect selected run is unavailable: no current or selected run is available.');return;}
+      model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);model.inspector='run';setPref('hermes.apb.dashboard.inspectorTab',model.inspector);model.lastInspectorKey=null;await loadRunResources(true);skipNextFocusRestore=true;renderAll();focusOperationsDestination(document.querySelector('.inspector-pane'));return;
     }
     if(operationsAction==='mission-control'){
-      model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();renderAll();$('steeringCockpit')?.scrollIntoView({behavior:'smooth',block:'start'});return;
+      model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();skipNextFocusRestore=true;renderAll();focusOperationsDestination($('steeringCockpit'),{block:'start'});return;
     }
     if(operationsAction==='project-planner'){openPlanner();return;}
     if(operationsAction==='focus-current'){
-      if(summary.queueCount){model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();renderAll();const queue=$('#steeringCockpit .queue-list');queue?.setAttribute('tabindex','-1');queue?.focus({preventScroll:true});(queue||$('steeringCockpit'))?.scrollIntoView({behavior:'smooth',block:'start'});return;}
-      if(summary.selectedRunId){model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);renderAll();$('runsList')?.scrollIntoView({behavior:'smooth',block:'nearest'});}
+      if(summary.queueCount){model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();skipNextFocusRestore=true;renderAll();focusOperationsDestination($('#steeringCockpit .queue-list')||$('steeringCockpit'),{block:'start'});return;}
+      if(summary.selectedRunId){model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);skipNextFocusRestore=true;renderAll();focusOperationsDestination(document.querySelector(`[data-run="${CSS.escape(summary.selectedRunId)}"]`)||$('runsList'));return;}
+      announceOperationsHub('Focus queue/current run is unavailable: no actionable queue item, current run, or selected run is available.');
       return;
     }
   }

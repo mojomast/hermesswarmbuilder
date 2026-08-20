@@ -803,6 +803,15 @@ function verifiedActiveTimeoutRecovery(state:any, control:any): "classic"|"manag
   if(stateTimeout.scope!=="classic"||control?.requestedRunNow!==true||control?.nextRunRequest?.status==="pending"||control?.projectLaunchRequest?.status==="pending") return null;
   return "classic";
 }
+function recoverInterruptedActiveRun(state:any): boolean {
+  const runId=state?.currentRunId;
+  if(!runId||!ACTIVE.has(state?.status)||normalizeStatus(state.status)==="blocked") return false;
+  const runRoot=join(RUNS,runId), lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
+  if(["completed","paused","blocked"].includes(normalizeStatus(lifecycle?.state))) return false;
+  mkdirSync(runRoot,{recursive:true});
+  blockRun(runId,runRoot,"Runner restarted with an active run that lacks terminal lifecycle evidence","Inspect preserved run artifacts and explicitly resume or launch new work; do not retain an interrupted run as active.");
+  return true;
+}
 
 
 async function main(){
@@ -830,6 +839,7 @@ async function main(){
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
     }
     const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
+    if(!activeRecovery && recoverInterruptedActiveRun(s)) return;
     if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery&&(!explicitWake||s.status!=="blocked"||s.block?.timeout)){
       s.lastAction=`Hourly check: active project ${s.currentRunId} is ${s.status}; no verified timeout recovery request was admitted.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;

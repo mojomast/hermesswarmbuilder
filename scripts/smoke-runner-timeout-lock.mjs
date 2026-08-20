@@ -37,13 +37,23 @@ function managedFixture(name, packageJson=null) {
   writeJson(join(f.root,'iterations.json'),{schemaVersion:'apb.iterations.v1',items:[{id:request.id,status:'requested'}]});
   return {...f,project,request};
 }
+function seedBlockedRun(f, runId, timeout, managed=false) {
+  const runRoot=join(f.root,'runs',runId); mkdirSync(join(runRoot,'artifacts'),{recursive:true}); mkdirSync(join(runRoot,'logs'),{recursive:true});
+  writeJson(join(runRoot,'run.json'),{id:runId,runId,status:'blocked',phase:'blocked',block:{reason:'fixture timeout',timeout}});
+  if(managed) {
+    writeJson(join(runRoot,'lifecycle-contract.json'),{schemaVersion:'apb.managed-lifecycle.v1',runId,iterationId:`iter-${runId}`,requestId:`request-${runId}`,state:'blocked',blocker:'fixture timeout',timeout});
+    writeJson(join(runRoot,'iteration-state.json'),{id:`iter-${runId}`,runId,status:'blocked',blocker:'fixture timeout',timeout});
+  }
+  writeJson(join(f.root,'state.json'),{schemaVersion:'apb.state.v1',status:'blocked',phase:'blocked',currentRunId:runId,agents:{},block:{reason:'fixture timeout',timeout}});
+  return runRoot;
+}
 function writeManagedHermes(path, timeoutAgent='') {
   writeFileSync(path,`#!/usr/bin/env node\nconst fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');\nconst id=process.env.APB_AGENT_ID; console.log('fixture '+id+' started');\nif(id===process.env.TIMEOUT_AGENT) setInterval(()=>{},1000);\nif(id.startsWith('variant-')){ fs.appendFileSync(path.join(process.cwd(),'README.md'),'fixture change\\n'); const p=path.join(process.env.AUTONOMOUS_PROJECT_ARTIFACTS,'variants',id+'.json'); fs.writeFileSync(p,JSON.stringify({schemaVersion:'apb.variant.v1',variantId:id,title:'fixture',claim:'fixture change',objectiveMapping:['fixture'],changes:['README'],risks:[],evidence:['README.md'],validationNotes:[],budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}})); }\nelse { const variantId='variant-'+id.split('-')[1],p=path.join(process.env.AUTONOMOUS_PROJECT_ARTIFACTS,'evaluations','evaluation-'+variantId+'.json'); fs.writeFileSync(p,JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId,scores:{objectiveFit:90,userValue:90,visualQuality:90,implementationQuality:90,accessibility:90,performance:90,total:90},hardGateViolations:[],recommendation:'accept',rationale:'fixture passed',evidenceArtifacts:['artifacts/variants/'+variantId+'.json','artifacts/variants/'+variantId+'.diff']})); }\n`, 'utf8');
   chmodSync(path,0o755);
   return {TIMEOUT_AGENT:timeoutAgent};
 }
 function run(f, extraEnv = {}) {
-  return spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd:repo, env:{...process.env, HOME:f.home, AUTONOMOUS_PROJECT_STATE_ROOT:f.root, APB_DISABLE_AUTO_CONTINUATION:'1', ...extraEnv}, encoding:'utf8', timeout:5000 });
+  return spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd:repo, env:{...process.env, HOME:f.home, AUTONOMOUS_PROJECT_STATE_ROOT:f.root, APB_DISABLE_AUTO_CONTINUATION:'1', ...extraEnv}, encoding:'utf8', timeout:10000 });
 }
 function runAsync(f, extraEnv = {}) {
   const child=spawn('bun', ['runner/autonomous-project-midnight-runner.ts'], { cwd:repo, env:{...process.env, HOME:f.home, AUTONOMOUS_PROJECT_STATE_ROOT:f.root, APB_DISABLE_AUTO_CONTINUATION:'1', ...extraEnv}, stdio:['ignore','pipe','pipe'] });
@@ -186,6 +196,15 @@ try {
     const commandHandoff=json(join(commandRunRoot,'artifacts','handoff.json')), commandIteration=json(join(commandRunRoot,'iteration-state.json')), commandControl=json(join(commandTimed.root,'control.json'));
     if(commandHandoff.state!=='blocked'||commandHandoff.timeout?.scope!=='command'||commandIteration.status!=='blocked'||commandControl.nextRunRequest?.status!=='blocked'||commandControl.requestedRunNow!==false) throw new Error('validation command timeout lifecycle/iteration/handoff/control evidence incomplete');
     if(!existsSync(join(commandRunRoot,'worktrees','variant-1'))||!readFileSync(join(commandRunRoot,'logs','variant-1.stdout.log'),'utf8').includes('fixture variant-1 started')) throw new Error('validation command timeout did not retain worktree and variant log');
+    const commandVariant=json(join(commandRunRoot,'artifacts','variants','variant-1.json'));
+    if(commandVariant.validation?.at(-1)?.command!=='npm test'||commandVariant.validation.at(-1).exitCode!==124||commandVariant.validation.at(-1).timedOut!==true||commandVariant.validation.at(-1).timeoutMs!==150) throw new Error(`validation command timeout result was not persisted in the variant artifact: ${JSON.stringify(commandVariant.validation)}`);
+
+    const mashupTimed=managedFixture('mashup-command-timeout',{scripts:{test:'node -e "process.cwd().endsWith(\'/mashup\')?setInterval(()=>{},1000):process.exit(0)"'}});
+    const mashupHermes=join(mashupTimed.home,'mashup-hermes.cjs'); writeManagedHermes(mashupHermes);
+    assertRunnerOk(run(mashupTimed,{HERMES_BIN:mashupHermes,APB_COMMAND_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50'}),'mashup validation command timeout');
+    const mashupState=json(join(mashupTimed.root,'state.json')), mashupRunRoot=join(mashupTimed.root,'runs',mashupState.currentRunId);
+    const mashupFailure=json(join(mashupRunRoot,'artifacts','failure.json')), mashupSynthesis=json(join(mashupRunRoot,'artifacts','synthesis','synthesis.json'));
+    if(mashupFailure.timeout?.scope!=='command'||mashupSynthesis.status!=='blocked'||mashupSynthesis.validation?.at(-1)?.command!=='npm test'||mashupSynthesis.validation.at(-1).exitCode!==124||mashupSynthesis.validation.at(-1).timedOut!==true||mashupSynthesis.validation.at(-1).timeoutMs!==150) throw new Error(`mashup timeout validation evidence was not persisted before blocking: ${JSON.stringify({failure:mashupFailure,synthesis:mashupSynthesis})}`);
 
     for(const [scope,agent,envName] of [['variant','variant-1','APB_VARIANT_TIMEOUT_MS'],['evaluator','evaluator-1','APB_EVALUATOR_TIMEOUT_MS']]) {
       const managedTimed=managedFixture(`${scope}-timeout`), managedHermes=join(managedTimed.home,`${scope}-hermes.cjs`);
@@ -199,7 +218,23 @@ try {
       const managedLifecycle=json(join(managedRunRoot,'lifecycle-contract.json')), managedIteration=json(join(managedRunRoot,'iteration-state.json')), managedHandoff=json(join(managedRunRoot,'artifacts','handoff.json')), managedControl=json(join(managedTimed.root,'control.json'));
       if(managedLifecycle.state!=='blocked'||managedIteration.status!=='blocked'||managedHandoff.state!=='blocked'||!managedHandoff.blocker.includes(`Hermes ${scope}`)||managedControl.nextRunRequest?.status!=='blocked'||managedControl.requestedRunNow!==false) throw new Error(`managed ${scope} timeout lifecycle/iteration/handoff/control evidence incomplete`);
       if(!existsSync(join(managedRunRoot,'worktrees','variant-1'))||!readFileSync(join(managedRunRoot,'logs',scope==='variant'?'variant-1.stdout.log':'evaluator-variant-1.stdout.log'),'utf8').includes(`fixture ${agent} started`)) throw new Error(`managed ${scope} timeout did not retain worktree and scoped log`);
+      const managedFailure=json(join(managedRunRoot,'artifacts','failure.json'));
+      for(const [label,value] of [['failure',managedFailure.timeout],['state',managedState.block?.timeout],['lifecycle',managedLifecycle.timeout],['iteration',managedIteration.timeout],['handoff',managedHandoff.timeout]]) if(value?.scope!==scope||value?.timeoutMs!==150||value?.exitCode!==124) throw new Error(`managed ${scope} structured timeout missing from ${label}: ${JSON.stringify(value)}`);
     }
+
+    const activePending=managedFixture('active-pending-guard');
+    seedBlockedRun(activePending,'run-active',{scope:'variant',timeoutMs:150,exitCode:124},true);
+    const activeHermes=join(activePending.home,'active-hermes.cjs'), activeInvocations=join(activePending.home,'active-invocations');
+    writeFileSync(activeHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n');\n`); chmodSync(activeHermes,0o755);
+    assertRunnerOk(run(activePending,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'pending managed request active guard');
+    if(existsSync(activeInvocations)||readdirSync(join(activePending.root,'runs')).length!==1||json(join(activePending.root,'control.json')).nextRunRequest?.status!=='pending') throw new Error('pending nextRunRequest bypassed the active-run guard');
+    const plainWakeControl=json(join(activePending.root,'control.json')); plainWakeControl.nextRunRequest=null; plainWakeControl.requestedRunNow=true; writeJson(join(activePending.root,'control.json'),plainWakeControl);
+    assertRunnerOk(run(activePending,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'plain wake after managed timeout');
+    if(existsSync(activeInvocations)||readdirSync(join(activePending.root,'runs')).length!==1) throw new Error('plain requestedRunNow bypassed a managed-timeout guard');
+    const continueControl=json(join(activePending.root,'control.json')); continueControl.requestedRunNow=true; continueControl.nextRunRequest={...activePending.request,id:'request-explicit-managed-recovery',status:'pending',type:'continue',sourceRunId:'run-active',sourceIterationId:'iter-run-active'}; writeJson(join(activePending.root,'control.json'),continueControl);
+    assertRunnerOk(run(activePending,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'explicit managed timeout continue');
+    if(!existsSync(activeInvocations)||readdirSync(join(activePending.root,'runs')).length!==2) throw new Error('explicit managed continue did not bypass its matching timeout guard');
+
 
     const resistant = fixture('term-resistant-stream-descendant', false);
     const resistantHermes = join(resistant.home, 'resistant-hermes.cjs');
@@ -214,6 +249,15 @@ try {
     const resistantPid=Number(readFileSync(resistantPidPath,'utf8'));
     for(let i=0;i<20&&alive(resistantPid);i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50);
     if(alive(resistantPid)) throw new Error(`TERM-resistant stream descendant ${resistantPid} survived timeout cleanup`);
+
+    const unconfirmed=fixture('unconfirmed-cleanup',false), unconfirmedHermes=join(unconfirmed.home,'unconfirmed-hermes.cjs'), unconfirmedInvocations=join(unconfirmed.home,'unconfirmed-invocations');
+    writeFileSync(unconfirmedHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n'); setInterval(()=>{},1000);\n`); chmodSync(unconfirmedHermes,0o755);
+    assertRunnerOk(run(unconfirmed,{HERMES_BIN:unconfirmedHermes,INVOCATIONS:unconfirmedInvocations,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50',APB_TEST_SUPPRESS_EXIT_CONFIRMATION:'1'}),'unconfirmed process cleanup');
+    const unconfirmedState=json(join(unconfirmed.root,'state.json'));
+    if(unconfirmedState.block?.timeout?.cleanup?.terminationConfirmed!==false) throw new Error(`unconfirmed termination was not persisted as unsafe cleanup evidence: ${JSON.stringify(unconfirmedState.block)}`);
+    const unconfirmedControl=json(join(unconfirmed.root,'control.json')); unconfirmedControl.requestedRunNow=true; writeJson(join(unconfirmed.root,'control.json'),unconfirmedControl);
+    assertRunnerOk(run(unconfirmed,{HERMES_BIN:unconfirmedHermes,INVOCATIONS:unconfirmedInvocations,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50'}),'recovery blocked after unconfirmed cleanup');
+    if(readFileSync(unconfirmedInvocations,'utf8').trim().split(/\n/).length!==1||readdirSync(join(unconfirmed.root,'runs')).length!==1) throw new Error('unconfirmed cleanup was released into recoverable concurrency');
 
     const timed = fixture('classic-timeout', false);
     const fakeHermes = join(timed.home, 'fake-hermes.cjs');
@@ -234,6 +278,11 @@ try {
     if(alive(childPid)) throw new Error(`classic timeout left descendant process ${childPid} alive`);
     const runId = readdirSync(join(timed.root, 'runs')).sort().at(-1);
     if(json(join(timed.root, 'runs', runId, 'run.json')).status !== 'blocked') throw new Error('classic timeout run evidence was not blocked');
+    const unrelatedPending={schemaVersion:'apb.next-run-request.v1',id:'unrelated-pending',status:'pending',type:'continue',sourceRunId:'other-run',sourceIterationId:'other-iteration',repoPath:timed.home,baseRef:'HEAD',objective:'unrelated',changeText:'unrelated',limits:{maxIterations:1,maxVariantsPerIteration:1,maxParallelVariants:1,maxAcceptedFeatures:1,maxVisualMotifChanges:0,maxNewSections:0,stopAfterNoImprovement:1}};
+    const pendingControl=json(join(timed.root,'control.json')); pendingControl.nextRunRequest=unrelatedPending; pendingControl.requestedRunNow=true; writeJson(join(timed.root,'control.json'),pendingControl);
+    assertRunnerOk(run(timed,{HERMES_BIN:fakeHermes,DESCENDANT_PID:descendantPid,INVOCATIONS:classicInvocations,APB_CLASSIC_TIMEOUT_MS:'250',APB_TERMINATION_GRACE_MS:'100'}),'unrelated pending request after classic timeout');
+    if(Number(readFileSync(classicInvocations,'utf8'))!==1||readdirSync(join(timed.root,'runs')).length!==1) throw new Error('pending nextRunRequest bypassed classic timeout guard');
+    const clearPending=json(join(timed.root,'control.json')); clearPending.nextRunRequest=null; clearPending.requestedRunNow=false; writeJson(join(timed.root,'control.json'),clearPending);
     assertRunnerOk(run(timed, { HERMES_BIN:fakeHermes, DESCENDANT_PID:descendantPid, INVOCATIONS:classicInvocations, APB_CLASSIC_TIMEOUT_MS:'250', APB_TERMINATION_GRACE_MS:'100' }), 'ordinary tick after classic timeout');
     if(Number(readFileSync(classicInvocations,'utf8'))!==1 || readdirSync(join(timed.root,'runs')).length!==1) throw new Error('ordinary hourly tick automatically retried blocked classic work');
     const recoveryControl=json(join(timed.root,'control.json')); recoveryControl.requestedRunNow=true; writeJson(join(timed.root,'control.json'),recoveryControl);

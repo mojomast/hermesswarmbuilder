@@ -437,8 +437,8 @@ function writeCompletionEvidence(runId:string, runRoot:string): boolean {
   return true;
 }
 
-type CmdResult = { exitCode:number; stdout:string; stderr:string; timedOut?:boolean; timeoutMs?:number };
-type TimeoutEvidence = { scope:TimeoutScope; command?:string; timeoutMs:number; exitCode:124 };
+type CmdResult = { exitCode:number; stdout:string; stderr:string; timedOut?:boolean; timeoutMs?:number; terminationConfirmed?:boolean };
+type TimeoutEvidence = { scope:TimeoutScope; command?:string; agentId?:string; timeoutMs:number; exitCode:124; cleanup?:{terminationConfirmed:boolean; platform:string} };
 class RunnerTimeoutError extends Error {
   timeout:TimeoutEvidence;
   constructor(message:string, timeout:TimeoutEvidence){ super(message); this.name="RunnerTimeoutError"; this.timeout=timeout; }
@@ -446,7 +446,7 @@ class RunnerTimeoutError extends Error {
 type WorktreeVariant = { id:string; index:number; path:string; branch:string; commit?:string; status?:string; json?:any; diffPath?:string; validation?:any[]; evaluation?:any };
 
 type TimeoutScope="command"|"classic"|"variant"|"evaluator";
-type ProcessOutcome={exitCode:number;timedOut:boolean;timeoutMs:number;streamDrainTimedOut?:boolean;streamDrainTimeoutMs?:number};
+type ProcessOutcome={exitCode:number;timedOut:boolean;timeoutMs:number;terminationConfirmed?:boolean;streamDrainTimedOut?:boolean;streamDrainTimeoutMs?:number;residualTerminationConfirmed?:boolean};
 type ProcessStreamPump={done:Promise<void>;cancel:()=>void};
 function timeoutMs(scope:TimeoutScope, override?:number): number {
   const defaults={command:600000,classic:7200000,variant:2700000,evaluator:1200000};
@@ -468,10 +468,10 @@ async function waitForProcess(proc:any, scope:TimeoutScope, override?:number): P
   if(first.kind==="exit") return {exitCode:first.exitCode,timedOut:false,timeoutMs:bounded};
   signalProcessTree(proc,"SIGTERM");
   const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
-  await Bun.sleep(grace);
-  signalProcessTree(proc,"SIGKILL");
-  await raceWithDelay(exited,grace,null);
-  return {exitCode:124,timedOut:true,timeoutMs:bounded};
+  let confirmed=(await raceWithDelay(exited,grace,null))!==null;
+  if(!confirmed){ signalProcessTree(proc,"SIGKILL"); confirmed=(await raceWithDelay(exited,grace,null))!==null; }
+  if(process.env.APB_TEST_SUPPRESS_EXIT_CONFIRMATION==="1") confirmed=false;
+  return {exitCode:124,timedOut:true,timeoutMs:bounded,terminationConfirmed:confirmed};
 }
 function pumpProcessStream(stream:ReadableStream<Uint8Array>|null, onChunk:(chunk:Uint8Array)=>void): ProcessStreamPump {
   if(!stream) return {done:Promise.resolve(),cancel:()=>{}};
@@ -494,6 +494,10 @@ async function drainProcessStreams(proc:any, outcome:ProcessOutcome, streams:Pro
   signalProcessTree(proc,"SIGKILL");
   for(const stream of streams) stream.cancel();
   await raceWithDelay(Promise.allSettled(streams.map(stream=>stream.done)),grace,null);
+  if(process.platform==="linux"&&Number.isInteger(proc.pid)){
+    let alive=true; for(let i=0;i<10&&alive;i++){ try{ process.kill(-proc.pid,0); await Bun.sleep(10); }catch{ alive=false; } }
+    outcome.residualTerminationConfirmed=!alive;
+  } else outcome.residualTerminationConfirmed=false;
 }
 function spawnOptions(options:any): any { return {...options,...(process.platform==="linux"?{detached:true}:{})}; }
 async function runCmd(args:string[], opts:{cwd:string; env?:Record<string,string>; timeoutMs?:number}): Promise<CmdResult> {
@@ -533,8 +537,8 @@ function blockRun(runId:string, runRoot:string, reason:string, suggestedAction:s
     const control=readControl(); if(control.nextRunRequest?.claimedByRunId===runId){ control.nextRunRequest={...control.nextRunRequest,status:"blocked",blockedAt:now(),block:st.block}; control.requestedRunNow=false; writeControl(control); }
     reconcileProjectRun(runId,runRoot,"blocked",null,{blockedAt:now(),reason}); event("error","system","block",st.lastAction,{runId,...st.block}); log(st.lastAction); return;
   }
-  patchLifecycle(runRoot,{state:"blocked",terminalAt:now(),blocker:reason});
-  const iter=readJson(join(runRoot,"iteration-state.json"),null); if(iter){ Object.assign(iter,{status:"blocked",blockedAt:now(),blocker:reason}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2)); }
+  patchLifecycle(runRoot,{state:"blocked",terminalAt:now(),blocker:reason,...extra});
+  const iter=readJson(join(runRoot,"iteration-state.json"),null); if(iter){ Object.assign(iter,{status:"blocked",blockedAt:now(),blocker:reason,...extra}); writeFileSync(join(runRoot,"iteration-state.json"),JSON.stringify(iter,null,2)); writeFileSync(join(runRoot,"artifacts","iterations","iteration.json"),JSON.stringify(iter,null,2)); }
   writeHandoff(runId,runRoot,"blocked",{iterationId:iter?.id||null,blocker:reason,preservedArtifactPaths:preservedPaths(runRoot),safeRecoveryAction:suggestedAction,...extra});
   const control=readControl(), claimed=control.nextRunRequest?.claimedByRunId===runId?control.nextRunRequest:null;
   if(claimed) control.nextRunRequest={...claimed,status:"blocked",blockedAt:now(),resultRunId:runId,resultIterationId:iter?.id||null,block:st.block};
@@ -593,11 +597,12 @@ async function validationCommands(repoRoot:string, baseCommit:string, worktreePa
   if(scripts.has("test")) cmds.push(["npm","test"]); if(scripts.has("build")) cmds.push(["npm","run","build"]);
   return cmds;
 }
-async function runValidations(runId:string, cwd:string, cmds:string[][]){
+async function runValidations(runId:string, cwd:string, cmds:string[][], persist?:(results:any[])=>void){
   const out:any[]=[]; for(const cmd of cmds){
     const r=await runCmd(cmd,{cwd}), command=cmd.join(" ");
     out.push({argv:cmd,command,exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,...(r.timedOut?{timeoutMs:r.timeoutMs}: {})});
-    if(r.timedOut){ const timeout:TimeoutEvidence={scope:"command",command,timeoutMs:r.timeoutMs||timeoutMs("command"),exitCode:124}; const reason=`Validation command timed out after ${timeout.timeoutMs}ms: ${command}`; event("error","validation","runner-timeout",reason,{runId,...timeout}); throw new RunnerTimeoutError(reason,timeout); }
+    persist?.(out);
+    if(r.timedOut){ const timeout:TimeoutEvidence={scope:"command",command,timeoutMs:r.timeoutMs||timeoutMs("command"),exitCode:124,cleanup:{terminationConfirmed:r.terminationConfirmed===true,platform:process.platform}}; const reason=`Validation command timed out after ${timeout.timeoutMs}ms: ${command}`; event("error","validation","runner-timeout",reason,{runId,...timeout}); throw new RunnerTimeoutError(reason,timeout); }
     if(r.exitCode!==0) break;
   } return out;
 }
@@ -612,7 +617,8 @@ async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:st
   const scope:TimeoutScope=agentId.startsWith("evaluator-")?"evaluator":"variant", outPump=pipe(proc.stdout,stdoutPath,"stdout"), errPump=pipe(proc.stderr,stderrPath,"stderr");
   const outcome=await waitForProcess(proc,scope);
   await drainProcessStreams(proc,outcome,[outPump,errPump]);
-  if(outcome.timedOut){ const reason=`Hermes ${scope} ${agentId} timed out after ${outcome.timeoutMs}ms`; event("error",agentId,"runner-timeout",reason,{runId,agentId,scope,timeoutMs:outcome.timeoutMs,exitCode:outcome.exitCode}); throw new Error(reason); }
+  if(outcome.timedOut){ const timeout:TimeoutEvidence={scope,agentId,timeoutMs:outcome.timeoutMs,exitCode:124,cleanup:{terminationConfirmed:outcome.terminationConfirmed===true,platform:process.platform}}; const reason=`Hermes ${scope} ${agentId} timed out after ${outcome.timeoutMs}ms`; event("error",agentId,"runner-timeout",reason,{runId,...timeout}); throw new RunnerTimeoutError(reason,timeout); }
+  if(outcome.streamDrainTimedOut&&outcome.residualTerminationConfirmed!==true) throw new Error(`Hermes ${scope} ${agentId} stream cleanup could not confirm residual process-group termination on ${process.platform}`);
   if(outcome.streamDrainTimedOut){ const warning=`Hermes ${scope} ${agentId} output was truncated after stream drain exceeded ${outcome.streamDrainTimeoutMs}ms; residual process group terminated`; event("warn",agentId,"runner-stream-drain-truncated",warning,{runId,agentId,scope,streamDrainTimeoutMs:outcome.streamDrainTimeoutMs,exitCode:outcome.exitCode,truncated:true,residualProcessGroupTerminated:true}); }
   return outcome.exitCode;
 }
@@ -698,8 +704,9 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
       const code=await streamHermes(runId,runRoot,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0){ v.status="failed"; updateAgent(runId,v.id,{status:"blocked",lastMessage:`Hermes exited ${code}`}); return; }
       v.commit=await ensureCommitted(v.path,`APB ${runId} ${v.id}`); const diff=await gitCmd(v.path,["diff",repo.baseCommit,"HEAD"]); writeFileSync(join(art,"variants",`${v.id}.diff`),diff.stdout); v.diffPath=`artifacts/variants/${v.id}.diff`;
-      v.validation=await runValidations(runId,v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path)); const jsonPath=join(art,"variants",`${v.id}.json`);
-      v.json={...readVariantArtifact(jsonPath,v.id),branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); v.status=v.validation.length>0&&v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
+      const jsonPath=join(art,"variants",`${v.id}.json`); v.json={...readVariantArtifact(jsonPath,v.id),branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:[]}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2));
+      v.validation=await runValidations(runId,v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path),(validation)=>{ v.validation=[...validation]; v.json={...v.json,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); });
+      v.status=v.validation.length>0&&v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
     });
     const variantError=variantRuns.find((result:any)=>result?.error); if(variantError) { if(variantError.timeout) throw new RunnerTimeoutError(variantError.error,variantError.timeout); throw new Error(variantError.error); }
     for(const v of variants){
@@ -715,7 +722,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
       if(code!==0) throw new Error(`evaluator for ${v.id} exited ${code}`);
       const p=join(art,"evaluations",`evaluation-${v.id}.json`); v.evaluation=readEvaluationArtifact(p,v.id); updateAgent(runId,`evaluator-${v.index}`,{status:"completed",currentArtifact:`artifacts/evaluations/evaluation-${v.id}.json`});
     });
-    const evaluatorError=evaluatorRuns.find((result:any)=>result?.error); if(evaluatorError) throw new Error(evaluatorError.error);
+    const evaluatorError=evaluatorRuns.find((result:any)=>result?.error); if(evaluatorError) { if(evaluatorError.timeout) throw new RunnerTimeoutError(evaluatorError.error,evaluatorError.timeout); throw new Error(evaluatorError.error); }
     for(const v of variants){
       v.evaluation=readEvaluationArtifact(join(art,"evaluations",`evaluation-${v.id}.json`),v.id);
       const refs=new Set(v.evaluation.evidenceArtifacts.map((x:string)=>String(x).replace(/^\.\//,"")));
@@ -727,9 +734,11 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const mashup:{path:string;branch:string;commit?:string;validation?:any[]}={path:join(wtRoot,"mashup"),branch:`apb/${safeBranchPart(runId)}/mashup`}; await createWorktree(repo.repoRoot,mashup.path,mashup.branch,repo.baseCommit);
     updateAgent(runId,"mashup",{label:"Mashup Integrator",role:"synthesis/mashup",status:"running",currentPhase:"mashup",currentTask:`Cherry-pick ${winner.id}`});
     const cp=await gitCmd(mashup.path,["cherry-pick",winner.commit||"HEAD"]); if(cp.exitCode!==0){ await gitCmd(mashup.path,["cherry-pick","--abort"]); throw new Error(`mashup cherry-pick failed: ${cp.stderr||cp.stdout}`); }
-    mashup.validation=await runValidations(runId,mashup.path,await validationCommands(repo.repoRoot,repo.baseCommit,mashup.path)); mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
+    mashup.commit=(await gitCmd(mashup.path,["rev-parse","HEAD"])).stdout.trim();
+    const synthesisPath=join(art,"synthesis","synthesis.json"), pendingSynthesis={schemaVersion:"apb.synthesis.v1",status:"validating",winnerVariantId:winner.id,winnerBranch:winner.branch,winnerCommit:winner.commit,mashupBranch:mashup.branch,mashupCommit:mashup.commit,mashupStrategy:"cherry-pick-winning-variant",acceptedFeatures:winner.json?.changes||winner.json?.features||[],rejectedFeatures:variants.filter(v=>v.id!==winner.id).map(v=>({variantId:v.id,reason:v.evaluation?.rationale||v.status})),rationale:`Selected ${winner.id} by highest valid evaluator score.`,validation:[]}; writeFileSync(synthesisPath,JSON.stringify(pendingSynthesis,null,2));
+    mashup.validation=await runValidations(runId,mashup.path,await validationCommands(repo.repoRoot,repo.baseCommit,mashup.path),(validation)=>writeFileSync(synthesisPath,JSON.stringify({...pendingSynthesis,status:validation.some((x:any)=>x.timedOut)?"blocked":"validating",validation:[...validation]},null,2)));
     const synthesis={schemaVersion:"apb.synthesis.v1",status:mashup.validation.every((x:any)=>x.passed)?"accepted":"blocked",winnerVariantId:winner.id,winnerBranch:winner.branch,winnerCommit:winner.commit,mashupBranch:mashup.branch,mashupCommit:mashup.commit,mashupStrategy:"cherry-pick-winning-variant",acceptedFeatures:winner.json?.changes||winner.json?.features||[],rejectedFeatures:variants.filter(v=>v.id!==winner.id).map(v=>({variantId:v.id,reason:v.evaluation?.rationale||v.status})),rationale:`Selected ${winner.id} by highest valid evaluator score.`,validation:mashup.validation};
-    writeFileSync(join(art,"synthesis","synthesis.json"),JSON.stringify(synthesis,null,2));
+    writeFileSync(synthesisPath,JSON.stringify(synthesis,null,2));
     const afterValidation=checkpointDisposition(runId,runRoot,req,"after-validation"); if(afterValidation) return afterValidation;
     const finalSourceHead=await gitCmd(repo.repoRoot,["rev-parse","HEAD"]), finalSourceStatus=await gitCmd(repo.repoRoot,["status","--porcelain=v1"]);
     if(finalSourceHead.exitCode!==0||finalSourceStatus.exitCode!==0||finalSourceHead.stdout.trim()!==repo.sourceHead||finalSourceStatus.stdout!==repo.sourceStatus) throw new Error("normal source branch or working tree changed during managed execution; completion is blocked and no automatic rollback was attempted");
@@ -749,6 +758,22 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     reconcileProjectRun(runId,runRoot,"completed",iterationScaffold.id,{completedAt:now(),resultBranch:mashup.branch,resultCommit:mashup.commit});
     event("success","mashup","tool-call-end",`Runner-managed iteration completed with ${winner.id}`,{runId,agentId:"mashup",toolName:"runner-managed-worktree-loop",status:"done"}); return {status:"completed",runId,iterationId:iterationScaffold.id,repoPath:repo.repoRoot,branch:mashup.branch,commit:mashup.commit,winnerVariantId:winner.id,objective:req.objective};
   }catch(err:any){ const reason=err?.message||String(err), timeout=err?.timeout; writeFileSync(join(runRoot,"artifacts","failure.json"),JSON.stringify({schemaVersion:"apb.managed-failure.v1",runId,failedAt:now(),reason,...(timeout?{timeout}:{}),preservedPaths:preservedPaths(runRoot)},null,2)); blockRun(runId,runRoot,reason,"Inspect the handoff, run artifacts/logs, and preserved worktrees; then issue an explicit continue-from-iteration request.",timeout?{timeout}:{}); return {status:"blocked",runId}; }
+}
+
+function verifiedActiveTimeoutRecovery(state:any, control:any): "classic"|"managed"|null {
+  const runId=state?.currentRunId;
+  if(!runId||!ACTIVE.has(state?.status)) return null;
+  const runRoot=join(RUNS,runId), run=readJson(join(runRoot,"run.json"),null), stateTimeout=state?.block?.timeout, runTimeout=run?.block?.timeout;
+  if(run?.status!=="blocked"||!stateTimeout||!runTimeout||stateTimeout.scope!==runTimeout.scope||stateTimeout.timeoutMs!==runTimeout.timeoutMs||stateTimeout.exitCode!==124||runTimeout.exitCode!==124) return null;
+  if(stateTimeout.cleanup?.terminationConfirmed===false||runTimeout.cleanup?.terminationConfirmed===false) return null;
+  const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
+  if(lifecycle){
+    const req=control?.nextRunRequest;
+    if(lifecycle.state!=="blocked"||lifecycle.timeout?.scope!==stateTimeout.scope||lifecycle.timeout?.timeoutMs!==stateTimeout.timeoutMs||lifecycle.timeout?.exitCode!==124) return null;
+    return req?.status==="pending"&&req?.type==="continue"&&req?.sourceRunId===runId&&req?.sourceIterationId===lifecycle.iterationId ? "managed" : null;
+  }
+  if(stateTimeout.scope!=="classic"||control?.requestedRunNow!==true||control?.nextRunRequest?.status==="pending") return null;
+  return "classic";
 }
 
 
@@ -773,6 +798,11 @@ async function main(){
     if (control.stop?.requested) {
       s.status="on-hold"; s.phase="on-hold"; s.hold={reason:control.stop.reason||"Dashboard stop requested",since:control.stop.requestedAt||now(),owner:"dashboard"};
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
+    }
+    const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
+    if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery){
+      s.lastAction=`Hourly check: active project ${s.currentRunId} is ${s.status}; no verified timeout recovery request was admitted.`;
+      writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }
     if(control.projectLaunchRequest?.status==="pending"){
       try { projectBinding=loadProjectLaunch(control.projectLaunchRequest); if(projectBinding.identity.pipelineType==="managed") iterationRequest=projectManagedRequest(projectBinding); else iterationRequest=null; }
@@ -862,7 +892,8 @@ async function main(){
     const outcome=await waitForProcess(proc,"classic");
     await drainProcessStreams(proc,outcome,[outPump,errPump]);
     const exitCode = outcome.exitCode;
-    if(outcome.timedOut){ const reason=`Hermes classic workflow timed out after ${outcome.timeoutMs}ms`; event("error","orchestrator","runner-timeout",reason,{runId,agentId:"orchestrator",scope:"classic",timeoutMs:outcome.timeoutMs,exitCode}); blockRun(runId,runRoot,reason,"Inspect the preserved run and Hermes logs, then explicitly launch or continue recovered work.",{timeout:{scope:"classic",timeoutMs:outcome.timeoutMs,exitCode}}); return; }
+    if(outcome.timedOut){ const timeout:TimeoutEvidence={scope:"classic",timeoutMs:outcome.timeoutMs,exitCode:124,cleanup:{terminationConfirmed:outcome.terminationConfirmed===true,platform:process.platform}}; const reason=`Hermes classic workflow timed out after ${outcome.timeoutMs}ms`; event("error","orchestrator","runner-timeout",reason,{runId,agentId:"orchestrator",...timeout}); blockRun(runId,runRoot,reason,"Inspect the preserved run and Hermes logs, then explicitly launch or continue recovered work.",{timeout}); return; }
+    if(outcome.streamDrainTimedOut&&outcome.residualTerminationConfirmed!==true){ blockRun(runId,runRoot,`Hermes classic stream cleanup could not confirm residual process-group termination on ${process.platform}`,"Verify and terminate the residual process tree before creating a new run.",{cleanup:{terminationConfirmed:false,platform:process.platform}}); return; }
     if(outcome.streamDrainTimedOut){ const warning=`Hermes classic workflow output was truncated after stream drain exceeded ${outcome.streamDrainTimeoutMs}ms; residual process group terminated`; event("warn","orchestrator","runner-stream-drain-truncated",warning,{runId,agentId:"orchestrator",scope:"classic",streamDrainTimeoutMs:outcome.streamDrainTimeoutMs,exitCode,truncated:true,residualProcessGroupTerminated:true}); }
     const final=readState();
     if (exitCode !== 0) {

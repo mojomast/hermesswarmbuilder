@@ -274,6 +274,12 @@ try {
     const probeDeniedState=json(join(probeDenied.root,'state.json'));
     if(probeDeniedState.block?.timeout?.cleanup?.terminationConfirmed!==false) throw new Error(`EPERM process-group probe was incorrectly accepted as termination confirmation: ${JSON.stringify(probeDeniedState.block)}`);
 
+    const drainProbeDenied=fixture('stream-drain-probe-eperm',false), drainProbeDeniedHermes=join(drainProbeDenied.home,'drain-probe-denied-hermes.cjs');
+    writeFileSync(drainProbeDeniedHermes,`#!/usr/bin/env node\n`); chmodSync(drainProbeDeniedHermes,0o755);
+    assertRunnerOk(run(drainProbeDenied,{HERMES_BIN:drainProbeDeniedHermes,APB_STREAM_DRAIN_TIMEOUT_MS:'50',APB_TERMINATION_GRACE_MS:'50',APB_TEST_FORCE_STREAM_DRAIN_TIMEOUT:'1',APB_TEST_PROCESS_GROUP_PROBE_ERROR:'EPERM'}),'EPERM stream-drain process-group absence probe');
+    const drainProbeDeniedState=json(join(drainProbeDenied.root,'state.json'));
+    if(drainProbeDeniedState.status!=='blocked'||!drainProbeDeniedState.block?.reason?.includes('stream cleanup could not confirm residual process-group termination')) throw new Error(`EPERM stream-drain process-group probe was incorrectly accepted as termination confirmation: ${JSON.stringify(drainProbeDeniedState.block)}`);
+
     const unconfirmed=fixture('unconfirmed-cleanup',false), unconfirmedHermes=join(unconfirmed.home,'unconfirmed-hermes.cjs'), unconfirmedInvocations=join(unconfirmed.home,'unconfirmed-invocations');
     writeFileSync(unconfirmedHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n'); setInterval(()=>{},1000);\n`); chmodSync(unconfirmedHermes,0o755);
     assertRunnerOk(run(unconfirmed,{HERMES_BIN:unconfirmedHermes,INVOCATIONS:unconfirmedInvocations,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50',APB_TEST_SUPPRESS_EXIT_CONFIRMATION:'1'}),'unconfirmed process cleanup');

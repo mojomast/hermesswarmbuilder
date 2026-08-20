@@ -506,7 +506,8 @@ function pumpProcessStream(stream:ReadableStream<Uint8Array>|null, onChunk:(chun
 async function drainProcessStreams(proc:any, outcome:ProcessOutcome, streams:ProcessStreamPump[]): Promise<void> {
   const draining=Promise.all(streams.map(stream=>stream.done));
   const drainMs=clampInt(process.env.APB_STREAM_DRAIN_TIMEOUT_MS,5000,10,60000), marker=Symbol("stream-drain-timeout");
-  if(await raceWithDelay(draining,drainMs,marker)!==marker) return;
+  const drainResult=await raceWithDelay(draining,drainMs,marker);
+  if(drainResult!==marker&&process.env.APB_TEST_FORCE_STREAM_DRAIN_TIMEOUT!=="1") return;
   outcome.streamDrainTimedOut=true; outcome.streamDrainTimeoutMs=drainMs;
   signalProcessTree(proc,"SIGTERM");
   const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
@@ -514,10 +515,8 @@ async function drainProcessStreams(proc:any, outcome:ProcessOutcome, streams:Pro
   signalProcessTree(proc,"SIGKILL");
   for(const stream of streams) stream.cancel();
   await raceWithDelay(Promise.allSettled(streams.map(stream=>stream.done)),grace,null);
-  if(process.platform==="linux"&&Number.isInteger(proc.pid)){
-    let alive=true; for(let i=0;i<10&&alive;i++){ try{ process.kill(-proc.pid,0); await Bun.sleep(10); }catch{ alive=false; } }
-    outcome.residualTerminationConfirmed=!alive;
-  } else outcome.residualTerminationConfirmed=false;
+  if(process.platform==="linux"&&Number.isInteger(proc.pid)) outcome.residualTerminationConfirmed=await processGroupAbsent(proc.pid,grace);
+  else outcome.residualTerminationConfirmed=false;
 }
 function spawnOptions(options:any): any { return {...options,...(process.platform==="linux"?{detached:true}:{})}; }
 async function runCmd(args:string[], opts:{cwd:string; env?:Record<string,string>; timeoutMs?:number}): Promise<CmdResult> {

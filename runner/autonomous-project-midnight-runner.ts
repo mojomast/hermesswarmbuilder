@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync } from "fs";
-import { createHash } from "crypto";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync } from "fs";
+import { createHash, randomUUID } from "crypto";
 import { homedir } from "os";
 import { isAbsolute, join, sep } from "path";
 
@@ -64,8 +64,73 @@ function writeQueue(q:any){ q.schemaVersion="apb.queue.v1"; q.updatedAt=now(); w
 function readGates(): any { const g=readJson(GATES,{schemaVersion:"apb.gates.v1",gates:[]}); if(!Array.isArray(g.gates)) g.gates=[]; return g; }
 function event(level:string, source:string, type:string, message:string, data:any={}){ appendFileSync(EVENTS, JSON.stringify({ id:`evt-${Date.now()}-${Math.random().toString(16).slice(2)}`, ts:now(), level, source, type, message:redact(message), runId:data?.runId, agentId:data?.agentId, data })+"\n"); }
 function nextHourlyLocal(){ const d=new Date(); d.setHours(d.getHours()+1,0,0,0); return d.toISOString(); }
-function lock(){ try { mkdirSync(LOCK); writeFileSync(join(LOCK,"pid"), String(process.pid)); return true; } catch { return false; } }
-function unlock(){ try { rmSync(LOCK,{recursive:true,force:true}); } catch {} }
+type LockOwner={schemaVersion:"apb.runner-lock.v1";pid:number;token:string;createdAt:string;startIdentity:string|null};
+let lockToken:string|null=null;
+function linuxStartIdentity(pid:number): string|null {
+  if(process.platform!=="linux") return null;
+  try { const procRoot=process.env.APB_PROC_ROOT||"/proc"; const stat=readFileSync(join(procRoot,String(pid),"stat"),"utf8"), rest=stat.slice(stat.lastIndexOf(")")+2).trim().split(/\s+/); return rest[19]||null; } catch { return null; }
+}
+function readLockOwner(path=LOCK): LockOwner|null {
+  try { const owner=JSON.parse(readFileSync(join(path,"owner.json"),"utf8")); if(owner?.schemaVersion!=="apb.runner-lock.v1"||!Number.isInteger(owner.pid)||owner.pid<=0||typeof owner.token!=="string"||!owner.token||!Number.isFinite(Date.parse(owner.createdAt))||!(owner.startIdentity===null||typeof owner.startIdentity==="string")) return null; return owner; } catch { return null; }
+}
+function readLegacyLockPid(path=LOCK): number|null {
+  try { const pid=Number(readFileSync(join(path,"pid"),"utf8").trim()); return Number.isInteger(pid)&&pid>0?pid:null; } catch { return null; }
+}
+function pidMayBeLive(pid:number): boolean {
+  try { process.kill(pid,0); return true; } catch(err:any) { return err?.code==="EPERM"; }
+}
+type LockIdentityStatus="owned"|"stale"|"unknown";
+function processIdentityStatus(owner:LockOwner): LockIdentityStatus {
+  try { process.kill(owner.pid,0); } catch(err:any) { return err?.code==="ESRCH"?"stale":"unknown"; }
+  if(process.platform==="linux"&&owner.startIdentity){ const current=linuxStartIdentity(owner.pid); if(current===null) return "unknown"; return current===owner.startIdentity?"owned":"stale"; }
+  return "owned";
+}
+type LockSnapshot={dev:number;ino:number;ownerText:string|null;pidText:string|null};
+function lockSnapshot(path=LOCK): LockSnapshot|null {
+  try { const stat=lstatSync(path); let ownerText:string|null=null,pidText:string|null=null; try { ownerText=readFileSync(join(path,"owner.json"),"utf8"); } catch {} try { pidText=readFileSync(join(path,"pid"),"utf8"); } catch {} return {dev:stat.dev,ino:stat.ino,ownerText,pidText}; } catch { return null; }
+}
+function sameLockSnapshot(expected:LockSnapshot, path=LOCK): boolean { const current=lockSnapshot(path); return !!current&&current.dev===expected.dev&&current.ino===expected.ino&&current.ownerText===expected.ownerText&&current.pidText===expected.pidText; }
+function staleTakeoverTestBarrier(){
+  const ready=process.env.APB_TEST_STALE_READY, proceed=process.env.APB_TEST_STALE_CONTINUE; if(!ready||!proceed) return;
+  try { writeFileSync(ready,"ready"); const deadline=Date.now()+5000; while(!existsSync(proceed)&&Date.now()<deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10); } catch {}
+}
+function createOwnedLock(token:string): boolean {
+  try { mkdirSync(LOCK); const owner:LockOwner={schemaVersion:"apb.runner-lock.v1",pid:process.pid,token,createdAt:now(),startIdentity:linuxStartIdentity(process.pid)}; writeFileSync(join(LOCK,"owner.json"),JSON.stringify(owner,null,2)); writeFileSync(join(LOCK,"pid"),String(process.pid)); lockToken=token; return true; } catch { return false; }
+}
+function lock(){
+  const token=randomUUID(); if(createOwnedLock(token)) return true;
+  const observed=lockSnapshot(); if(!observed) return false;
+  let stale=false;
+  try {
+    const owner=readLockOwner();
+    if(owner) stale=processIdentityStatus(owner)==="stale";
+    else { const legacyPid=readLegacyLockPid(); if(legacyPid!==null&&pidMayBeLive(legacyPid)) return false; const grace=clampInt(process.env.APB_LOCK_INCOMPLETE_GRACE_MS,30000,100,300000); stale=Date.now()-statSync(LOCK).mtimeMs>=grace; }
+  } catch { return false; }
+  if(!stale) return false;
+  staleTakeoverTestBarrier();
+  if(!sameLockSnapshot(observed)) return false;
+  const quarantine=`${LOCK}.stale-${token}`;
+  try { renameSync(LOCK,quarantine); } catch { return false; }
+  if(!sameLockSnapshot(observed,quarantine)){
+    try { if(!existsSync(LOCK)) renameSync(quarantine,LOCK); } catch {}
+    return false;
+  }
+  const acquired=createOwnedLock(token);
+  try { rmSync(quarantine,{recursive:true,force:true}); } catch {}
+  return acquired;
+}
+function unlock(){
+  const token=lockToken; lockToken=null; if(!token) return;
+  const observed=lockSnapshot(), current=readLockOwner();
+  if(!observed||current?.token!==token) return;
+  const release=`${LOCK}.release-${token}`;
+  try { renameSync(LOCK,release); } catch { return; }
+  if(!sameLockSnapshot(observed,release)){
+    try { if(!existsSync(LOCK)) renameSync(release,LOCK); } catch {}
+    return;
+  }
+  try { rmSync(release,{recursive:true,force:true}); } catch {}
+}
 function createRunId(){ const d=new Date(); const pad=(n:number)=>String(n).padStart(2,"0"); const base=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; let id=base,index=2; while(existsSync(join(RUNS,id))) id=`${base}-${index++}`; return id; }
 
 function canonical(value:any): any {
@@ -372,15 +437,70 @@ function writeCompletionEvidence(runId:string, runRoot:string): boolean {
   return true;
 }
 
-type CmdResult = { exitCode:number; stdout:string; stderr:string };
+type CmdResult = { exitCode:number; stdout:string; stderr:string; timedOut?:boolean; timeoutMs?:number };
 type WorktreeVariant = { id:string; index:number; path:string; branch:string; commit?:string; status?:string; json?:any; diffPath?:string; validation?:any[]; evaluation?:any };
 
+type TimeoutScope="command"|"classic"|"variant"|"evaluator";
+type ProcessOutcome={exitCode:number;timedOut:boolean;timeoutMs:number;streamDrainTimedOut?:boolean;streamDrainTimeoutMs?:number};
+type ProcessStreamPump={done:Promise<void>;cancel:()=>void};
+function timeoutMs(scope:TimeoutScope, override?:number): number {
+  const defaults={command:600000,classic:7200000,variant:2700000,evaluator:1200000};
+  const names={command:"APB_COMMAND_TIMEOUT_MS",classic:"APB_CLASSIC_TIMEOUT_MS",variant:"APB_VARIANT_TIMEOUT_MS",evaluator:"APB_EVALUATOR_TIMEOUT_MS"};
+  return clampInt(override??process.env[names[scope]],defaults[scope],100,7200000);
+}
+function signalProcessTree(proc:any, signal:"SIGTERM"|"SIGKILL"){
+  if(process.platform==="linux"&&Number.isInteger(proc.pid)){ try { process.kill(-proc.pid,signal); return; } catch {} }
+  try { proc.kill(signal); } catch {}
+}
+async function raceWithDelay<T,F>(promise:Promise<T>, delayMs:number, fallback:F): Promise<T|F> {
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try { return await Promise.race([promise,new Promise<F>(resolve=>{ timer=setTimeout(()=>resolve(fallback),delayMs); })]); }
+  finally { if(timer!==undefined) clearTimeout(timer); }
+}
+async function waitForProcess(proc:any, scope:TimeoutScope, override?:number): Promise<ProcessOutcome> {
+  const bounded=timeoutMs(scope,override), exited=Promise.resolve(proc.exited).then((exitCode:number)=>({kind:"exit" as const,exitCode}));
+  const first=await raceWithDelay(exited,bounded,{kind:"timeout" as const,exitCode:124});
+  if(first.kind==="exit") return {exitCode:first.exitCode,timedOut:false,timeoutMs:bounded};
+  signalProcessTree(proc,"SIGTERM");
+  const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
+  await Bun.sleep(grace);
+  signalProcessTree(proc,"SIGKILL");
+  await raceWithDelay(exited,grace,null);
+  return {exitCode:124,timedOut:true,timeoutMs:bounded};
+}
+function pumpProcessStream(stream:ReadableStream<Uint8Array>|null, onChunk:(chunk:Uint8Array)=>void): ProcessStreamPump {
+  if(!stream) return {done:Promise.resolve(),cancel:()=>{}};
+  const reader=stream.getReader(); let cancelled=false;
+  const done=(async()=>{
+    try { while(true){ const next=await reader.read(); if(next.done) break; onChunk(next.value); } }
+    catch(err){ if(!cancelled) throw err; }
+    finally { try { reader.releaseLock(); } catch {} }
+  })();
+  return {done,cancel:()=>{ cancelled=true; void reader.cancel("runner stream drain timeout").catch(()=>{}); }};
+}
+async function drainProcessStreams(proc:any, outcome:ProcessOutcome, streams:ProcessStreamPump[]): Promise<void> {
+  const draining=Promise.all(streams.map(stream=>stream.done));
+  const drainMs=clampInt(process.env.APB_STREAM_DRAIN_TIMEOUT_MS,5000,10,60000), marker=Symbol("stream-drain-timeout");
+  if(await raceWithDelay(draining,drainMs,marker)!==marker) return;
+  outcome.streamDrainTimedOut=true; outcome.streamDrainTimeoutMs=drainMs;
+  signalProcessTree(proc,"SIGTERM");
+  const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
+  await raceWithDelay(draining,grace,marker);
+  signalProcessTree(proc,"SIGKILL");
+  for(const stream of streams) stream.cancel();
+  await raceWithDelay(Promise.allSettled(streams.map(stream=>stream.done)),grace,null);
+}
+function spawnOptions(options:any): any { return {...options,...(process.platform==="linux"?{detached:true}:{})}; }
 async function runCmd(args:string[], opts:{cwd:string; env?:Record<string,string>; timeoutMs?:number}): Promise<CmdResult> {
-  const proc = Bun.spawn(args, { cwd: opts.cwd, env: { ...process.env, ...(opts.env||{}) }, stdout:"pipe", stderr:"pipe" });
-  const outPromise = new Response(proc.stdout).text();
-  const errPromise = new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-  return { exitCode, stdout: await outPromise, stderr: await errPromise };
+  const proc = Bun.spawn(args, spawnOptions({ cwd: opts.cwd, env: { ...process.env, ...(opts.env||{}) }, stdout:"pipe", stderr:"pipe" }));
+  const decoderOut=new TextDecoder(), decoderErr=new TextDecoder(); let stdout="",stderr="";
+  const outPump=pumpProcessStream(proc.stdout,chunk=>{ stdout+=decoderOut.decode(chunk,{stream:true}); });
+  const errPump=pumpProcessStream(proc.stderr,chunk=>{ stderr+=decoderErr.decode(chunk,{stream:true}); });
+  const outcome = await waitForProcess(proc,"command",opts.timeoutMs);
+  await drainProcessStreams(proc,outcome,[outPump,errPump]);
+  stdout+=decoderOut.decode(); stderr+=decoderErr.decode();
+  if(outcome.streamDrainTimedOut) stderr+=`${stderr?"\n":""}runner stream drain exceeded its bounded timeout`;
+  return { ...outcome, stdout, stderr };
 }
 async function gitCmd(cwd:string, args:string[]): Promise<CmdResult> { return runCmd(["git", ...args], { cwd }); }
 function safeBranchPart(x:string): string { return String(x).replace(/[^a-zA-Z0-9._/-]+/g,"-").replace(/^[-/]+|[-/]+$/g,"").slice(0,80) || "run"; }
@@ -469,7 +589,7 @@ async function validationCommands(repoRoot:string, baseCommit:string, worktreePa
   return cmds;
 }
 async function runValidations(cwd:string, cmds:string[][]){
-  const out:any[]=[]; for(const cmd of cmds){ const r=await runCmd(cmd,{cwd}); out.push({argv:cmd,command:cmd.join(" "),exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0}); if(r.exitCode!==0) break; } return out;
+  const out:any[]=[]; for(const cmd of cmds){ const r=await runCmd(cmd,{cwd}); out.push({argv:cmd,command:cmd.join(" "),exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,...(r.timedOut?{timeoutMs:r.timeoutMs}: {})}); if(r.exitCode!==0) break; } return out;
 }
 async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>Promise<any>){
   const results:any[]=[]; let next=0; const workers=Array.from({length:Math.max(1,Math.min(limit,items.length))},async()=>{ while(next<items.length){ const i=next++; try{ results[i]=await fn(items[i],i); }catch(err:any){ results[i]={error:err?.message||String(err)}; } } }); await Promise.all(workers); return results;
@@ -477,9 +597,14 @@ async function runBounded<T>(items:T[], limit:number, fn:(item:T,index:number)=>
 async function streamHermes(runId:string, runRoot:string, agentId:string, cwd:string, query:string, stdoutPath:string, stderrPath:string, extraEnv:Record<string,string>={}){
   writeFileSync(stdoutPath,""); writeFileSync(stderrPath,"");
   const maxTurns=agentId.startsWith("evaluator-")?clampInt(process.env.APB_EVALUATOR_MAX_TURNS,8,4,16):clampInt(process.env.APB_VARIANT_MAX_TURNS,18,8,30);
-  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(maxTurns),"--toolsets","terminal,file,web","--query",query],{cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_RUN_ROOT:runRoot,AUTONOMOUS_PROJECT_STATE:STATE,AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"),AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId,...extraEnv},stdout:"pipe",stderr:"pipe"});
-  const pipe=async(stream:ReadableStream<Uint8Array>|null,path:string,kind:string)=>{ if(!stream)return; const dec=new TextDecoder(); for await(const chunk of stream){ const text=dec.decode(chunk); appendFileSync(path,text); for(const rawLine of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(-5)){ const line=redact(rawLine); if(line.startsWith("APB_TELEMETRY ")){ try{const payload=JSON.parse(line.slice("APB_TELEMETRY ".length)); event(payload.level||"info",payload.source||agentId,payload.type||"event",payload.message||"telemetry",{...(payload.data||{}),runId,agentId});}catch{} } else event(kind==="stderr"?"warn":"info",agentId,"agent-message",line,{runId,agentId,logPath:path,stream:kind}); } updateAgent(runId,agentId,{status:"running",lastMessage:redact(text.slice(-2000)),logPath:stdoutPath}); } };
-  await Promise.all([pipe(proc.stdout,stdoutPath,"stdout"),pipe(proc.stderr,stderrPath,"stderr")]); return proc.exited;
+  const proc=Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(maxTurns),"--toolsets","terminal,file,web","--query",query],spawnOptions({cwd,env:{...process.env,AUTONOMOUS_PROJECT_RUN_ID:runId,AUTONOMOUS_PROJECT_STATE_ROOT:ROOT,AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT,AUTONOMOUS_PROJECT_RUN_ROOT:runRoot,AUTONOMOUS_PROJECT_STATE:STATE,AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"),AUTONOMOUS_PROJECT_EVENTS:EVENTS,AUTONOMOUS_PROJECT_TELEMETRY:TELEMETRY,APB_AGENT_ID:agentId,...extraEnv},stdout:"pipe",stderr:"pipe"}));
+  const pipe=(stream:ReadableStream<Uint8Array>|null,path:string,kind:string)=>{ const dec=new TextDecoder(); return pumpProcessStream(stream,chunk=>{ const text=dec.decode(chunk); appendFileSync(path,text); for(const rawLine of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(-5)){ const line=redact(rawLine); if(line.startsWith("APB_TELEMETRY ")){ try{const payload=JSON.parse(line.slice("APB_TELEMETRY ".length)); event(payload.level||"info",payload.source||agentId,payload.type||"event",payload.message||"telemetry",{...(payload.data||{}),runId,agentId});}catch{} } else event(kind==="stderr"?"warn":"info",agentId,"agent-message",line,{runId,agentId,logPath:path,stream:kind}); } updateAgent(runId,agentId,{status:"running",lastMessage:redact(text.slice(-2000)),logPath:stdoutPath}); }); };
+  const scope:TimeoutScope=agentId.startsWith("evaluator-")?"evaluator":"variant", outPump=pipe(proc.stdout,stdoutPath,"stdout"), errPump=pipe(proc.stderr,stderrPath,"stderr");
+  const outcome=await waitForProcess(proc,scope);
+  await drainProcessStreams(proc,outcome,[outPump,errPump]);
+  if(outcome.timedOut){ const reason=`Hermes ${scope} ${agentId} timed out after ${outcome.timeoutMs}ms`; event("error",agentId,"runner-timeout",reason,{runId,agentId,scope,timeoutMs:outcome.timeoutMs,exitCode:outcome.exitCode}); throw new Error(reason); }
+  if(outcome.streamDrainTimedOut){ const warning=`Hermes ${scope} ${agentId} output was truncated after stream drain exceeded ${outcome.streamDrainTimeoutMs}ms; residual process group terminated`; event("warn",agentId,"runner-stream-drain-truncated",warning,{runId,agentId,scope,streamDrainTimeoutMs:outcome.streamDrainTimeoutMs,exitCode:outcome.exitCode,truncated:true,residualProcessGroupTerminated:true}); }
+  return outcome.exitCode;
 }
 function variantPrompt(req:any, v:WorktreeVariant, runRoot:string, baseCommit:string){ return `You are ${v.id}, one bounded Hermes Autonomous Project Builder variant agent.\nObjective: ${req.objective}\nChange request: ${req.changeText||"(none)"}\nRepo worktree: ${v.path}\nBase commit: ${baseCommit}\nRules: make one focused, shippable alternative; no unrelated features; no tech-stack churn; keep generated artifacts/logs/build output out of git. Commit your source/test/doc/config changes on this branch.\nBefore exit, write JSON to ${join(runRoot,"artifacts","variants",`${v.id}.json`)} with schemaVersion apb.variant.v1, variantId, title, claim, objectiveMapping, changes, risks, evidence, validationNotes, and budget containing numeric visualMotifChanges/newSections plus boolean techStackChurn/unrelatedFeatures. The runner will write ${v.id}.diff. Do not write outside the worktree except that artifact JSON.`; }
 function evaluatorPrompt(req:any, v:WorktreeVariant, runRoot:string){ return `You are evaluator for ${v.id}. Read ${join(runRoot,"artifacts","variants",`${v.id}.json`)} and ${join(runRoot,"artifacts","variants",`${v.id}.diff`)}. Score objectiveFit, userValue, visualQuality, implementationQuality, accessibility, performance from 0-100 and total 0-100. Hard-reject unrelated features, tech-stack churn, missing tests/evidence. Write ${join(runRoot,"artifacts","evaluations",`evaluation-${v.id}.json`)} with schemaVersion apb.evaluation.v1, variantId, scores, hardGateViolations, recommendation accept|reject|partial, rationale, evidenceArtifacts.`; }
@@ -558,7 +683,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const preflightControl=checkpointDisposition(runId,runRoot,req,"preflight"); if(preflightControl) return preflightControl;
     const variants:WorktreeVariant[]=Array.from({length:req.limits.maxVariantsPerIteration},(_,i)=>({id:`variant-${i+1}`,index:i+1,path:join(wtRoot,`variant-${i+1}`),branch:`apb/${safeBranchPart(runId)}/variant-${i+1}`}));
     for(const v of variants){ await createWorktree(repo.repoRoot,v.path,v.branch,repo.baseCommit); event("info",v.id,"tool-call-end",`Created worktree ${v.branch}`,{runId,agentId:v.id,toolName:"git worktree"}); }
-    await runBounded(variants,req.limits.maxParallelVariants,async(v)=>{
+    const variantRuns=await runBounded(variants,req.limits.maxParallelVariants,async(v)=>{
       updateAgent(runId,v.id,{label:`Variant ${v.index}`,role:"bounded variant generator",status:"running",currentPhase:"variant-generation",currentTask:req.objective,logPath:join(runRoot,"logs",`${v.id}.stdout.log`)});
       const code=await streamHermes(runId,runRoot,v.id,v.path,variantPrompt(req,v,runRoot,repo.baseCommit),join(runRoot,"logs",`${v.id}.stdout.log`),join(runRoot,"logs",`${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0){ v.status="failed"; updateAgent(runId,v.id,{status:"blocked",lastMessage:`Hermes exited ${code}`}); return; }
@@ -566,6 +691,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
       v.validation=await runValidations(v.path,await validationCommands(repo.repoRoot,repo.baseCommit,v.path)); const jsonPath=join(art,"variants",`${v.id}.json`);
       v.json={...readVariantArtifact(jsonPath,v.id),branch:v.branch,commit:v.commit,diffPath:v.diffPath,validation:v.validation}; writeFileSync(jsonPath,JSON.stringify(v.json,null,2)); v.status=v.validation.length>0&&v.validation.every((x:any)=>x.passed)?"valid":"validation-failed"; updateAgent(runId,v.id,{status:v.status==="valid"?"completed":"blocked",currentPhase:"variant-complete",currentArtifact:`artifacts/variants/${v.id}.json`});
     });
+    const variantError=variantRuns.find((result:any)=>result?.error); if(variantError) throw new Error(variantError.error);
     for(const v of variants){
       if(!v.json) v.json=readVariantArtifact(join(art,"variants",`${v.id}.json`),v.id);
       const diffPath=join(art,"variants",`${v.id}.diff`); if(!existsSync(diffPath)||statSync(diffPath).size===0||!v.commit||v.commit===repo.baseCommit) throw new Error(`variant ${v.id} is missing a non-empty committed diff`);
@@ -573,12 +699,13 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     }
     const afterVariants=checkpointDisposition(runId,runRoot,req,"after-variants"); if(afterVariants) return afterVariants;
     writeRunJson(runRoot,{runId,status:"building",phase:"evaluation"});
-    await runBounded(variants,Math.min(3,req.limits.maxParallelVariants),async(v)=>{
+    const evaluatorRuns=await runBounded(variants,Math.min(3,req.limits.maxParallelVariants),async(v)=>{
       updateAgent(runId,`evaluator-${v.index}`,{label:`Evaluator ${v.index}`,role:"variant evaluator",status:"running",currentPhase:"evaluation",currentTask:`Evaluate ${v.id}`});
       const code=await streamHermes(runId,runRoot,`evaluator-${v.index}`,v.path,evaluatorPrompt(req,v,runRoot),join(runRoot,"logs",`evaluator-${v.id}.stdout.log`),join(runRoot,"logs",`evaluator-${v.id}.stderr.log`),{APB_VARIANT_WORKTREE:v.path});
       if(code!==0) throw new Error(`evaluator for ${v.id} exited ${code}`);
       const p=join(art,"evaluations",`evaluation-${v.id}.json`); v.evaluation=readEvaluationArtifact(p,v.id); updateAgent(runId,`evaluator-${v.index}`,{status:"completed",currentArtifact:`artifacts/evaluations/evaluation-${v.id}.json`});
     });
+    const evaluatorError=evaluatorRuns.find((result:any)=>result?.error); if(evaluatorError) throw new Error(evaluatorError.error);
     for(const v of variants){
       v.evaluation=readEvaluationArtifact(join(art,"evaluations",`evaluation-${v.id}.json`),v.id);
       const refs=new Set(v.evaluation.evidenceArtifacts.map((x:string)=>String(x).replace(/^\.\//,"")));
@@ -699,11 +826,10 @@ async function main(){
     writeFileSync(stdoutPath, ""); writeFileSync(stderrPath, "");
     event("info","orchestrator","tool-call-start","Launching Hermes scheduled workflow",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",action:"scheduled autonomous project workflow"});
     const classicMaxTurns=clampInt(process.env.APB_CLASSIC_MAX_TURNS,24,8,40);
-    const proc = Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(classicMaxTurns),"--toolsets","terminal,file,web,delegation","--query",query], { cwd: HOME, env: { ...process.env, AUTONOMOUS_PROJECT_RUN_ID: runId, AUTONOMOUS_PROJECT_STATE_ROOT: ROOT, AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT, AUTONOMOUS_PROJECT_RUN_ROOT: runRoot, AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"), AUTONOMOUS_PROJECT_EVENTS: EVENTS, AUTONOMOUS_PROJECT_STATE: STATE, AUTONOMOUS_PROJECT_TELEMETRY: TELEMETRY, APB_AGENT_ID:"orchestrator" }, stdout: "pipe", stderr: "pipe" });
-    const streamToLog = async (stream: ReadableStream<Uint8Array> | null, path: string, source: string) => {
-      if (!stream) return;
+    const proc = Bun.spawn([HERMES,"chat","--verbose","--accept-hooks","--ignore-rules","--source","autonomous-project-builder","--max-turns",String(classicMaxTurns),"--toolsets","terminal,file,web,delegation","--query",query], spawnOptions({ cwd: HOME, env: { ...process.env, AUTONOMOUS_PROJECT_RUN_ID: runId, AUTONOMOUS_PROJECT_STATE_ROOT: ROOT, AUTONOMOUS_PROJECTS_STATE_ROOT:ROOT, AUTONOMOUS_PROJECT_RUN_ROOT: runRoot, AUTONOMOUS_PROJECT_ARTIFACTS:join(runRoot,"artifacts"), AUTONOMOUS_PROJECT_EVENTS: EVENTS, AUTONOMOUS_PROJECT_STATE: STATE, AUTONOMOUS_PROJECT_TELEMETRY: TELEMETRY, APB_AGENT_ID:"orchestrator" }, stdout: "pipe", stderr: "pipe" }));
+    const streamToLog = (stream: ReadableStream<Uint8Array> | null, path: string, source: string) => {
       const decoder = new TextDecoder();
-      for await (const chunk of stream) {
+      return pumpProcessStream(stream,chunk=>{
         const text = decoder.decode(chunk);
         appendFileSync(path, text);
         for (const rawLine of text.split(/\r?\n/).map((x)=>x.trim()).filter(Boolean).slice(-8)) {
@@ -713,19 +839,21 @@ async function main(){
               const payload = JSON.parse(line.slice("APB_TELEMETRY ".length));
               event(payload.level || "info", payload.source || payload.agentId || "orchestrator", payload.type || payload.eventType || "event", payload.message || "telemetry", { ...(payload.data || {}), runId: payload.runId || runId, agentId: payload.agentId || payload.data?.agentId || "orchestrator" });
             } catch {}
-            continue;
-          }
-          event(source === "stderr" ? "warn" : "info", "orchestrator", "agent-message", line, { runId, agentId:"orchestrator", logPath:path, stream:source });
+          } else event(source === "stderr" ? "warn" : "info", "orchestrator", "agent-message", line, { runId, agentId:"orchestrator", logPath:path, stream:source });
         }
         const latest = readState();
         latest.agents = latest.agents && !Array.isArray(latest.agents) ? latest.agents : {};
         latest.agents.orchestrator = { ...(latest.agents.orchestrator || {}), id:"orchestrator", label:"Main Orchestrator", role:"scheduled workflow orchestrator", status:"running", currentPhase:latest.status, currentTask:"Scheduled Hermes workflow running", lastMessage: redact(text.slice(-2000)), logPath:path, updatedAt:now() };
         latest.lastAction = `Hermes workflow ${source} updated`;
         writeState(latest);
-      }
+      });
     };
-    await Promise.all([streamToLog(proc.stdout, stdoutPath, "stdout"), streamToLog(proc.stderr, stderrPath, "stderr")]);
-    const exitCode = await proc.exited;
+    const outPump=streamToLog(proc.stdout,stdoutPath,"stdout"), errPump=streamToLog(proc.stderr,stderrPath,"stderr");
+    const outcome=await waitForProcess(proc,"classic");
+    await drainProcessStreams(proc,outcome,[outPump,errPump]);
+    const exitCode = outcome.exitCode;
+    if(outcome.timedOut){ const reason=`Hermes classic workflow timed out after ${outcome.timeoutMs}ms`; event("error","orchestrator","runner-timeout",reason,{runId,agentId:"orchestrator",scope:"classic",timeoutMs:outcome.timeoutMs,exitCode}); blockRun(runId,runRoot,reason,"Inspect the preserved run and Hermes logs, then explicitly launch or continue recovered work.",{timeout:{scope:"classic",timeoutMs:outcome.timeoutMs,exitCode}}); return; }
+    if(outcome.streamDrainTimedOut){ const warning=`Hermes classic workflow output was truncated after stream drain exceeded ${outcome.streamDrainTimeoutMs}ms; residual process group terminated`; event("warn","orchestrator","runner-stream-drain-truncated",warning,{runId,agentId:"orchestrator",scope:"classic",streamDrainTimeoutMs:outcome.streamDrainTimeoutMs,exitCode,truncated:true,residualProcessGroupTerminated:true}); }
     const final=readState();
     if (exitCode !== 0) {
       final.status="blocked"; final.block={reason:`Hermes workflow exited with code ${exitCode}`, since:now(), owner:"midnight-runner", suggestedAction:"Inspect hermes stdout/stderr logs in run directory"}; final.lastAction="Hermes workflow failed; preserved run for inspection."; writeState(final); writeRunJson(runRoot,{runId,status:"blocked",phase:"blocked",blockedAt:now(),block:final.block}); reconcileProjectRun(runId,runRoot,"blocked",null,{blockedAt:now(),reason:final.block.reason}); event("error","system","block",final.lastAction,final.block); event("error","orchestrator","tool-call-error","Hermes scheduled workflow failed",{runId,agentId:"orchestrator",toolCallId:`runner-${runId}`,toolName:"hermes chat",error:final.block.reason}); log(final.lastAction); return;

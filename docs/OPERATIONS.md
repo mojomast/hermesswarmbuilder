@@ -35,6 +35,12 @@ Expected line:
 
 The file name remains `autonomous-project-midnight-runner.ts` for backward compatibility, but the installed schedule is hourly and non-overlapping.
 
+### Runner timeouts and lock recovery
+
+Runner subprocesses have finite wall-clock limits. Override them with `APB_COMMAND_TIMEOUT_MS` (default 10 minutes), `APB_CLASSIC_TIMEOUT_MS` (default 2 hours), `APB_VARIANT_TIMEOUT_MS` (default 45 minutes), and `APB_EVALUATOR_TIMEOUT_MS` (default 20 minutes). `APB_STREAM_DRAIN_TIMEOUT_MS` bounds output draining after the immediate process exits, and `APB_TERMINATION_GRACE_MS` controls the TERM-to-KILL grace period (both default to 5 seconds). Values are bounded by the runner. On Linux each subprocess starts in its own process group, so timeout cleanup—and residual descendant cleanup after a stream-drain timeout—sends TERM and then KILL to the group before the runner lock is released. A stream-drain timeout records `runner-stream-drain-truncated` warning evidence but retains the immediate parent's exit status for normal artifact and completion evaluation. Genuine process timeouts use `runner-timeout`; classic and managed runs preserve blocked evidence and the existing recovery handoff path.
+
+The lock directory contains `owner.json` with the runner PID, a random ownership token, creation time, and Linux process start identity when available. A runner releases only the lock carrying its token. A live owner is never displaced. A lock with a valid dead owner is atomically quarantined before takeover; this prevents two contenders from both taking the same stale lock. Incomplete, legacy, or malformed locks are preserved for `APB_LOCK_INCOMPLETE_GRACE_MS` (default 30 seconds) before they are eligible for the same atomic recovery. Operators normally should not delete lock files manually.
+
 ## Steering from the browser
 
 Open `http://127.0.0.1:9200/` and use **Steering Cockpit**:
@@ -284,6 +290,7 @@ node scripts/smoke-runner-classic-evidence-contract.mjs
 node scripts/smoke-runner-classic-completion.mjs
 node scripts/smoke-runner-progress-budget.mjs
 node scripts/smoke-runner-scaffold.mjs
+node scripts/smoke-runner-timeout-lock.mjs
 node scripts/smoke-dashboard-iteration.mjs
 git diff --check
 ```
@@ -310,7 +317,7 @@ Manual browser checks should cover desktop and narrow/mobile layouts: open **Pla
 
 ### Runs overlap
 
-The runner uses `~/.hermes/autonomous-projects/autonomous-project.lock`. If a process died and left a stale lock, inspect the PID file before removing it.
+The runner uses `~/.hermes/autonomous-projects/autonomous-project.lock`. Inspect `owner.json` and the runner log if a run does not start. Live locks are preserved; valid dead-PID locks recover automatically, while fresh incomplete/malformed locks wait through the bounded grace period. If an old malformed lock remains past that grace, invoke one runner tick and let atomic stale takeover recover it rather than deleting it concurrently with a starting runner.
 
 ### Artifacts/log previews are stale
 

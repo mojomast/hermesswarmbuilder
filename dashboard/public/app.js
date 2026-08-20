@@ -224,6 +224,25 @@ function showSteeringError(error){
   steeringErrorTimer=setTimeout(()=>{el.hidden=true;el.textContent=''},6000);
 }
 function currentObjective(control, pinned){return control.currentObjective?.text||pinned?.objective||model.state?.task||model.state?.currentTask||model.state?.currentProject||'No objective selected yet'}
+function deriveOperationsHub(){
+  const state=model.state||{},control=model.control||{},queue=(model.queue?.items||[]),pinned=queue.find(x=>x.id===control.pinnedQueueItemId)||queue.find(x=>x.status==='pinned');
+  const selectedRunId=model.selectedRunId||state.currentRunId||model.runs?.[0]?.id||null;
+  const activeQueue=queue.filter(item=>!['archived','cleared','completed'].includes(item.status));
+  const pendingRequest=control.nextRunRequest&& !['completed','cancelled','rejected'].includes(control.nextRunRequest.status);
+  const pendingPlans=planning.lastRefresh?planning.items.filter(plan=>!['archived','completed'].includes(plan.state)).length:null;
+  const hold=state.hold||state.block||state.blocker||control.pause?.requested&&control.pause||control.stop?.requested&&control.stop;
+  const holdReason=hold&&(hold.reason||hold.message||hold.text)||null;
+  const workflow=workflowStatus(state);
+  const status=state.block||state.blocker||workflow==='blocked'?'blocked':control.runAdmission==='paused'||state.hold||workflow==='on-hold'?'on hold':control.stop?.requested?'stopping':control.pause?.requested?'pause requested':pendingRequest?'request pending':workflow;
+  const hasBlockOrHold=['blocked','on hold','pause requested','stopping'].includes(status);
+  const safeAction=hasBlockOrHold?{type:'mission-control',label:'Review blocker'}:pendingRequest?{type:'focus-current',label:'Focus queued request'}:selectedRunId?{type:'inspect-run',label:'Inspect current run'}:activeQueue.length?{type:'focus-current',label:'Focus queue'}:{type:'project-planner',label:'Open Project Planner'};
+  return {selectedRunId,objective:currentObjective(control,pinned),holdReason,hasBlockOrHold,queueCount:activeQueue.length,pendingRequestCount:pendingRequest?1:0,pendingPlans,status,safeAction};
+}
+function renderOperationsHub(){
+  const hub=$('operationsHub');if(!hub)return;
+  const summary=deriveOperationsHub(),planCount=summary.pendingPlans==null?'—':summary.pendingPlans;
+  hub.innerHTML=`<div class="operations-hub-summary"><div class="operations-hub-status" role="status" aria-live="polite"><span class="eyebrow">Operations Hub</span><b id="operationsHubTitle">${dot(summary.status)}${esc(summary.status)}</b><span class="muted">${esc(summary.selectedRunId||'no run selected')}</span></div><div class="operations-hub-objective"><span class="eyebrow">Objective</span><strong title="${esc(summary.objective)}">${esc(summary.objective)}</strong><small>${summary.holdReason?`Blocker / hold: ${esc(summary.holdReason)}`:summary.hasBlockOrHold?'Blocker / hold reason not reported.':'No blocker or hold reported.'}</small></div><div class="operations-hub-counts" aria-label="Pending operations"><span><b>${esc(summary.pendingRequestCount)}</b> request</span><span><b>${esc(summary.queueCount)}</b> queue</span><span><b>${esc(planCount)}</b> plans</span></div><div class="operations-hub-actions"><button class="primary" data-operations-action="${esc(summary.safeAction.type)}">${esc(summary.safeAction.label)}</button><button data-operations-action="inspect-run">Inspect selected run</button><button data-operations-action="mission-control">Mission Control</button><button data-operations-action="project-planner">Project Planner</button><button data-operations-action="focus-current">Focus queue/current run</button></div></div>`;
+}
 function renderSteering(){
   const c=$('steeringCockpit'); if(!c)return;
   const control=model.control||{}, queue=model.queue?.items||[], gates=model.gates?.gates||[], audit=model.audit||[], iterations=model.iterations||[];
@@ -783,7 +802,7 @@ async function createTerminalDraft(button,mode){
   try{const launch=iter.projectLaunch||iter.run?.projectLaunch;if(launch?.planId){const source=await getJson(`/api/project-plans/${encodeURIComponent(launch.planId)}`);const type=mode==='fork'?'project-plan.fork':'project-plan.clone';const result=await planApi(type,{planId:source.ledger.planId,revision:source.ledger.currentRevision,planDigest:source.ledger.currentDigest,sourceRunId:runId||null,sourceIterationId:button.dataset.sourceIteration||iter.id||null,baseRef:iter.commit||iter.run?.commit||source.revision.content.repository.baseRef},{expectedVersion:source.ledger.version,idempotent:true});planning.selectedId=result.planId}else{const content=planDefaults('managed');content.title=`${mode==='fork'?'Fork':'Continue'} ${iter.objective||runId}`;content.problem=`Continue from terminal run ${runId} through a newly reviewed project plan.`;content.objective=iter.objective||'';content.boundedScope=mode==='fork'?'Define one bounded alternate direction before review.':'Define one bounded continuation before review.';content.repository={path:button.dataset.repoPath||iter.repoPath||null,baseRef:iter.commit||'HEAD',baseCommit:null};content.lineage={mode:mode==='fork'?'fork':'clone',sourcePlanId:null,sourceRevision:null,sourceRunId:runId||null,sourceIterationId:button.dataset.sourceIteration||iter.id||null};content.acceptanceGates=(model.gates?.gates||[]).map(g=>({id:g.id,description:g.description||g.title||g.id,severity:g.severity==='should'?'should':'must',required:(g.requiredEvidence||[]).length>0,requiredEvidence:g.requiredEvidence||[]}));const result=await planApi('project-plan.create',{content},{idempotent:true});planning.selectedId=result.planId}openPlanner();await refreshPlans(true);planning.mobilePane='edit';renderPlanning()}catch(error){openPlanner();setPlanFieldErrors(error);planStatus(error.status===409?'conflict':'error')}finally{planning.busy=false;renderPlanning()}
 }
 let renderQueued=false; function scheduleRender(){if(renderQueued)return; renderQueued=true; requestAnimationFrame(()=>{renderQueued=false;renderAll()})}
-function renderAll(){stableRender(()=>{renderTop();renderSteering();renderRuns();renderAgentIndex();renderDeck();renderAgentStack();renderInspector();renderConsole();applyDashboardLayoutPrefs()})}
+function renderAll(){stableRender(()=>{renderTop();renderOperationsHub();renderSteering();renderRuns();renderAgentIndex();renderDeck();renderAgentStack();renderInspector();renderConsole();applyDashboardLayoutPrefs()})}
 async function loadRunResources(force=false){if(!model.selectedRunId){model.artifacts=[];model.logs=[];return false} const now=Date.now(); if(!force&&now-model.lastResourceLoad<30000)return false; model.lastResourceLoad=now; let artifacts=[],logs=[]; try{artifacts=await getJson(`/api/runs/${encodeURIComponent(model.selectedRunId)}/artifacts`)}catch{} try{logs=await getJson(`/api/runs/${encodeURIComponent(model.selectedRunId)}/logs`)}catch{} const sig=resourceSig(artifacts)+'|'+resourceSig(logs); if(!force&&sig===model.resourceSig)return false; model.resourceSig=sig; model.artifacts=artifacts; model.logs=logs; return true}
 async function refresh(){try{const [state,runs,events,control,queue,gates,audit,iterationsDoc]=await Promise.all([getJson('/api/state'),getJson('/api/runs'),getJson('/api/events?limit=250'+(model.eventCursor?`&after=${encodeURIComponent(model.eventCursor)}`:'')),getJson('/api/control'),getJson('/api/queue'),getJson('/api/gates'),getJson('/api/audit?limit=50'),getJson('/api/iterations')]); model.state=state; model.runs=runs; model.control=control; model.queue=queue; model.gates=gates; model.audit=audit; model.iterations=iterationsDoc.items||[]; if(!model.selectedRunId)model.selectedRunId=model.state.currentRunId||(model.runs[0]?.id??null); ingestEvents(events); await Promise.all([loadRunResources(true),refreshPlans(false)]); scheduleRender()}catch(e){if($('streamState')) $('streamState').textContent='API error'}}
 let eventSource=null,pollTimer=null; function pushRaw(x){model.raw.push(x); model.raw=model.raw.slice(-80)} function startPolling(){if(pollTimer)return; pollTimer=setInterval(refresh,4000)} function connect(){try{if(eventSource)eventSource.close(); const es=new EventSource('/api/stream'); eventSource=es; es.addEventListener('open',()=>{$('streamState')&&($('streamState').textContent='SSE live'); if(pollTimer){clearInterval(pollTimer); pollTimer=null}}); es.addEventListener('state',e=>{const p=JSON.parse(e.data); pushRaw({type:'state',ts:new Date().toISOString(),payload:p}); if(!model.paused){model.state=p; if(!model.selectedRunId)model.selectedRunId=p.currentRunId; scheduleRender()}}); es.addEventListener('events',e=>{const p=JSON.parse(e.data); pushRaw({type:'events',ts:new Date().toISOString(),payload:p}); if(!model.paused){ingestEvents(p); scheduleRender()}}); es.addEventListener('heartbeat',e=>{pushRaw({type:'heartbeat',ts:new Date().toISOString(),payload:JSON.parse(e.data)}); if(!model.paused){if(model.selectedRunId)loadRunResources(false).then(changed=>{if(changed)scheduleRender()});if(Date.now()-planning.lastRefresh>5000)refreshPlans(false)}}); es.onerror=()=>{$('streamState')&&($('streamState').textContent='SSE disconnected; polling'); es.close(); eventSource=null; startPolling()}}catch{startPolling()}}
@@ -956,6 +975,23 @@ document.addEventListener('submit',async e=>{
   }
 });
 document.addEventListener('click',async e=>{
+  const operationsAction=e.target.closest('[data-operations-action]')?.dataset.operationsAction;
+  if(operationsAction){
+    const summary=deriveOperationsHub();
+    if(operationsAction==='inspect-run'){
+      if(!summary.selectedRunId)return;
+      model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);model.inspector='run';setPref('hermes.apb.dashboard.inspectorTab',model.inspector);model.lastInspectorKey=null;await loadRunResources(true);renderAll();document.querySelector('.inspector-pane')?.scrollIntoView({behavior:'smooth',block:'nearest'});return;
+    }
+    if(operationsAction==='mission-control'){
+      model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();renderAll();$('steeringCockpit')?.scrollIntoView({behavior:'smooth',block:'start'});return;
+    }
+    if(operationsAction==='project-planner'){openPlanner();return;}
+    if(operationsAction==='focus-current'){
+      if(summary.queueCount){model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();renderAll();const queue=$('#steeringCockpit .queue-list');queue?.setAttribute('tabindex','-1');queue?.focus({preventScroll:true});(queue||$('steeringCockpit'))?.scrollIntoView({behavior:'smooth',block:'start'});return;}
+      if(summary.selectedRunId){model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);renderAll();$('runsList')?.scrollIntoView({behavior:'smooth',block:'nearest'});}
+      return;
+    }
+  }
   const pane=e.target.closest('[data-plan-pane]');if(pane){planning.mobilePane=pane.dataset.planPane;applyPlanningMobilePane();return}
   if(e.target.closest('[data-open-assist]')){planning.mobilePane='assist';if(!assistance.detail)await refreshAssistance(false);renderPlanning();return}
   const newAssistance=e.target.closest('[data-new-assistance]');if(newAssistance){await startAssistance(newAssistance.dataset.newAssistance);return}

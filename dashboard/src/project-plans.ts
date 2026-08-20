@@ -92,10 +92,23 @@ function evidencePath(value: unknown, name: string): string {
   return path;
 }
 
-function normalizeContent(raw: unknown, complete: boolean): any {
+export function normalizeProjectPlanContent(raw: unknown, complete = false, enforcedPipelineType?: "classic" | "managed"): any {
   rejectExecutableShape(raw, "content");
-  const content = object(raw, "content");
+  let content = object(raw, "content");
   exactKeys(content, CONTENT_KEYS, "content");
+  if (enforcedPipelineType) {
+    const repository = object(content.repository, "content.repository");
+    object(content.lineage, "content.lineage");
+    content = {
+      ...content,
+      pipelineType: enforcedPipelineType,
+      repository: enforcedPipelineType === "classic"
+        ? { path: null, baseRef: null, baseCommit: null }
+        : { ...repository, baseCommit: null },
+      validationPolicy: { ...object(content.validationPolicy, "content.validationPolicy"), id: "apb.runner-selected.v1", clientCommandsAllowed: false },
+      lineage: { mode: "new", sourcePlanId: null, sourceRevision: null, sourceRunId: null, sourceIterationId: null }
+    };
+  }
   if (content.pipelineType !== "classic" && content.pipelineType !== "managed") throw new ProjectPlanError("content.pipelineType must be classic or managed");
   const text = (key: string, max = 10_000) => boundedString(content[key], `content.${key}`, max, complete);
   const repository = object(content.repository, "content.repository");
@@ -157,7 +170,7 @@ function normalizeContent(raw: unknown, complete: boolean): any {
 }
 
 function resolveManagedBase(content: any): any {
-  if (content.pipelineType !== "managed") return normalizeContent(content, true);
+  if (content.pipelineType !== "managed") return normalizeProjectPlanContent(content, true);
   const repoPath = content.repository.path;
   const baseRef = content.repository.baseRef;
   if (!repoPath || !isAbsolute(repoPath) || !existsSync(repoPath)) throw new ProjectPlanError("managed repository.path must be an existing absolute Git repository root");
@@ -171,7 +184,7 @@ function resolveManagedBase(content: any): any {
   if (!baseRef || baseRef.startsWith("-")) throw new ProjectPlanError("managed repository.baseRef must be explicit and must not start with '-'");
   const baseCommit = git(["rev-parse", "--verify", `${baseRef}^{commit}`]).toLowerCase();
   if (!COMMIT.test(baseCommit)) throw new ProjectPlanError("baseRef did not resolve to a full commit");
-  return normalizeContent({ ...content, repository: { path: root, baseRef, baseCommit } }, true);
+  return normalizeProjectPlanContent({ ...content, repository: { path: root, baseRef, baseCommit } }, true);
 }
 
 function readJson(path: string, fallback?: any): any {
@@ -251,7 +264,7 @@ export class ProjectPlanStore {
   }
   private execute(type: string, payload: Record<string, any>, expectedVersion: unknown, idempotencyKey?: string): any {
     if (type === "project-plan.create") {
-      exactKeys(payload, new Set(["content"]), "payload"); const content = normalizeContent(payload.content, false); if (content.pipelineType === "managed") content.repository.baseCommit = null; const planId = newId("plan"); const revision = this.writeRevision(planId, 1, null, content); const ts = now();
+      exactKeys(payload, new Set(["content"]), "payload"); const content = normalizeProjectPlanContent(payload.content); if (content.pipelineType === "managed") content.repository.baseCommit = null; const planId = newId("plan"); const revision = this.writeRevision(planId, 1, null, content); const ts = now();
       const ledger = { schemaVersion: "apb.project-plan-ledger.v1", planId, version: 1, currentRevision: 1, currentDigest: revision.contentDigest, state: "draft", validation: { revision: 1, digest: revision.contentDigest, valid: false, errors: ["not submitted for review"] }, effectiveApprovalId: null, activeLaunchId: null, createdAt: ts, updatedAt: ts };
       this.saveLedger(ledger, revision); const result = { planId, ledger, revision }; this.audit(type, { planId, revision: 1, state: "draft" }); return result;
     }
@@ -263,7 +276,7 @@ export class ProjectPlanStore {
       const sourceRunId = payload.sourceRunId == null ? null : assertId(payload.sourceRunId, "payload.sourceRunId");
       const sourceIterationId = payload.sourceIterationId == null ? null : assertId(payload.sourceIterationId, "payload.sourceIterationId");
       const baseRef = payload.baseRef == null ? source.content.repository.baseRef : boundedString(payload.baseRef, "payload.baseRef", 512, true);
-      const content = normalizeContent({ ...source.content, repository: { ...source.content.repository, baseRef, baseCommit: null }, lineage: { mode, sourcePlanId: sourceId, sourceRevision: source.revision, sourceRunId, sourceIterationId } }, false);
+      const content = normalizeProjectPlanContent({ ...source.content, repository: { ...source.content.repository, baseRef, baseCommit: null }, lineage: { mode, sourcePlanId: sourceId, sourceRevision: source.revision, sourceRunId, sourceIterationId } });
       const planId = newId("plan"); const revision = this.writeRevision(planId, 1, null, content); const ts = now(); const ledger = { schemaVersion: "apb.project-plan-ledger.v1", planId, version: 1, currentRevision: 1, currentDigest: revision.contentDigest, state: "draft", validation: { revision: 1, digest: revision.contentDigest, valid: false, errors: ["not submitted for review"] }, effectiveApprovalId: null, activeLaunchId: null, createdAt: ts, updatedAt: ts };
       this.saveLedger(ledger, revision); const result = { planId, ledger, revision }; this.audit(type, { planId, revision: 1, state: "draft" }); return result;
     }
@@ -271,7 +284,7 @@ export class ProjectPlanStore {
     if (!Number.isInteger(expectedVersion) || expectedVersion !== ledger.version) throw new ProjectPlanError("expectedVersion does not match current ledger version", 409);
     if (type === "project-plan.update") {
       exactKeys(payload, new Set(["planId", "content"]), "payload"); if (!EDITABLE_STATES.has(ledger.state) || ledger.activeLaunchId) throw new ProjectPlanError(`plans in ${ledger.state} cannot be edited`, 409);
-      const content = normalizeContent(payload.content, false); if (content.pipelineType === "managed") content.repository.baseCommit = null;
+      const content = normalizeProjectPlanContent(payload.content); if (content.pipelineType === "managed") content.repository.baseCommit = null;
       const revision = this.writeRevision(planId, ledger.currentRevision + 1, ledger.currentRevision, content); Object.assign(ledger, { version: ledger.version + 1, currentRevision: revision.revision, currentDigest: revision.contentDigest, state: "draft", validation: { revision: revision.revision, digest: revision.contentDigest, valid: false, errors: ["not submitted for review"] }, effectiveApprovalId: null, updatedAt: now() });
       this.saveLedger(ledger, revision); this.audit(type, { planId, revision: revision.revision, state: ledger.state }); return { planId, ledger, revision };
     }

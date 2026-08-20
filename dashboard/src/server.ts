@@ -3,6 +3,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
 import { ProjectPlanError, ProjectPlanStore } from "./project-plans";
+import { PlanAssistanceError, PlanAssistanceStore } from "./plan-assistance";
 
 const HOME = homedir();
 const PORT = Number(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_PORT || "9200");
@@ -37,6 +38,7 @@ const paths = {
   idea: join(STATE_ROOT, "idea.txt"),
 };
 const projectPlans = new ProjectPlanStore(STATE_ROOT);
+const planAssistance = new PlanAssistanceStore(STATE_ROOT);
 
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/eyJ[a-zA-Z0-9._-]{20,}/g, "[REDACTED_JWT]"],
@@ -464,6 +466,12 @@ async function route(req: Request): Promise<Response> {
   try {
     if (url.pathname === "/api/state") return json(readState());
     if (url.pathname === "/api/project-plans" && req.method === "GET") return json(projectPlans.list());
+    if (url.pathname === "/api/plan-assistance" && req.method === "GET") return json(planAssistance.list());
+    if (url.pathname === "/api/plan-assistance" && req.method === "POST") return json(planAssistance.create(await readJsonBody(req)), 201);
+    const assistanceMessageMatch = url.pathname.match(/^\/api\/plan-assistance\/([^/]+)\/messages$/);
+    if (assistanceMessageMatch && req.method === "POST") return json(await planAssistance.message(decodeURIComponent(assistanceMessageMatch[1]), await readJsonBody(req)));
+    const assistanceMatch = url.pathname.match(/^\/api\/plan-assistance\/([^/]+)$/);
+    if (assistanceMatch && req.method === "GET") return json(planAssistance.detail(decodeURIComponent(assistanceMatch[1])));
     if (url.pathname === "/api/project-plans/commands" && req.method === "POST") return json(projectPlans.command(await readJsonBody(req)));
     const planRevisionMatch = url.pathname.match(/^\/api\/project-plans\/([^/]+)\/revisions\/(\d+)$/);
     if (planRevisionMatch && req.method === "GET") return json(projectPlans.getRevision(decodeURIComponent(planRevisionMatch[1]), Number(planRevisionMatch[2])));
@@ -526,7 +534,10 @@ async function route(req: Request): Promise<Response> {
       return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } });
     }
     return staticFile(url.pathname);
-  } catch (err: any) { return json({ error: err?.message || String(err), ...(err instanceof ProjectPlanError && err.details ? { details: err.details } : {}) }, err instanceof ProjectPlanError ? err.status : 500); }
+  } catch (err: any) {
+    if (err instanceof PlanAssistanceError) return json({ schemaVersion: err.schemaVersion, error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) } }, err.status);
+    return json({ error: err?.message || String(err), ...(err instanceof ProjectPlanError && err.details ? { details: err.details } : {}) }, err instanceof ProjectPlanError ? err.status : 500);
+  }
 }
 
 const HOST = process.env.AUTONOMOUS_PROJECTS_DASHBOARD_HOST || "127.0.0.1";

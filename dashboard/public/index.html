@@ -94,14 +94,17 @@
         <div class="planning-header-actions"><span id="planSaveState" class="status-pill" role="status" aria-live="polite">saved</span><button id="closePlanner" aria-label="Close project planning workspace">Close</button></div>
       </header>
       <nav class="planning-mobile-tabs" aria-label="Planning workspace sections">
-        <button data-plan-pane="plans" class="active">Plans</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="monitor">Monitor</button><button data-plan-pane="handoff">Handoff</button>
+        <button data-plan-pane="plans" class="active">Plans</button><button data-plan-pane="assist">Assist</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="monitor">Monitor</button><button data-plan-pane="handoff">Handoff</button>
       </nav>
       <div id="planGlobalError" class="planning-alert" role="alert" aria-live="assertive" hidden></div>
       <div class="planning-grid">
         <aside class="planning-list panel-scroll" data-planning-pane="plans" aria-label="Persisted project plans">
-          <div class="planning-pane-head"><b>Plans</b><button data-new-plan="classic">New classic</button><button data-new-plan="managed">New managed</button></div>
+          <div class="planning-pane-head"><b>Plans</b><button data-open-assist>Plan with orchestrator</button><button data-new-plan="classic">New classic</button><button data-new-plan="managed">New managed</button></div>
           <div id="projectPlanList" class="dense-list"></div>
         </aside>
+        <section class="planning-assist panel-scroll" data-planning-pane="assist" aria-label="Planning orchestrator assistance">
+          <div id="planAssistance"></div>
+        </section>
         <main class="planning-editor panel-scroll" data-planning-pane="edit">
           <div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div>
         </main>

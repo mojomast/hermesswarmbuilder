@@ -152,6 +152,8 @@ These commands write `control.nextRunRequest`, request the next runner tick, and
 
 For a run launched from a project plan, use the run/iteration Continue or Fork action to create a new clone/fork plan in `draft`. Inspect and edit that draft, then submit, approve, and launch it as a new transaction. Pause and graceful stop preserve the current managed run at the next checkpoint, update the existing launch to `paused`, and write a handoff; they do not make the same approved launch reclaimable. Continue/fork therefore uses a new plan and exact approval rather than mutating the old launch.
 
+For guided planning, open **Plan project** then **Plan with orchestrator**, choose classic or managed, and discuss the bounded objective. Conversations survive dashboard restarts in `$STATE_ROOT/project-plans/assistance/`. Messages may be transmitted to the configured inference provider: never include credentials, private keys, or other secrets. Inspect the structured proposal and use **Create persisted draft from proposal** only when ready. This explicit action creates a draft; the conversation itself cannot save a plan, approve, launch, modify control state, or run commands. Continue through normal edit, review, approval, and launch gates afterward.
+
 ### Request a continuation by API
 
 ```bash
@@ -274,6 +276,7 @@ The implemented planning contract is covered by:
 
 ```bash
 bun scripts/project-plans-helper-smoke.ts
+bun scripts/smoke-dashboard-plan-assistance.ts
 bun scripts/smoke-runner-project-launch.ts
 bun run --cwd dashboard check
 node scripts/smoke-runner-managed-lifecycle.mjs
@@ -287,7 +290,7 @@ git diff --check
 
 The end-to-end project-launch smoke exercises the real dashboard and runner with temporary state/repositories: restart persistence, immutable revisions, stale-version conflicts, exact approval invalidation, idempotent launch, classic/managed routing, exact base/gate/limit snapshots, identity reconciliation, handoff visibility, command rejection, and source-branch preservation.
 
-Manual browser checks should cover desktop and narrow/mobile layouts: open **Plan project**; create and persist both draft types; verify dirty-edit protection and refresh conflict messaging; submit a managed plan and confirm the resolved full base commit; approve/reject exact revisions; verify editing invalidates approval; confirm launch requires the safety checkbox; watch launch/request/run/iteration status refresh; open run, iteration, artifacts, and managed handoff links; exercise terminal Continue/Fork draft creation; restart the dashboard and confirm state returns. Also verify no arbitrary command field is presented, secret-shaped API output is redacted, keyboard focus remains usable, and the normal source branch remains unchanged.
+Manual browser checks should cover desktop and narrow/mobile layouts: open **Plan project**; start/resume both assistance types from the **Assist** tab; verify provider/safety notice, busy/error state, transcript, proposal summary, restart persistence, and explicit draft creation; create and persist both direct draft types; verify dirty-edit protection and refresh conflict messaging; submit a managed plan and confirm the resolved full base commit; approve/reject exact revisions; verify editing invalidates approval; confirm launch requires the safety checkbox; watch launch/request/run/iteration status refresh; open run, iteration, artifacts, and managed handoff links; exercise terminal Continue/Fork draft creation; restart the dashboard and confirm state returns. Also verify no arbitrary command field is presented, secret-shaped API output is redacted, keyboard focus remains usable, and the normal source branch remains unchanged.
 
 ## Common issues
 

@@ -83,6 +83,21 @@ Review and decision commands carry the current revision and SHA-256 content dige
 
 Classic launches route to the existing single-agent SPEC/DEVPLAN/build/final-audit contract and have no managed iteration id. Managed launches route to the bounded worktree loop and preserve the approved repository/base commit, gate definitions/evidence paths, and limit snapshot even if `gates.json` or other dashboard projections later change. Both routes preserve normal source branches and never merge, push, deploy, or publish.
 
+### Planning assistance
+
+**Plan with orchestrator** starts or resumes a persisted `apb.plan-assistance.v1` conversation before a project plan exists. Each `project-plans/assistance/<assistance-id>.json` file records a version, server-authorized `classic` or `managed` pipeline, bounded redacted transcript, latest validated full `proposedContent`, and creation/update timestamps. Files are atomically replaced with mode `0600`.
+
+```text
+GET  /api/plan-assistance
+POST /api/plan-assistance
+GET  /api/plan-assistance/:id
+POST /api/plan-assistance/:id/messages
+```
+
+Create accepts exactly `schemaVersion` and `pipelineType`; a message accepts exactly `schemaVersion`, `expectedVersion`, and `message`. Stale versions return structured HTTP 409 assistance errors. The server invokes only configured `HERMES_BIN` with the fixed no-tool planner argv, bounded runtime/output, server prompt, server environment, and assistance storage as cwd. Marked JSON is parsed strictly, and proposals pass the same project-content normalizer as persisted drafts. Managed `baseCommit` remains null and validation remains runner-selected with client commands disabled.
+
+Assistance is not a plan command or authority path. It cannot call project-plan control, approval, launch, shell, files, web, terminal, skills, hooks, worktrees, or delegation. Invalid model output persists no turn or proposal. Messages may be sent to the configured inference provider; common secret shapes are redacted, but operators must not submit secrets. A suggestion remains inert until the operator explicitly chooses **Create persisted draft from proposal**; direct **New classic** and **New managed** remain available.
+
 ## Studio layout customization
 
 The Studio view supports operator-local layout preferences for long-running dashboard sessions:

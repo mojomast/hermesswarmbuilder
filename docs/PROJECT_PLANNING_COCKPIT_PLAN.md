@@ -31,6 +31,7 @@ The smallest coherent integration is therefore a durable planning ledger plus an
 12. Pause and stop remain checkpoint-safe. Continue, retry, clone, and fork create a draft plan with lineage and require a new exact approval before launch.
 13. Approval authorizes launch only. It cannot pass acceptance gates, fabricate runner validation, or authorize promotion.
 14. Keep the service local-only by default and keep all spawned processes as Bun argv arrays.
+15. Keep persisted planning assistance outside the command/approval/launch store. It may propose normalized content, but only an explicit operator action creates a draft.
 
 ## Storage layout
 
@@ -39,6 +40,8 @@ $APB_STATE_ROOT/
   project-plans/
     index.json
     idempotency.json
+    assistance/
+      <assistance-id>.json          # apb.plan-assistance.v1, mutable optimistic version
     <plan-id>/
       ledger.json
       revisions/
@@ -56,6 +59,12 @@ $APB_STATE_ROOT/
       project-plan-approval.json
       project-launch.json
 ```
+
+## Persisted planning assistance
+
+The optional pre-draft assistant stores bounded, redacted classic/managed transcripts and the latest validated proposal under `project-plans/assistance/`. Its list/create/detail/message APIs are separate from `/api/project-plans/commands`; create accepts only schema/pipeline and messages accept only schema/expected version/message. Pipeline authority, Hermes argv/environment, and prompt are server-derived. Hermes runs for one bounded turn with no toolsets, user config, rules, hooks, worktree, shell, terminal, file, web, skill, or delegation access. Output must be one marked JSON object containing a message and optional full proposal. Proposals use only `apb.project-plan.v1` content fields, pass the same normalizer as drafts, retain null managed `baseCommit`, and prohibit client validation commands. Malformed, unknown, or executable-shaped output fails closed without persisting a turn.
+
+Conversation text may be sent to the configured inference provider and must not contain secrets. Assistance cannot save, approve, launch, or mutate control state. The UI keeps direct draft creation and exposes one explicit proposal-to-`project-plan.create` action.
 
 Writes to mutable projections use temporary files and rename. Immutable revision, decision, and launch files use exclusive creation. Runtime plans, ledgers, launches, logs, artifacts, databases, and worktrees remain ignored runtime state.
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
 import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
 import { ProjectPlanError, ProjectPlanStore } from "./project-plans";
@@ -10,6 +11,8 @@ const PORT = Number(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_PORT || "9200");
 const STATE_ROOT = process.env.AUTONOMOUS_PROJECTS_STATE_ROOT || join(HOME, ".hermes", "autonomous-projects");
 const APP_ROOT = resolve(process.env.AUTONOMOUS_PROJECTS_DASHBOARD_ROOT || join(HOME, ".hermes", "autonomous-projects-dashboard"));
 const PUBLIC_ROOT = join(APP_ROOT, "public");
+const RUNNER_PATH = process.env.AUTONOMOUS_PROJECTS_RUNNER_PATH || join(HOME, ".hermes", "scripts", "autonomous-project-midnight-runner.ts");
+const RUNNER_PARITY_PROTOCOL = "queue-clear.v1";
 const MAX_TEXT_BYTES = 1_500_000;
 const EVENT_TAIL_BYTES = Number(process.env.AUTONOMOUS_PROJECTS_EVENT_TAIL_BYTES || "3000000");
 const MAX_EVENTS_LIMIT = 1000;
@@ -36,6 +39,7 @@ const paths = {
   audit: join(STATE_ROOT, "audit.jsonl"),
   iterations: join(STATE_ROOT, "iterations.json"),
   idea: join(STATE_ROOT, "idea.txt"),
+  runnerParity: join(STATE_ROOT, "runner-parity.json"),
 };
 const projectPlans = new ProjectPlanStore(STATE_ROOT);
 const planAssistance = new PlanAssistanceStore(STATE_ROOT);
@@ -396,6 +400,17 @@ function readGates() { const g = safeReadJson(paths.gates, defaultGates()); if (
 function writeControl(c: any) { c.schemaVersion = "apb.control.v1"; c.updatedAt = now(); writeJson(paths.control, c); }
 function writeQueue(q: any) { q.schemaVersion = "apb.queue.v1"; q.updatedAt = now(); q.items = (q.items || []).sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0) || (a.rank || 9999) - (b.rank || 9999)); writeJson(paths.queue, q); }
 function writeGates(g: any) { g.schemaVersion = "apb.gates.v1"; g.updatedAt = now(); writeJson(paths.gates, g); }
+function runnerParity() {
+  const receipt = safeReadJson(paths.runnerParity, null);
+  if (!receipt || receipt.schemaVersion !== "apb.runner-parity.v1") return { status: "unverified", protocol: RUNNER_PARITY_PROTOCOL, reason: "No runner parity receipt has been written by the installed runner." };
+  if (receipt.protocol !== RUNNER_PARITY_PROTOCOL || typeof receipt.sourceDigest !== "string") return { status: "incompatible", protocol: RUNNER_PARITY_PROTOCOL, receipt };
+  if (!existsSync(RUNNER_PATH)) return { status: "unverified", protocol: RUNNER_PARITY_PROTOCOL, receipt, reason: "The configured installed runner path is unavailable for digest verification." };
+  const installedDigest = createHash("sha256").update(readFileSync(RUNNER_PATH)).digest("hex");
+  return { status: installedDigest === receipt.sourceDigest ? "compatible" : "incompatible", protocol: RUNNER_PARITY_PROTOCOL, receipt, installedDigest };
+}
+function isQueueLinkedSteering(steering: any, queueItemIds: Set<string>) {
+  return steering?.scope === "queue" || steering?.scope === "queue_item" || queueItemIds.has(steering?.queueItemId) || queueItemIds.has(steering?.target?.queueItemId) || (Array.isArray(steering?.queueItemIds) && steering.queueItemIds.some((id: any) => queueItemIds.has(id)));
+}
 function readAudit(limit = 100) {
   const lines = readTailUtf8(paths.audit, 1_000_000).split(/\r?\n/).filter(Boolean).slice(-clampLimit(limit));
   return lines.map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
@@ -454,6 +469,18 @@ async function handleCommand(req: Request) {
   if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
   if (type === "run-now") { control.requestedRunNow = true; writeControl(control); return json(commandAck(command, { effective: "next_runner_tick" })); }
   if (type === "add-queue-item") { const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective: payload.objective || "", context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }
+  if (type === "clear-queue") {
+    const clearedAt = now(), items = queue.items || [], queueItemIds = new Set(items.map((item: any) => item.id).filter(Boolean));
+    if (control.pinnedQueueItemId) queueItemIds.add(control.pinnedQueueItemId);
+    const activeSteering = Array.isArray(control.activeSteering) ? control.activeSteering : [];
+    const retiredSteering = activeSteering.filter((steering: any) => isQueueLinkedSteering(steering, queueItemIds));
+    control.activeSteering = activeSteering.filter((steering: any) => !retiredSteering.includes(steering));
+    if (retiredSteering.length) control.steeringHistory = [...(Array.isArray(control.steeringHistory) ? control.steeringHistory : []), ...retiredSteering.map((steering: any) => ({ ...steering, status: "cleared", clearedAt, clearedBy: actor, clearedReason: "queue-cleared" }))].slice(-100);
+    control.pinnedQueueItemId = null; control.currentObjective = null; control.nextRunRequest = null; control.requestedRunNow = false;
+    queue.items = []; queue.clearHistory = [...(Array.isArray(queue.clearHistory) ? queue.clearHistory : []), { id: uid("queue-clear"), clearedAt, clearedBy: actor, items }].slice(-20);
+    writeQueue(queue); writeControl(control);
+    return json(commandAck(command, { clearedQueueItemCount: items.length, clearedSteeringCount: retiredSteering.length, runnerParity: runnerParity() }));
+  }
   if (type === "pin-queue-item") { const id = payload.id || payload.itemId; for (const item of queue.items) item.status = item.id === id ? "pinned" : (item.status === "pinned" ? "queued" : item.status); control.pinnedQueueItemId = id; writeQueue(queue); writeControl(control); const item = queue.items.find((x: any) => x.id === id); if (item) writeFileSync(paths.idea, queueItemText(item)); return json(commandAck(command, { pinnedQueueItemId: id, exportedIdeaTxt: !!item })); }
   if (type === "archive-queue-item") { const id = payload.id || payload.itemId; for (const item of queue.items) if (item.id === id) item.status = "archived"; if (control.pinnedQueueItemId === id) control.pinnedQueueItemId = null; writeQueue(queue); writeControl(control); return json(commandAck(command, { archived: id })); }
   if (type === "add-gate") { const gate = { id: payload.id || uid("gate"), phase: payload.phase || "final-audit", severity: payload.severity || "must", description: payload.description || payload.title || "Acceptance gate", requiredEvidence: String(payload.requiredEvidence || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), status: "pending", createdAt: now(), createdBy: actor }; gates.gates.push(gate); writeGates(gates); return json(commandAck(command, { gate })); }
@@ -477,7 +504,7 @@ async function route(req: Request): Promise<Response> {
     if (planRevisionMatch && req.method === "GET") return json(projectPlans.getRevision(decodeURIComponent(planRevisionMatch[1]), Number(planRevisionMatch[2])));
     const planMatch = url.pathname.match(/^\/api\/project-plans\/([^/]+)$/);
     if (planMatch && req.method === "GET") return json(projectPlans.detail(decodeURIComponent(planMatch[1])));
-    if (url.pathname === "/api/capabilities") return json({ browserTerminal: false, sse: true, readOnly: false, steeringCockpit: true, stateRoot: STATE_ROOT });
+    if (url.pathname === "/api/capabilities") return json({ browserTerminal: false, sse: true, readOnly: false, steeringCockpit: true, stateRoot: STATE_ROOT, runnerParity: runnerParity() });
     if (url.pathname === "/api/states") return json({ states });
     if (url.pathname === "/api/events") return json(readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after") || url.searchParams.get("lastEventId")));
     if (url.pathname === "/api/runs") return json(listRuns());

@@ -21,6 +21,7 @@ const QUEUE = join(ROOT, "queue.json");
 const GATES = join(ROOT, "gates.json");
 const ITERATIONS = join(ROOT, "iterations.json");
 const ADMISSION = join(ROOT, "runner-admission.json");
+const RUNNER_PARITY = join(ROOT, "runner-parity.json");
 const PROJECT_PLANS = join(ROOT, "project-plans");
 const HERMES = process.env.HERMES_BIN || join(HOME, ".local", "bin", "hermes");
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || process.env.TZ || "local";
@@ -28,6 +29,7 @@ const ACTIVE = new Set(["inventory-scanning","selecting","repo-created","spec-dr
 const HELD = new Set(["on-hold","held","blocked","deblocking"]);
 
 function now(){ return new Date().toISOString(); }
+function writeRunnerParity(){ writeFileSync(RUNNER_PARITY,JSON.stringify({schemaVersion:"apb.runner-parity.v1",protocol:"queue-clear.v1",sourceDigest:createHash("sha256").update(readFileSync(import.meta.path)).digest("hex"),observedAt:now()},null,2)); }
 function ensure(){ for (const p of [ROOT,RUNS,LOGS,join(ROOT,"artifacts")]) mkdirSync(p,{recursive:true}); }
 function log(msg:string){ appendFileSync(join(LOGS,"midnight-runner.log"), `[${now()}] ${msg}\n`); }
 function redact(text:string): string {
@@ -802,6 +804,7 @@ async function main(){
   ensure();
   if(!lock()){ log("another runner holds lock; exiting"); return; }
   try{
+    writeRunnerParity();
     let s=readState();
     s.nextHourlyRunTime = nextHourlyLocal();
     s.lastRunTime = now();

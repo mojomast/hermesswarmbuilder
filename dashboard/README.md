@@ -45,6 +45,8 @@ audit.jsonl
 
 Pinned queue items are exported to `idea.txt` for compatibility with the existing runner prompt and are appended to the launched prompt as a hard selector override.
 
+`clear-queue` atomically clears active queue items, the pin, current objective, pending next-run request, run-now wake flag, and steering records structurally linked to those queue items. It preserves cleared queue and steering records in bounded history for audit, and intentionally does not resume paused or stopped work. The runner writes `runner-parity.json` on each successful locked tick. The dashboard reports `compatible`, `unverified`, or `incompatible` runner parity by comparing that durable receipt's source digest with the configured installed runner; verify parity before relying on a newly added runner-control protocol.
+
 ## Project planning cockpit
 
 **Plan project** provides the persisted operator workflow: create a classic or managed draft, save revisions, submit a complete revision for review, approve or reject the exact revision, confirm launch, monitor identity/status reconciliation, and open run, iteration, artifact, and handoff views. The server, not a client-supplied actor, records planning authority as `local-operator`.

@@ -466,8 +466,11 @@ async function processGroupAbsent(pid:number, waitMs:number): Promise<boolean> {
   if(process.platform!=="linux"||!Number.isInteger(pid)) return false;
   const deadline=Date.now()+waitMs;
   while(true){
-    try { process.kill(-pid,0); }
-    catch { return true; }
+    try {
+      if(process.env.APB_TEST_PROCESS_GROUP_PROBE_ERROR==="EPERM") throw Object.assign(new Error("test process-group probe denied"),{code:"EPERM"});
+      process.kill(-pid,0);
+    }
+    catch(err:any) { return err?.code==="ESRCH"; }
     if(Date.now()>=deadline) return false;
     await Bun.sleep(Math.min(10,Math.max(1,deadline-Date.now())));
   }
@@ -478,14 +481,14 @@ async function waitForProcess(proc:any, scope:TimeoutScope, override?:number): P
   if(first.kind==="exit") return {exitCode:first.exitCode,timedOut:false,timeoutMs:bounded};
   signalProcessTree(proc,"SIGTERM");
   const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
-  let confirmed=process.platform==="linux"&&Number.isInteger(proc.pid)
-    ? await processGroupAbsent(proc.pid,grace)
-    : (await raceWithDelay(exited,grace,null))!==null;
+  const canVerifyTree=process.platform==="linux"&&process.env.APB_TEST_FORCE_NON_LINUX_TIMEOUT!=="1"&&Number.isInteger(proc.pid);
+  let confirmed=false;
+  if(canVerifyTree) confirmed=await processGroupAbsent(proc.pid,grace);
+  else await raceWithDelay(exited,grace,null);
   if(!confirmed){
     signalProcessTree(proc,"SIGKILL");
-    confirmed=process.platform==="linux"&&Number.isInteger(proc.pid)
-      ? await processGroupAbsent(proc.pid,grace)
-      : (await raceWithDelay(exited,grace,null))!==null;
+    if(canVerifyTree) confirmed=await processGroupAbsent(proc.pid,grace);
+    else await raceWithDelay(exited,grace,null);
   }
   if(process.env.APB_TEST_SUPPRESS_EXIT_CONFIRMATION==="1") confirmed=false;
   return {exitCode:124,timedOut:true,timeoutMs:bounded,terminationConfirmed:confirmed};

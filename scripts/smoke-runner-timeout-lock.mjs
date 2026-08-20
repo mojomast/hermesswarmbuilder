@@ -178,6 +178,15 @@ try {
   const managedExitLog=readFileSync(join(managedExitPipe.root,'runs',managedExitRunId,'logs','variant-1.stdout.log'),'utf8');
   if(!managedExitLog.includes('managed parent exited normally')||!managedExitLog.includes('managed descendant incremental log')) throw new Error('managed normal exit inherited pipe lost incremental stdout logging');
 
+  const nonLinuxTimeout=fixture('non-linux-timeout-proof',false), nonLinuxHermes=join(nonLinuxTimeout.home,'non-linux-hermes.cjs'), nonLinuxInvocations=join(nonLinuxTimeout.home,'non-linux-invocations');
+  writeFileSync(nonLinuxHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n'); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000);\n`); chmodSync(nonLinuxHermes,0o755);
+  assertRunnerOk(run(nonLinuxTimeout,{HERMES_BIN:nonLinuxHermes,INVOCATIONS:nonLinuxInvocations,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50',APB_TEST_FORCE_NON_LINUX_TIMEOUT:'1'}),'non-Linux direct-parent timeout');
+  const nonLinuxState=json(join(nonLinuxTimeout.root,'state.json'));
+  if(nonLinuxState.block?.timeout?.cleanup?.terminationConfirmed!==false) throw new Error(`non-Linux direct-parent exit was incorrectly accepted as process-tree termination proof: ${JSON.stringify(nonLinuxState.block)}`);
+  const nonLinuxControl=json(join(nonLinuxTimeout.root,'control.json')); nonLinuxControl.requestedRunNow=true; writeJson(join(nonLinuxTimeout.root,'control.json'),nonLinuxControl);
+  assertRunnerOk(run(nonLinuxTimeout,{HERMES_BIN:nonLinuxHermes,INVOCATIONS:nonLinuxInvocations,APB_TEST_FORCE_NON_LINUX_TIMEOUT:'1'}),'recovery blocked after non-Linux timeout');
+  if(readFileSync(nonLinuxInvocations,'utf8').trim().split(/\n/).length!==1||readdirSync(join(nonLinuxTimeout.root,'runs')).length!==1) throw new Error('non-Linux timeout without process-tree proof was released into recovery');
+
   if(process.platform === 'linux') {
     const identityUnreadable = fixture('identity-unreadable');
     const identityUnreadableLock = join(identityUnreadable.root, 'autonomous-project.lock'); mkdirSync(identityUnreadableLock);
@@ -258,6 +267,12 @@ try {
     const resistantPid=Number(readFileSync(resistantPidPath,'utf8'));
     for(let i=0;i<20&&alive(resistantPid);i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50);
     if(alive(resistantPid)) throw new Error(`TERM-resistant stream descendant ${resistantPid} survived timeout cleanup`);
+
+    const probeDenied=fixture('process-group-probe-eperm',false), probeDeniedHermes=join(probeDenied.home,'probe-denied-hermes.cjs');
+    writeFileSync(probeDeniedHermes,`#!/usr/bin/env node\nsetInterval(()=>{},1000);\n`); chmodSync(probeDeniedHermes,0o755);
+    assertRunnerOk(run(probeDenied,{HERMES_BIN:probeDeniedHermes,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50',APB_TEST_PROCESS_GROUP_PROBE_ERROR:'EPERM'}),'EPERM process-group absence probe');
+    const probeDeniedState=json(join(probeDenied.root,'state.json'));
+    if(probeDeniedState.block?.timeout?.cleanup?.terminationConfirmed!==false) throw new Error(`EPERM process-group probe was incorrectly accepted as termination confirmation: ${JSON.stringify(probeDeniedState.block)}`);
 
     const unconfirmed=fixture('unconfirmed-cleanup',false), unconfirmedHermes=join(unconfirmed.home,'unconfirmed-hermes.cjs'), unconfirmedInvocations=join(unconfirmed.home,'unconfirmed-invocations');
     writeFileSync(unconfirmedHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n'); setInterval(()=>{},1000);\n`); chmodSync(unconfirmedHermes,0o755);

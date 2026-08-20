@@ -805,8 +805,9 @@ function verifiedActiveTimeoutRecovery(state:any, control:any): "classic"|"manag
 }
 function recoverInterruptedActiveRun(state:any): boolean {
   const runId=state?.currentRunId;
-  if(!runId||!ACTIVE.has(state?.status)) return false;
-  const runRoot=join(RUNS,runId), lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
+  if(!runId||!ACTIVE.has(state?.status)||normalizeStatus(state.status)==="blocked") return false;
+  const runRoot=join(RUNS,runId), run=readJson(join(runRoot,"run.json"),null), lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
+  if(["completed","on-hold","blocked"].includes(normalizeStatus(run?.status))) return false;
   const lifecycleState=normalizeStatus(lifecycle?.state), terminalAt=lifecycle?.terminalAt||now();
   if(lifecycleState==="completed"){
     state.status="completed"; state.phase="completed"; state.completedAt=terminalAt; state.lastAction="Recovered completed lifecycle projection after runner restart.";

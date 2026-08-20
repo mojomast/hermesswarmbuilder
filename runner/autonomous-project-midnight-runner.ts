@@ -462,14 +462,31 @@ async function raceWithDelay<T,F>(promise:Promise<T>, delayMs:number, fallback:F
   try { return await Promise.race([promise,new Promise<F>(resolve=>{ timer=setTimeout(()=>resolve(fallback),delayMs); })]); }
   finally { if(timer!==undefined) clearTimeout(timer); }
 }
+async function processGroupAbsent(pid:number, waitMs:number): Promise<boolean> {
+  if(process.platform!=="linux"||!Number.isInteger(pid)) return false;
+  const deadline=Date.now()+waitMs;
+  while(true){
+    try { process.kill(-pid,0); }
+    catch { return true; }
+    if(Date.now()>=deadline) return false;
+    await Bun.sleep(Math.min(10,Math.max(1,deadline-Date.now())));
+  }
+}
 async function waitForProcess(proc:any, scope:TimeoutScope, override?:number): Promise<ProcessOutcome> {
   const bounded=timeoutMs(scope,override), exited=Promise.resolve(proc.exited).then((exitCode:number)=>({kind:"exit" as const,exitCode}));
   const first=await raceWithDelay(exited,bounded,{kind:"timeout" as const,exitCode:124});
   if(first.kind==="exit") return {exitCode:first.exitCode,timedOut:false,timeoutMs:bounded};
   signalProcessTree(proc,"SIGTERM");
   const grace=clampInt(process.env.APB_TERMINATION_GRACE_MS,5000,10,60000);
-  let confirmed=(await raceWithDelay(exited,grace,null))!==null;
-  if(!confirmed){ signalProcessTree(proc,"SIGKILL"); confirmed=(await raceWithDelay(exited,grace,null))!==null; }
+  let confirmed=process.platform==="linux"&&Number.isInteger(proc.pid)
+    ? await processGroupAbsent(proc.pid,grace)
+    : (await raceWithDelay(exited,grace,null))!==null;
+  if(!confirmed){
+    signalProcessTree(proc,"SIGKILL");
+    confirmed=process.platform==="linux"&&Number.isInteger(proc.pid)
+      ? await processGroupAbsent(proc.pid,grace)
+      : (await raceWithDelay(exited,grace,null))!==null;
+  }
   if(process.env.APB_TEST_SUPPRESS_EXIT_CONFIRMATION==="1") confirmed=false;
   return {exitCode:124,timedOut:true,timeoutMs:bounded,terminationConfirmed:confirmed};
 }
@@ -765,14 +782,15 @@ function verifiedActiveTimeoutRecovery(state:any, control:any): "classic"|"manag
   if(!runId||!ACTIVE.has(state?.status)) return null;
   const runRoot=join(RUNS,runId), run=readJson(join(runRoot,"run.json"),null), stateTimeout=state?.block?.timeout, runTimeout=run?.block?.timeout;
   if(run?.status!=="blocked"||!stateTimeout||!runTimeout||stateTimeout.scope!==runTimeout.scope||stateTimeout.timeoutMs!==runTimeout.timeoutMs||stateTimeout.exitCode!==124||runTimeout.exitCode!==124) return null;
-  if(stateTimeout.cleanup?.terminationConfirmed===false||runTimeout.cleanup?.terminationConfirmed===false) return null;
+  const stateCleanup=stateTimeout.cleanup, runCleanup=runTimeout.cleanup;
+  if(stateCleanup?.terminationConfirmed!==true||runCleanup?.terminationConfirmed!==true||typeof stateCleanup.platform!=="string"||stateCleanup.platform!==runCleanup.platform) return null;
   const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),null);
   if(lifecycle){
-    const req=control?.nextRunRequest;
-    if(lifecycle.state!=="blocked"||lifecycle.timeout?.scope!==stateTimeout.scope||lifecycle.timeout?.timeoutMs!==stateTimeout.timeoutMs||lifecycle.timeout?.exitCode!==124) return null;
+    const req=control?.nextRunRequest, lifecycleCleanup=lifecycle.timeout?.cleanup;
+    if(lifecycle.state!=="blocked"||lifecycle.timeout?.scope!==stateTimeout.scope||lifecycle.timeout?.timeoutMs!==stateTimeout.timeoutMs||lifecycle.timeout?.exitCode!==124||lifecycleCleanup?.terminationConfirmed!==true||lifecycleCleanup.platform!==stateCleanup.platform) return null;
     return req?.status==="pending"&&req?.type==="continue"&&req?.sourceRunId===runId&&req?.sourceIterationId===lifecycle.iterationId ? "managed" : null;
   }
-  if(stateTimeout.scope!=="classic"||control?.requestedRunNow!==true||control?.nextRunRequest?.status==="pending") return null;
+  if(stateTimeout.scope!=="classic"||control?.requestedRunNow!==true||control?.nextRunRequest?.status==="pending"||control?.projectLaunchRequest?.status==="pending") return null;
   return "classic";
 }
 

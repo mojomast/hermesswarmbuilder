@@ -223,7 +223,7 @@ try {
     }
 
     const activePending=managedFixture('active-pending-guard');
-    seedBlockedRun(activePending,'run-active',{scope:'variant',timeoutMs:150,exitCode:124},true);
+    seedBlockedRun(activePending,'run-active',{scope:'variant',timeoutMs:150,exitCode:124,cleanup:{terminationConfirmed:true,platform:process.platform}},true);
     const activeHermes=join(activePending.home,'active-hermes.cjs'), activeInvocations=join(activePending.home,'active-invocations');
     writeFileSync(activeHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n');\n`); chmodSync(activeHermes,0o755);
     assertRunnerOk(run(activePending,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'pending managed request active guard');
@@ -235,16 +235,25 @@ try {
     assertRunnerOk(run(activePending,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'explicit managed timeout continue');
     if(!existsSync(activeInvocations)||readdirSync(join(activePending.root,'runs')).length!==2) throw new Error('explicit managed continue did not bypass its matching timeout guard');
 
+    const activeProject=fixture('active-project-launch-guard',false); seedBlockedRun(activeProject,'run-building',{scope:'variant',timeoutMs:150,exitCode:124},true);
+    const activeProjectState=json(join(activeProject.root,'state.json')); activeProjectState.status='building'; activeProjectState.phase='building'; activeProjectState.block=null; writeJson(join(activeProject.root,'state.json'),activeProjectState);
+    const activeProjectControl=json(join(activeProject.root,'control.json')); activeProjectControl.projectLaunchRequest={schemaVersion:'apb.project-launch-pointer.v1',launchId:'launch-must-wait',planId:'plan-must-wait',revision:1,status:'pending',pipelineType:'classic'}; writeJson(join(activeProject.root,'control.json'),activeProjectControl);
+    assertRunnerOk(run(activeProject,{HERMES_BIN:activeHermes,INVOCATIONS:activeInvocations}),'pending project launch active guard');
+    const guardedProjectState=json(join(activeProject.root,'state.json')), guardedProjectControl=json(join(activeProject.root,'control.json'));
+    if(guardedProjectState.status!=='building'||guardedProjectControl.projectLaunchRequest?.status!=='pending'||readdirSync(join(activeProject.root,'runs')).length!==1) throw new Error('pending projectLaunchRequest bypassed or mutated through the active-run guard');
 
     const resistant = fixture('term-resistant-stream-descendant', false);
     const resistantHermes = join(resistant.home, 'resistant-hermes.cjs');
     const resistantPidPath = join(resistant.home, 'resistant-descendant.pid');
-    writeFileSync(resistantHermes, `#!/usr/bin/env node\nconst fs=require('node:fs'),cp=require('node:child_process');\nconst code=\"process.on('SIGTERM',()=>{}); console.log('resistant descendant'); setInterval(()=>{},1000)\";\nconst child=cp.spawn(process.execPath,['-e',code],{stdio:['ignore','inherit','inherit']});\nfs.writeFileSync(process.env.DESCENDANT_PID,String(child.pid));\nsetInterval(()=>{},1000);\n`); chmodSync(resistantHermes,0o755);
-    const resistantResult=run(resistant,{HERMES_BIN:resistantHermes,DESCENDANT_PID:resistantPidPath,APB_CLASSIC_TIMEOUT_MS:'250',APB_TERMINATION_GRACE_MS:'100'});
+    writeFileSync(resistantHermes, `#!/usr/bin/env node\nconst fs=require('node:fs'),cp=require('node:child_process');\nconst code=\"const fs=require('node:fs'); process.on('SIGTERM',()=>{fs.writeFileSync(process.env.CLEANUP_EVIDENCE,JSON.stringify({lockPresent:fs.existsSync(process.env.RUNNER_LOCK),termObserved:true}))}); setInterval(()=>{},1000)\";\nconst child=cp.spawn(process.execPath,['-e',code],{stdio:'ignore',env:{...process.env,CLEANUP_EVIDENCE:process.env.CLEANUP_EVIDENCE,RUNNER_LOCK:process.env.RUNNER_LOCK}});\nfs.writeFileSync(process.env.DESCENDANT_PID,String(child.pid));\nprocess.on('SIGTERM',()=>process.exit(0));\nsetInterval(()=>{},1000);\n`); chmodSync(resistantHermes,0o755);
+    const resistantCleanupPath=join(resistant.home,'resistant-cleanup.json');
+    const resistantResult=run(resistant,{HERMES_BIN:resistantHermes,DESCENDANT_PID:resistantPidPath,CLEANUP_EVIDENCE:resistantCleanupPath,RUNNER_LOCK:join(resistant.root,'autonomous-project.lock'),APB_CLASSIC_TIMEOUT_MS:'250',APB_TERMINATION_GRACE_MS:'100'});
     if(existsSync(resistantPidPath)) cleanupPids.push(Number(readFileSync(resistantPidPath,'utf8')));
     assertRunnerOk(resistantResult,'TERM-resistant stream descendant timeout');
     const resistantState=json(join(resistant.root,'state.json'));
     if(resistantState.status!=='blocked'||!resistantState.block?.reason?.includes('timed out after 250ms')) throw new Error('TERM-resistant descendant timeout evidence missing');
+    if(resistantState.block?.timeout?.cleanup?.terminationConfirmed!==true) throw new Error(`TERM-resistant descendant was marked safe before Linux process-group absence: ${JSON.stringify(resistantState.block?.timeout)}`);
+    if(!existsSync(resistantCleanupPath)||!json(resistantCleanupPath).lockPresent||!json(resistantCleanupPath).termObserved) throw new Error('TERM-resistant descendant did not observe TERM while the runner retained its lock');
     if(existsSync(join(resistant.root,'autonomous-project.lock'))) throw new Error('TERM-resistant descendant timeout left runner lock behind');
     const resistantPid=Number(readFileSync(resistantPidPath,'utf8'));
     for(let i=0;i<20&&alive(resistantPid);i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,50);
@@ -258,6 +267,22 @@ try {
     const unconfirmedControl=json(join(unconfirmed.root,'control.json')); unconfirmedControl.requestedRunNow=true; writeJson(join(unconfirmed.root,'control.json'),unconfirmedControl);
     assertRunnerOk(run(unconfirmed,{HERMES_BIN:unconfirmedHermes,INVOCATIONS:unconfirmedInvocations,APB_CLASSIC_TIMEOUT_MS:'150',APB_TERMINATION_GRACE_MS:'50'}),'recovery blocked after unconfirmed cleanup');
     if(readFileSync(unconfirmedInvocations,'utf8').trim().split(/\n/).length!==1||readdirSync(join(unconfirmed.root,'runs')).length!==1) throw new Error('unconfirmed cleanup was released into recoverable concurrency');
+
+    const missingClassic=fixture('missing-classic-cleanup-proof',false), missingClassicHermes=join(missingClassic.home,'missing-classic-hermes.cjs'), missingClassicInvocations=join(missingClassic.home,'missing-classic-invocations');
+    writeFileSync(missingClassicHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n');\n`); chmodSync(missingClassicHermes,0o755);
+    const missingClassicRoot=seedBlockedRun(missingClassic,'run-missing-classic',{scope:'classic',timeoutMs:150,exitCode:124,cleanup:{terminationConfirmed:true,platform:process.platform}});
+    const missingClassicRun=json(join(missingClassicRoot,'run.json')); delete missingClassicRun.block.timeout.cleanup; writeJson(join(missingClassicRoot,'run.json'),missingClassicRun);
+    const missingClassicControl=json(join(missingClassic.root,'control.json')); missingClassicControl.requestedRunNow=true; writeJson(join(missingClassic.root,'control.json'),missingClassicControl);
+    assertRunnerOk(run(missingClassic,{HERMES_BIN:missingClassicHermes,INVOCATIONS:missingClassicInvocations}),'classic recovery missing run cleanup proof');
+    if(existsSync(missingClassicInvocations)||readdirSync(join(missingClassic.root,'runs')).length!==1) throw new Error('classic recovery admitted without matching state/run termination confirmation');
+
+    const missingManaged=managedFixture('missing-managed-cleanup-proof'), missingManagedHermes=join(missingManaged.home,'missing-managed-hermes.cjs'), missingManagedInvocations=join(missingManaged.home,'missing-managed-invocations');
+    writeFileSync(missingManagedHermes,`#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.INVOCATIONS,'called\\n');\n`); chmodSync(missingManagedHermes,0o755);
+    const missingManagedRoot=seedBlockedRun(missingManaged,'run-missing-managed',{scope:'variant',timeoutMs:150,exitCode:124,cleanup:{terminationConfirmed:true,platform:process.platform}},true);
+    const missingManagedLifecycle=json(join(missingManagedRoot,'lifecycle-contract.json')); delete missingManagedLifecycle.timeout.cleanup; writeJson(join(missingManagedRoot,'lifecycle-contract.json'),missingManagedLifecycle);
+    const missingManagedControl=json(join(missingManaged.root,'control.json')); missingManagedControl.requestedRunNow=true; missingManagedControl.nextRunRequest={...missingManaged.request,id:'request-missing-managed-recovery',status:'pending',type:'continue',sourceRunId:'run-missing-managed',sourceIterationId:'iter-run-missing-managed'}; writeJson(join(missingManaged.root,'control.json'),missingManagedControl);
+    assertRunnerOk(run(missingManaged,{HERMES_BIN:missingManagedHermes,INVOCATIONS:missingManagedInvocations}),'managed recovery missing lifecycle cleanup proof');
+    if(existsSync(missingManagedInvocations)||readdirSync(join(missingManaged.root,'runs')).length!==1) throw new Error('managed recovery admitted without matching lifecycle termination confirmation');
 
     const timed = fixture('classic-timeout', false);
     const fakeHermes = join(timed.home, 'fake-hermes.cjs');
@@ -278,6 +303,12 @@ try {
     if(alive(childPid)) throw new Error(`classic timeout left descendant process ${childPid} alive`);
     const runId = readdirSync(join(timed.root, 'runs')).sort().at(-1);
     if(json(join(timed.root, 'runs', runId, 'run.json')).status !== 'blocked') throw new Error('classic timeout run evidence was not blocked');
+    const classicProject=fixture('classic-project-launch-guard',false);
+    seedBlockedRun(classicProject,'run-classic-project',{scope:'classic',timeoutMs:250,exitCode:124,cleanup:{terminationConfirmed:true,platform:process.platform}});
+    const projectControl=json(join(classicProject.root,'control.json')); projectControl.requestedRunNow=true; projectControl.projectLaunchRequest={schemaVersion:'apb.project-launch-pointer.v1',launchId:'launch-blocked-classic-recovery',planId:'plan-blocked-classic-recovery',revision:1,status:'pending',pipelineType:'classic'}; writeJson(join(classicProject.root,'control.json'),projectControl);
+    assertRunnerOk(run(classicProject,{HERMES_BIN:fakeHermes,DESCENDANT_PID:descendantPid,INVOCATIONS:classicInvocations,APB_CLASSIC_TIMEOUT_MS:'250',APB_TERMINATION_GRACE_MS:'100'}),'pending project launch after classic timeout');
+    const guardedClassicProjectState=json(join(classicProject.root,'state.json')), guardedClassicProjectControl=json(join(classicProject.root,'control.json'));
+    if(Number(readFileSync(classicInvocations,'utf8'))!==1||readdirSync(join(classicProject.root,'runs')).length!==1||guardedClassicProjectState.block?.timeout?.scope!=='classic'||guardedClassicProjectControl.projectLaunchRequest?.status!=='pending') throw new Error('pending projectLaunchRequest bypassed or mutated through the classic timeout guard');
     const unrelatedPending={schemaVersion:'apb.next-run-request.v1',id:'unrelated-pending',status:'pending',type:'continue',sourceRunId:'other-run',sourceIterationId:'other-iteration',repoPath:timed.home,baseRef:'HEAD',objective:'unrelated',changeText:'unrelated',limits:{maxIterations:1,maxVariantsPerIteration:1,maxParallelVariants:1,maxAcceptedFeatures:1,maxVisualMotifChanges:0,maxNewSections:0,stopAfterNoImprovement:1}};
     const pendingControl=json(join(timed.root,'control.json')); pendingControl.nextRunRequest=unrelatedPending; pendingControl.requestedRunNow=true; writeJson(join(timed.root,'control.json'),pendingControl);
     assertRunnerOk(run(timed,{HERMES_BIN:fakeHermes,DESCENDANT_PID:descendantPid,INVOCATIONS:classicInvocations,APB_CLASSIC_TIMEOUT_MS:'250',APB_TERMINATION_GRACE_MS:'100'}),'unrelated pending request after classic timeout');

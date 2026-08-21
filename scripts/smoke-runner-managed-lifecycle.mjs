@@ -26,7 +26,8 @@ function runScenario(name, options = {}) {
   git(project, ['config', 'user.email', 'smoke@example.test']);
   git(project, ['config', 'user.name', 'Smoke Test']);
   writeFileSync(join(project, 'README.md'), '# Managed fixture\n');
-  git(project, ['add', 'README.md']);
+  if (options.validationScript) writeFileSync(join(project, 'package.json'), JSON.stringify({ scripts: { test: options.validationScript } }, null, 2));
+  git(project, ['add', '.']);
   git(project, ['commit', '-m', 'initial fixture']);
   const baseCommit = git(project, ['rev-parse', 'HEAD']);
 
@@ -41,6 +42,7 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
   fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',acceptedFeatures:['fixture improvement'],objectiveMapping,changes:summaryObject?'focused fixture implementation':[agent+'.txt','implementation summary','validation notes'],risks:[],evidence:summaryObject?{test:'fixture validation'}:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
   if(process.env.FAKE_SCENARIO==='pause') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.pause={requested:true,mode:'checkpoint',reason:'fixture pause'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
   if(process.env.FAKE_SCENARIO==='stop') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.stop={requested:true,mode:'graceful',reason:'fixture stop'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
+  if(process.env.FAKE_SCENARIO==='hold-admission') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.runAdmission='paused'; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
 } else if(agent.startsWith('evaluator-') && process.env.FAKE_SCENARIO!=='missing-evaluator'){
   const variant=(query.match(/evaluation-(variant-[0-9]+)\\.json/)||[])[1]||'variant-1';
   fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'partial',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:[{path:'artifacts/variants/'+variant+'.json',description:'variant artifact'},{path:'artifacts/variants/'+variant+'.diff',description:'variant diff'}]},null,2));
@@ -70,7 +72,7 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
 
   const result = spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], {
     cwd: sourceRepo,
-    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, FAKE_OBJECT_MAPPING:options.objectiveMappingObject?'1':'0', FAKE_SUMMARY_OBJECT:options.summaryObject?'1':'0', APB_DISABLE_AUTO_CONTINUATION:'1' },
+    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, FAKE_OBJECT_MAPPING:options.objectiveMappingObject?'1':'0', FAKE_SUMMARY_OBJECT:options.summaryObject?'1':'0', APB_DISABLE_AUTO_CONTINUATION:'1', ...(options.env || {}) },
     encoding:'utf8'
   });
   if(result.status !== 0) throw new Error(`${name}: runner exited ${result.status}: ${result.stderr || result.stdout}`);
@@ -91,6 +93,7 @@ try {
   if(!successHandoff.accepted?.commit || successHandoff.baseCommit!==success.baseCommit || !successHandoff.operatorNextAction?.includes('git')) throw new Error('success: handoff promotion data incomplete');
   const gateReport=json(join(success.root,'artifacts','gate-report.json'));
   if(gateReport.status!=='passed' || !gateReport.commands?.length || !gateReport.gates?.every(g=>g.status==='passed')) throw new Error('success: gate report incomplete');
+  for(const validation of gateReport.commands) if(typeof validation.startedAt!=='string' || typeof validation.completedAt!=='string' || !Number.isInteger(validation.durationMs) || validation.durationMs<0 || Number.isNaN(Date.parse(validation.startedAt)) || Number.isNaN(Date.parse(validation.completedAt))) throw new Error('success: runner validation timing record is incomplete');
   const rows=json(join(success.root,'..','..','iterations.json')).items;
   const row=rows.find(x=>x.requestId===success.requestId || x.id===success.requestId);
   if(!row || row.runId!==success.id || row.iterationId!==`iter-${success.id}` || row.status!=='completed') throw new Error('success: request row was not reconciled');
@@ -127,6 +130,17 @@ try {
   const stoppedRun=json(join(stopped.root,'run.json')), stoppedHandoff=json(join(stopped.root,'artifacts','handoff.json'));
   if(stoppedRun.status!=='on-hold' || stoppedHandoff.state!=='stopped' || stoppedHandoff.checkpoint!=='after-variants') throw new Error('stop: graceful checkpoint disposition missing');
   if(existsSync(join(stopped.root,'worktrees','mashup')) || !existsSync(join(stopped.root,'worktrees','variant-1')) || !stoppedHandoff.preservedArtifactPaths?.length) throw new Error('stop: checkpoint state/artifacts were not preserved');
+
+  const holdAdmission=runScenario('hold-admission',{fakeScenario:'hold-admission'}); fixtures.push(holdAdmission.home);
+  if(json(join(holdAdmission.root,'run.json')).status!=='completed' || json(join(holdAdmission.home,'state','control.json')).pause?.requested) throw new Error('hold admission: holding new runs incorrectly checkpoint-paused active work');
+
+  const validationError=runScenario('validation-error',{validationScript:'node -e "process.exit(7)"'}); fixtures.push(validationError.home);
+  const errorValidation=json(join(validationError.root,'artifacts','variants','variant-1.json')).validation?.[1];
+  if(json(join(validationError.root,'run.json')).status!=='blocked' || !errorValidation || errorValidation.passed || errorValidation.timedOut || typeof errorValidation.startedAt!=='string' || typeof errorValidation.completedAt!=='string' || !Number.isInteger(errorValidation.durationMs) || errorValidation.durationMs<0) throw new Error('validation error: timing record was not persisted');
+
+  const validationTimeout=runScenario('validation-timeout',{validationScript:'node -e "setTimeout(() => {}, 1000)"',env:{APB_COMMAND_TIMEOUT_MS:'100',APB_TERMINATION_GRACE_MS:'50'}}); fixtures.push(validationTimeout.home);
+  const timeoutValidation=json(join(validationTimeout.root,'artifacts','variants','variant-1.json')).validation?.[1];
+  if(json(join(validationTimeout.root,'run.json')).status!=='blocked' || !timeoutValidation?.timedOut || typeof timeoutValidation.startedAt!=='string' || typeof timeoutValidation.completedAt!=='string' || !Number.isInteger(timeoutValidation.durationMs) || timeoutValidation.durationMs<100) throw new Error('validation timeout: timing record was not persisted');
 
   for (const [name,opts] of [['invalid-repo',{invalidRepo:true}],['invalid-base',{invalidBase:true}]]) {
     const invalid=runScenario(name,opts); fixtures.push(invalid.home);

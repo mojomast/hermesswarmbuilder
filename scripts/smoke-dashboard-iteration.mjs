@@ -52,8 +52,13 @@ function acceptedCommandCount() { try { return readFileSync(join(state, 'command
 function acceptedAuditCount() { try { return readFileSync(join(state, 'audit.jsonl'), 'utf8').trim().split(/\n/).filter(Boolean).length; } catch { return 0; } }
 try {
   await waitReady();
-  const events = await get('/api/events?after=missing&limit=2');
+  const missedCursorResponse = await fetch(base + '/api/events?after=missing&limit=2');
+  if (missedCursorResponse.headers.get('x-event-history-gap') !== 'true' || missedCursorResponse.headers.get('x-event-history-recovery') !== 'cache-tail') throw new Error('event cursor miss was not explicitly signaled');
+  const events = await missedCursorResponse.json();
   if (events.length !== 2 || events[0].id !== 'evt-2') throw new Error('event cursor recovery failed');
+  const continuousCursorResponse = await fetch(base + '/api/events?after=evt-2&limit=2');
+  if (continuousCursorResponse.headers.has('x-event-history-gap')) throw new Error('continuous event cursor was incorrectly marked as a history gap');
+  if ((await continuousCursorResponse.json()).map(x => x.id).join(',') !== 'evt-3') throw new Error('continuous cursor did not preserve event recovery');
   const iterations = await get('/api/iterations');
   if (!iterations.items?.some(x => x.runId === runId)) throw new Error('iteration node missing');
   const detail = await get(`/api/iterations/iter-${runId}`);
@@ -87,6 +92,16 @@ try {
   writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'blocked', phase: 'blocked', agents: {} }, null, 2));
   if (acceptedCommandCount() !== acceptedBeforeRejections) throw new Error('rejected zero-effect commands emitted accepted command records');
   if (acceptedAuditCount() !== auditBeforeRejections) throw new Error('rejected zero-effect commands emitted accepted audit records');
+  await post('hold', { reason: 'hold new work only' });
+  let holdControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (holdControl.runAdmission !== 'paused' || holdControl.pause?.requested) throw new Error('hold command coupled new-run admission to checkpoint pause');
+  await post('unhold', {});
+  holdControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (holdControl.runAdmission !== 'enabled' || holdControl.pause?.requested) throw new Error('unhold command changed checkpoint pause state');
+  await post('pause', { reason: 'explicit checkpoint pause' });
+  holdControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (!holdControl.pause?.requested || holdControl.runAdmission !== 'enabled') throw new Error('explicit pause command did not retain independent checkpoint semantics');
+  await post('resume', {});
   const arrayGate = await post('add-gate', { id: 'gate-array', description: 'array evidence', requiredEvidence: ['artifacts/one.json', 'artifacts/two.json'] });
   if (arrayGate.gate.requiredEvidence.join(',') !== 'artifacts/one.json,artifacts/two.json') throw new Error('add-gate corrupted array evidence');
   const stringGate = await post('add-gate', { id: 'gate-lines', description: 'line evidence', requiredEvidence: 'artifacts/one.json\nartifacts/two.json' });

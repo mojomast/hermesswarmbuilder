@@ -595,7 +595,7 @@ function pauseManagedRun(runId:string, runRoot:string, req:any, checkpoint:strin
 function checkpointDisposition(runId:string, runRoot:string, req:any, checkpoint:string): any | null {
   const control=readControl();
   if(control.stop?.requested) return pauseManagedRun(runId,runRoot,req,checkpoint,"stopped",control.stop.reason||"Operator requested a graceful stop");
-  if(control.pause?.requested||control.runAdmission==="paused") return pauseManagedRun(runId,runRoot,req,checkpoint,"paused",control.pause?.reason||"Operator requested a checkpoint pause");
+  if(control.pause?.requested) return pauseManagedRun(runId,runRoot,req,checkpoint,"paused",control.pause?.reason||"Operator requested a checkpoint pause");
   return null;
 }
 async function validateIterationRepo(req:any){
@@ -634,8 +634,11 @@ async function validationCommands(repoRoot:string, baseCommit:string, worktreePa
 }
 async function runValidations(runId:string, cwd:string, cmds:string[][], persist?:(results:any[])=>void){
   const out:any[]=[]; for(const cmd of cmds){
-    const r=await runCmd(cmd,{cwd}), command=cmd.join(" ");
-    out.push({argv:cmd,command,exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,...(r.timedOut?{timeoutMs:r.timeoutMs}: {})});
+    const startedAt=now(), startedMs=Date.now(); let r:CmdResult;
+    try { r=await runCmd(cmd,{cwd}); }
+    catch (error:any) { const completedAt=now(); out.push({argv:cmd,command:cmd.join(" "),exitCode:null,stdout:"",stderr:redact(error?.message||String(error)).slice(0,4000),passed:false,timedOut:false,startedAt,completedAt,durationMs:Math.max(0,Date.now()-startedMs)}); persist?.(out); throw error; }
+    const command=cmd.join(" "), completedAt=now();
+    out.push({argv:cmd,command,exitCode:r.exitCode,stdout:redact(r.stdout).slice(0,4000),stderr:redact(r.stderr).slice(0,4000),passed:r.exitCode===0,timedOut:!!r.timedOut,startedAt,completedAt,durationMs:Math.max(0,Date.now()-startedMs),...(r.timedOut?{timeoutMs:r.timeoutMs}: {})});
     persist?.(out);
     if(r.timedOut){ const timeout:TimeoutEvidence={scope:"command",command,timeoutMs:r.timeoutMs||timeoutMs("command"),exitCode:124,cleanup:{terminationConfirmed:r.terminationConfirmed===true,platform:process.platform}}; const reason=`Validation command timed out after ${timeout.timeoutMs}ms: ${command}`; event("error","validation","runner-timeout",reason,{runId,...timeout}); throw new RunnerTimeoutError(reason,timeout); }
     if(r.exitCode!==0) break;

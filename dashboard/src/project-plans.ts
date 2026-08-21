@@ -290,7 +290,7 @@ export class ProjectPlanStore {
       if (envelope.schemaVersion !== "apb.project-plan-command.v1") throw new ProjectPlanError("unsupported project plan command schemaVersion");
       const type = boundedString(envelope.type, "type", 100, true); const payload = object(envelope.payload, "payload");
       if (!type.startsWith("project-plan.")) throw new ProjectPlanError("unknown project plan command type");
-      const needIdempotency = new Set(["project-plan.create", "project-plan.approve", "project-plan.launch", "project-plan.clone", "project-plan.fork"]).has(type);
+      const needIdempotency = new Set(["project-plan.create", "project-plan.approve", "project-plan.launch", "project-plan.withdraw-launch", "project-plan.clone", "project-plan.fork"]).has(type);
       if (needIdempotency) return this.idempotent(type, envelope.idempotencyKey, { expectedVersion: envelope.expectedVersion ?? null, payload }, () => this.execute(type, payload, envelope.expectedVersion, envelope.idempotencyKey));
       return this.execute(type, payload, envelope.expectedVersion);
     });
@@ -350,6 +350,18 @@ export class ProjectPlanStore {
       const durableLedger = this.ledger(planId), durableLaunch = readJson(join(this.planRoot(planId), "launches", `${admitted.record.launchId}.json`));
       if (admitted.status === "admitted") this.audit(type, { planId, revision: revision.revision, state: durableLedger.state, launchId: durableLaunch.launchId });
       return { planId, ledger: durableLedger, launch: durableLaunch };
+    }
+    if (type === "project-plan.withdraw-launch") {
+      exactKeys(payload, new Set(["planId", "launchId", "notes"]), "payload");
+      const launchId = assertId(payload.launchId, "payload.launchId");
+      if (ledger.state !== "launch-requested" || ledger.activeLaunchId !== launchId) throw new ProjectPlanError("only the plan's unclaimed requested launch can be withdrawn", 409);
+      const notes = boundedString(payload.notes ?? "", "payload.notes", 4000, false);
+      let rejected;
+      try { rejected = this.launchAuthority.rejectRequested(launchId, { rejectedAt: now(), rejectedBy: ACTOR, rejectionReason: notes || "operator withdrew requested launch" }); }
+      catch (error: any) { throw new ProjectPlanError(error?.message || String(error), 409); }
+      const durableLedger = this.ledger(planId), durableLaunch = readJson(join(this.planRoot(planId), "launches", `${launchId}.json`));
+      this.audit(type, { planId, launchId, state: durableLedger.state, authorityStatus: rejected.status });
+      return { planId, ledger: durableLedger, launch: durableLaunch, authorityStatus: rejected.status };
     }
     if (type === "project-plan.archive") {
       exactKeys(payload, new Set(["planId"]), "payload"); if (ledger.activeLaunchId || ["launch-requested", "running"].includes(ledger.state)) throw new ProjectPlanError("active plans cannot be archived", 409); const revision = this.revision(planId, ledger.currentRevision); Object.assign(ledger, { version: ledger.version + 1, state: "archived", effectiveApprovalId: null, updatedAt: now() }); this.saveLedger(ledger, revision); this.audit(type, { planId, revision: revision.revision, state: ledger.state }); return { planId, ledger };

@@ -106,7 +106,7 @@ fs.appendFileSync(process.env.FAKE_HERMES_CALLS,JSON.stringify({agent,args})+'\\
 const runRoot=process.env.AUTONOMOUS_PROJECT_RUN_ROOT,root=process.env.AUTONOMOUS_PROJECT_STATE_ROOT;
 if(agent.startsWith('variant-')) {
   fs.writeFileSync(path.join(process.cwd(),agent+'.txt'),'focused managed change\\n');
-  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded approved change',objectiveMapping:['approved objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
+  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded approved change',acceptedFeatures:['focused fixture improvement'],objectiveMapping:['approved objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
 } else if(agent.startsWith('evaluator-')) {
   const variant=(query.match(/evaluation-(variant-[0-9]+)\\.json/)||[])[1]||'variant-1';
   fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'accept',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:['artifacts/variants/'+variant+'.json','artifacts/variants/'+variant+'.diff']},null,2));
@@ -142,6 +142,12 @@ if(agent.startsWith('variant-')) {
   const edited = await command("project-plan.update", { planId: draft.planId, content: { ...content("classic", true, "Exact approved classic fixture"), boundedScope: "Edited scope creates a new revision." } }, firstApproval.ledger.version);
   assert(edited.revision.revision === firstReady.revision.revision + 1 && edited.ledger.state === "draft" && edited.ledger.effectiveApprovalId === null, "post-approval edit did not invalidate effective approval");
   await command("project-plan.launch", { planId: draft.planId, revision: edited.revision.revision, planDigest: edited.revision.contentDigest }, edited.ledger.version, 409, "launch-without-approval");
+  const withdrawnDraft = await command("project-plan.create", { content: content("classic", true, "Withdrawable classic fixture") });
+  const withdrawn = await approveAndLaunch(withdrawnDraft, "withdraw-launch-once");
+  const withdrawal = await command("project-plan.withdraw-launch", { planId: withdrawnDraft.planId, launchId: withdrawn.launched.launch.launchId, notes: "operator withdrew unclaimed fixture" }, withdrawn.launched.ledger.version, 200, "withdraw-request-once");
+  assert(withdrawal.authorityStatus === "transitioned" && withdrawal.launch.status === "rejected" && withdrawal.ledger.state === "rejected" && withdrawal.ledger.activeLaunchId === null, "requested launch was not atomically withdrawn through the project-plan API");
+  await command("project-plan.withdraw-launch", { planId: withdrawnDraft.planId, launchId: withdrawn.launched.launch.launchId, notes: "operator withdrew unclaimed fixture" }, withdrawn.launched.ledger.version, 200, "withdraw-request-once");
+  await command("project-plan.withdraw-launch", { planId: withdrawnDraft.planId, launchId: withdrawn.launched.launch.launchId, notes: "repeat with stale version" }, withdrawal.ledger.version, 409, "withdraw-launch-repeat");
   const classic = await approveAndLaunch(edited, "classic-launch-once");
   const repeated = await command("project-plan.launch", classic.envelope, classic.approved.ledger.version, 200, "classic-launch-once");
   assert(repeated.launch.launchId === classic.launched.launch.launchId && repeated.launch.requestId === classic.launched.launch.requestId, "repeated launch request was not idempotent");

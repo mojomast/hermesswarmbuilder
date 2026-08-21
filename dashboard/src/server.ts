@@ -72,8 +72,8 @@ function sanitize<T = unknown>(value: T, depth = 0): T {
   }
   return String(value) as T;
 }
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(sanitize(data), null, 2), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
+  return new Response(JSON.stringify(sanitize(data), null, 2), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
 }
 function text(data: string, status = 200): Response {
   return new Response(redactString(data), { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
@@ -145,10 +145,10 @@ function loadEventCache() {
 function readEvents(limit = 200, after?: string | null) {
   const wanted = clampLimit(limit);
   const parsed = loadEventCache();
-  if (!after) return parsed.slice(-wanted);
+  if (!after) return { events: parsed.slice(-wanted), historyGap: null };
   const idx = parsed.findIndex((e: any) => e?.id === after);
-  if (idx >= 0) return parsed.slice(idx + 1).slice(-wanted);
-  return parsed.slice(-wanted);
+  if (idx >= 0) return { events: parsed.slice(idx + 1).slice(-wanted), historyGap: null };
+  return { events: parsed.slice(-wanted), historyGap: { requestedAfter: after, recovery: "cache-tail" } };
 }
 function listDir(path: string, recursive = false, base = path): any[] {
   if (!existsSync(path)) return [];
@@ -548,8 +548,10 @@ async function handleCommand(req: Request) {
   const actor = body.actor || "dashboard-user";
   const command = makeCommand(body, actor, type, payload);
   const control = readControl(); const queue = readQueue(); const gates = readGates();
-  if (["pause", "hold", "pause-showcase-loop"].includes(type)) { control.pause = { requested: true, mode: payload.mode || "checkpoint", requestedBy: actor, requestedAt: now(), reason: payload.reason || null }; if (type === "hold") control.runAdmission = "paused"; writeControl(control); return json(commandAck(command, { effective: "next_checkpoint", autoIteration: control.autoIteration })); }
-  if (["resume", "unhold", "resume-showcase-loop"].includes(type)) { control.pause = { requested: false, mode: "checkpoint", reason: null }; control.stop = { requested: false, mode: null, reason: null }; control.runAdmission = "enabled"; if(type === "resume-showcase-loop") control.autoIteration = { ...(control.autoIteration || {}), enabled: true, mode: control.autoIteration?.mode || "showcase-loop", updatedAt: now() }; writeControl(control); return json(commandAck(command, { effective: "immediate", autoIteration: control.autoIteration })); }
+  if (["pause", "pause-showcase-loop"].includes(type)) { control.pause = { requested: true, mode: payload.mode || "checkpoint", requestedBy: actor, requestedAt: now(), reason: payload.reason || null }; writeControl(control); return json(commandAck(command, { effective: "next_checkpoint", autoIteration: control.autoIteration })); }
+  if (type === "hold") { control.runAdmission = "paused"; writeControl(control); return json(commandAck(command, { effective: "new_runs_held", autoIteration: control.autoIteration })); }
+  if (["resume", "resume-showcase-loop"].includes(type)) { control.pause = { requested: false, mode: "checkpoint", reason: null }; control.stop = { requested: false, mode: null, reason: null }; control.runAdmission = "enabled"; if(type === "resume-showcase-loop") control.autoIteration = { ...(control.autoIteration || {}), enabled: true, mode: control.autoIteration?.mode || "showcase-loop", updatedAt: now() }; writeControl(control); return json(commandAck(command, { effective: "immediate", autoIteration: control.autoIteration })); }
+  if (type === "unhold") { control.runAdmission = "enabled"; writeControl(control); return json(commandAck(command, { effective: "new_runs_enabled", autoIteration: control.autoIteration })); }
   if (["stop", "stop-showcase-loop"].includes(type)) { control.stop = { requested: true, mode: payload.mode || "graceful", requestedBy: actor, requestedAt: now(), reason: payload.reason || null }; if(type === "stop-showcase-loop") { control.autoIteration = { ...(control.autoIteration || {}), enabled: false, stoppedAt: now(), stopReason: payload.reason || "dashboard-stop-showcase-loop", updatedAt: now() }; control.nextRunRequest = null; control.requestedRunNow = false; } writeControl(control); return json(commandAck(command, { effective: "next_checkpoint", autoIteration: control.autoIteration })); }
   if (type === "set-showcase-target") { const targetGenerations = Math.min(Math.max(Number(payload.targetGenerations || 10), 1), 10); control.autoIteration = { ...(control.autoIteration || {}), targetGenerations, maxIterations: targetGenerations, updatedAt: now() }; writeControl(control); return json(commandAck(command, { autoIteration: control.autoIteration })); }
   if (type === "start-showcase-loop") {
@@ -689,7 +691,7 @@ async function route(req: Request): Promise<Response> {
     if (planMatch && req.method === "GET") return json(projectPlans.detail(decodeURIComponent(planMatch[1])));
     if (url.pathname === "/api/capabilities") return json({ browserTerminal: false, sse: true, readOnly: false, steeringCockpit: true, stateRoot: STATE_ROOT, runnerParity: runnerParity() });
     if (url.pathname === "/api/states") return json({ states });
-    if (url.pathname === "/api/events") return json(readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after") || url.searchParams.get("lastEventId")));
+    if (url.pathname === "/api/events") { const result = readEvents(Number(url.searchParams.get("limit") || "200"), url.searchParams.get("after") || url.searchParams.get("lastEventId")); return json(result.events, 200, result.historyGap ? { "x-event-history-gap": "true", "x-event-history-recovery": result.historyGap.recovery } : {}); }
     if (url.pathname === "/api/runs") return json(listRuns());
     if (url.pathname === "/api/iterations") return json({ schemaVersion: "apb.iterations.v1", items: listIterations() });
     const iterationMatch = url.pathname.match(/^\/api\/iterations\/([^/]+)$/);
@@ -731,11 +733,13 @@ async function route(req: Request): Promise<Response> {
           const enc = new TextEncoder();
           const send = (event: string, payload: any, id?: string) => { try { controller.enqueue(enc.encode(`${id ? `id: ${id}\n` : ""}event: ${event}\ndata: ${JSON.stringify(sanitize(payload))}\n\n`)); } catch { if (timer) clearInterval(timer); } };
           const initial = readEvents(50, lastId);
-          if (initial.length) lastId = initial[initial.length - 1].id || lastId;
-          send("state", readState()); send("events", initial, lastId || undefined);
+          if (initial.historyGap) send("history-gap", initial.historyGap);
+          if (initial.events.length) lastId = initial.events[initial.events.length - 1].id || lastId;
+          send("state", readState()); send("events", initial.events, lastId || undefined);
           timer = setInterval(() => {
             const next = readEvents(100, lastId);
-            if (next.length) { lastId = next[next.length - 1].id || lastId; send("events", next, lastId || undefined); }
+            if (next.historyGap) send("history-gap", next.historyGap);
+            if (next.events.length) { lastId = next.events[next.events.length - 1].id || lastId; send("events", next.events, lastId || undefined); }
             send("state", readState()); send("heartbeat", { ts: now() });
           }, 2500);
         },

@@ -22,7 +22,7 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
 
 5. **Three.js manual, Picking**  
    https://threejs.org/manual/en/picking.html  
-   Applied: scene controls and telemetry objects share a raycast target registry. Tap/click selects geometry; drag orbits; wheel/pinch changes distance.
+   Applied: telemetry objects and a complete camera-relative operator control grid use explicit raycast registries. Operator controls are tested before the console click shield, so every visible control remains actionable while the readout still prevents click-through to loom geometry.
 
 6. **MDN, WebGL best practices**  
    https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices  
@@ -32,23 +32,28 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
    https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/webglcontextlost_event  
    Applied: context loss stops animation and immediately exposes the synchronized semantic application. Restoration rebuilds the renderer, materials, textures, instanced geometry, and selection.
 
-8. **W3C WAI, WCAG 2.2, Non-text Content (1.1.1)**  
+8. **Three.js documentation, Object3D and MeshBasicMaterial**
+   https://threejs.org/docs/#api/en/core/Object3D
+   https://threejs.org/docs/#api/en/materials/MeshBasicMaterial
+   Applied: the operator readout and its navigation, action, access, and camera controls are Three.js meshes parented to the perspective camera and fitted from the current FOV/aspect on every render. Controls occupy a separate responsive grid outside the readout. Their unlit materials disable depth test/write, fog, and tone mapping and render last, keeping the interface readable and actionable through orbit, zoom, resize, portrait layout, reduced motion, and context restoration.
+
+9. **W3C WAI, WCAG 2.2, Non-text Content (1.1.1)**
    https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html  
    Applied: a synchronized semantic application includes the same status, entities, selection, resources, controls, planning, help, and receipts. It is hidden and inert only while the 3D application is authoritative.
 
-9. **W3C WAI-ARIA Authoring Practices, Keyboard Interface**  
+10. **W3C WAI-ARIA Authoring Practices, Keyboard Interface**
    https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/  
    Applied: there is always one canvas focus target; arrow keys move spatial selection, Enter activates, Escape backs out, `?` opens help, and `A` switches to ordinary semantic controls.
 
-10. **W3C, Page Visibility Level 2**  
+11. **W3C, Page Visibility Level 2**
     https://www.w3.org/TR/page-visibility-2/  
     Applied: animation and texture churn stop while hidden; returning forces size reconciliation and a fresh frame without claiming data freshness.
 
-11. **MDN, prefers-reduced-motion**  
+12. **MDN, prefers-reduced-motion**
     https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion  
     Applied: shuttles, heddles, drums, and card chains stop automatically; essential selection and status changes remain immediate.
 
-12. **NIST SP 800-53 Rev. 5, AU and AC control families**  
+13. **NIST SP 800-53 Rev. 5, AU and AC control families**
     https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final  
     Applied: command intent, receipts, rejected requests, uncertain transport outcomes, audit history, exact resource ownership, and observed telemetry are presented separately.
 
@@ -59,5 +64,6 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
 - Resource reads carry an explicit owning run ID. Selection changes invalidate old resource display; no artifact, log, SPEC, or DEVPLAN is borrowed from another run.
 - Iteration requests include an absolute repository path, base ref, source identity, objective, bounded change, copied gate definitions, evidence policy, and canonical limits. Historical lineage requires an exact retained source iteration and matching run.
 - Plan lifecycle requests use the loaded ledger version plus exact current revision and digest. A mismatch between ledger and loaded revision blocks dispatch.
-- Scene caps: 24 runs, 24 agents, 20 queue items, 20 gates, 30 iterations, 24 plans, 160 event/tool marks, 512 cloth cells, and 192 warp/heddle instances. Canvas textures are at most 1024 by 1024.
+- Scene caps: 24 runs, 24 agents, 20 queue items, 20 gates, 30 iterations, 24 plans, 160 event/tool marks, 512 cloth cells, and 192 warp/heddle instances. The operator texture is 1280 square. Eight world labels use one persistent 2048 by 1024 atlas, one material, and one indexed quad mesh; snapshot or selected-label changes redraw that atlas without allocating textures, while console keystrokes update only the console texture.
+- World labels identify the real function and rendered/total inventory of cloth runs, shuttle agents, queue spools, inspection gates, pattern-drum plans, workflow heddles, and punched-card commands. The camera-relative console identifies itself as status-control. The selected label reports label, type, status, and bounded ID and follows an exact entity mesh or cloth-row anchor. Quads use larger mobile dimensions, face the camera at a stable pixel size, reserve the console and every control rectangle, and collapse lower-priority quads when no collision-free placement exists. They disable depth/picking and are rebuilt and disposed with the scene after context restoration.
 - DPR begins at 1.5 maximum, falls when rolling frame cost exceeds budget, and is also bounded by a 4K internal back buffer. Mobile uses a tighter DPR and farther camera; reduced motion renders only on changes.

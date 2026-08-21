@@ -4,7 +4,7 @@ Retrieved August 21, 2026. The implementation is isolated to `dashboard/public/n
 
 1. **Khronos Group, WebGL 2.0 Specification**  
    https://registry.khronos.org/webgl/specs/latest/2.0/  
-   Applied: one indexed cuboid mesh is expanded with `drawElementsInstanced` into the cutaway archive, bays, desks, rails, and the folio backing. Workstation controls are rasterized locally into a texture mapped onto a 16-by-9 world-space plane using the same perspective matrix and depth buffer as the palace.
+   Applied: one indexed cuboid mesh is expanded with `drawElementsInstanced` into the cutaway archive, bays, desks, rails, and folio backing. Workstation controls remain on a perspective-correct world-space plane. Functional plaques use one bounded Canvas2D atlas and one batched raw-WebGL quad draw rather than DOM overlays or per-label textures.
 
 2. **MDN, WebGL best practices**  
    https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices  
@@ -12,7 +12,7 @@ Retrieved August 21, 2026. The implementation is isolated to `dashboard/public/n
 
 3. **WebGL2 Fundamentals, 3D camera and perspective**  
    https://webgl2fundamentals.org/webgl/lessons/webgl-3d-camera.html  
-   Applied: the archive and physical control folio use one perspective projection and look-at orbit camera. Pointer rays are reconstructed from that camera, intersected with the folio plane, bounded in world space, and then converted to folio texture coordinates for control hit testing.
+   Applied: the archive and physical control folio use one perspective projection and look-at orbit camera. A shared `FOLIO` descriptor supplies plane rendering, backing geometry, camera target/envelope, and ray-plane bounds. The front camera envelope prevents rear-facing or edge-on controls while preserving bounded inspection of surrounding architecture.
 
 4. **MDN, `webglcontextlost` event**  
    https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/webglcontextlost_event  
@@ -44,8 +44,12 @@ Retrieved August 21, 2026. The implementation is isolated to `dashboard/public/n
 
 ## Technical and Safety Decisions
 
-- Normal mode contains no visible DOM application chrome. Architecture, labels, status, selectors, focus, help, and workstation controls are WebGL scene output in the full-window canvas. The repository dashboard directory is loaded but hidden until semantic mode.
+- On viewports that can present the physical folio, normal mode contains no visible DOM application chrome. Architecture, labels, status, selectors, focus, help, and workstation controls are WebGL scene output in the full-window canvas. The repository dashboard directory is loaded but hidden until semantic mode.
 - A local 2D canvas creates folio pixels only as a GPU texture source; it is never attached to the DOM. The visible presentation is a perspective/depth-tested WebGL2 world plane, not a fullscreen compositing quad.
+- The folio and its backing form a clearance portal in front of the archive's maximum architectural depth. Bounded yaw, pitch, and distance keep its default and operational views unobstructed, readable, front-facing, and pickable.
+- Camera defaults and every pointer, touch, wheel, keyboard, and reset mutation use the same `FOLIO.camera` envelope. Source typography is intentionally oversized for its projected laptop/desktop footprint; text pages derive their line count and wrapping width from the usable folio region so larger glyphs do not overflow controls.
+- Stable scene-native plaques identify the run vault, agent desks, event/audit chronicle, tool rack, gates/queue portal, plan table, iteration stair, transport/receipt dock, and command folio. Metaphor and actual function share each plaque; an atlas-backed context plaque appears only for a selected run. Plaques sit just behind the folio so depth testing safely hides perspective overlap instead of covering controls. Labels remain non-pickable, use temporarily disabled depth writes, and render in one quad batch.
+- A responsive folio guard treats the physical 16:9 control surface honestly: at a portrait height-to-width ratio of 1.15 or greater, the complete semantic equivalent is automatic and 3D return is disabled. Below that threshold, landscape and mobile landscape retain the 3D scene; rotating out of a guard-triggered fallback restores it without overriding a manually selected semantic mode.
 - Scene workstations use bounded texture hit regions generated with the folio pass. Pointer rays map through the physical plane before using those regions. Arrow/Enter navigation uses the identical control list; Tab exits the canvas.
 - Every exported operation and project-plan action is checked for parity at startup and represented both by a scene locus and a semantic native control.
 - Operation payload builders cover lifecycle, steering, current-run recovery, queue, gates, bounded iterations, and showcase controls. Protected fields cannot be replaced by additional JSON. New gate IDs resolve from current definitions; historical gate snapshots come only from the exact loaded source detail.

@@ -79,4 +79,20 @@ assert.match(cavern, /setTimeout\(\(\) => \{ this\.animationTimer = 0; this\.req
 assert.match(cavern, /function cavernRenderSignature\(value\)/, 'Command Cavern: snapshot-diff invalidation missing');
 assert.match(cavern, /if \(changed\) renderer\.requestFrame\(\)/, 'Command Cavern: unchanged telemetry still renders');
 
+const palace = readFileSync(resolve(publicRoot, 'next/memory-palace/app.js'), 'utf8');
+for (const marker of ['FOLIO_CLEARANCE_PORTAL', 'WORLD_LABEL_ATLAS', 'BATCHED_LABEL_QUADS', 'FRONT_CAMERA_ENVELOPE', 'RESPONSIVE_FOLIO_GUARD', 'READABLE_PROJECTED_TYPE']) assert(palace.includes(marker), `Memory Palace: ${marker} missing`);
+assert.match(palace, /const FOLIO = Object\.freeze\(/, 'Memory Palace: shared folio descriptor missing');
+assert.match(palace, /center: Object\.freeze\(\[0, 4\.1, 11\.4\]\)/, 'Memory Palace: front clearance portal moved');
+assert.match(palace, /resetCamera\(\)\{const camera=FOLIO\.camera/, 'Memory Palace: camera reset drifted from the certified envelope');
+assert.match(palace, /narrowPortraitRequiresSemantic\(\)/, 'Memory Palace: narrow portrait guard missing');
+assert.match(palace, /gl\.depthMask\(false\)[\s\S]{0,400}gl\.depthMask\(true\)/, 'Memory Palace: label depth-write restoration missing');
+
+const jacquard = readFileSync(resolve(publicRoot, 'next/jacquard-swarmworks/app.js'), 'utf8');
+for (const marker of ['CAMERA_RELATIVE_OPERATOR_RIG', 'UNOBSTRUCTED_OPERATOR_SCREEN', 'WORLD_LABEL_ATLAS', 'BATCHED_LABEL_QUADS', 'CAMERA_OPERATOR_CONTROLS', 'ENTITY_ANCHORED_SELECTED_LABEL']) assert(jacquard.includes(marker), `Jacquard: ${marker} missing`);
+assert.match(jacquard, /depthTest:false,depthWrite:false,fog:false,toneMapped:false/, 'Jacquard: unobstructed console material invariant missing');
+assert.match(jacquard, /this\.camera\.add\(this\.operatorRig\)/, 'Jacquard: operator rig is not camera relative');
+assert.match(jacquard, /const controlHit=this\.ray\.intersectObjects\(this\.operatorControls/, 'Jacquard: visible operator controls are not pick-prioritized');
+assert.match(jacquard, /const key=`agent:\$\{idOf\(agent\)\}`[\s\S]{0,300}this\.entityAnchors\.set\(key,shuttle\)/, 'Jacquard: entity-anchored agent labels missing');
+assert.match(jacquard, /if\(!force&&signature===this\.worldLabelSignature\)return/, 'Jacquard: unchanged label atlas still uploads');
+
 console.log('fully spatial 3D control-plane smoke passed (3 distinct environments)');

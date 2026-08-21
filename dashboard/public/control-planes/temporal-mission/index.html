@@ -75,7 +75,7 @@
           <span class="sidebar-title">Chronological Stages</span>
           <span class="sidebar-tag">Z-Axis Corridor</span>
         </div>
-        <div class="sidebar-subtext">Click any stage to fly camera to chamber</div>
+        <div class="sidebar-subtext">Click any stage to fly camera & open interactive tools</div>
       </div>
       <div id="waterfall-list" class="waterfall-content" role="list" aria-label="Sequential longitudinal chambers">
         <!-- Dynamic Chamber Stage Cards -->
@@ -92,9 +92,10 @@
         <button id="btn-toggle-inspector" class="btn-inspector-toggle" title="Toggle Inspector Collapse" aria-label="Toggle inspector view">⇥</button>
       </div>
 
-      <!-- Inspector Tab Navigation -->
+      <!-- Inspector Tab Navigation (Adapts dynamically to selected chamber) -->
       <nav class="inspector-tab-nav" role="tablist" aria-label="Inspector Views">
-        <button class="inspector-tab active" data-tab="radar" role="tab" aria-selected="true" id="tab-btn-radar">2D Radar Rubric</button>
+        <button class="inspector-tab" data-tab="stage-view" role="tab" aria-selected="true" id="tab-btn-stage-view">Stage Workspace</button>
+        <button class="inspector-tab active" data-tab="radar" role="tab" aria-selected="false" id="tab-btn-radar">2D Radar Rubric</button>
         <button class="inspector-tab" data-tab="variants" role="tab" aria-selected="false" id="tab-btn-variants">Variants & Diffs</button>
         <button class="inspector-tab" data-tab="synthesis" role="tab" aria-selected="false" id="tab-btn-synthesis">Synthesis & Features</button>
         <button class="inspector-tab" data-tab="gates" role="tab" aria-selected="false" id="tab-btn-gates">Gate Evidence</button>
@@ -102,8 +103,8 @@
       </nav>
 
       <!-- Inspector Content Body -->
-      <div id="inspector-content" class="inspector-body" role="tabpanel" aria-labelledby="tab-btn-radar">
-        <!-- Dynamically rendered tab views -->
+      <div id="inspector-content" class="inspector-body" role="tabpanel" aria-labelledby="tab-btn-stage-view">
+        <!-- Dynamically rendered stage workspace & tab views -->
       </div>
     </section>
   </main>

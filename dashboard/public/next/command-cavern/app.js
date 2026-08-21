@@ -40,6 +40,8 @@ let searchQuery = "";
 let notice = "Synchronizing the cavern with the control plane";
 // Start static. Live data still redraws the scene; optional decorative motion is opt-in with F.
 let visualFrozen = true;
+// MINIMIZABLE_TECTONIC_TABLET: the physical SDF screen can collapse to reveal the cavern.
+let tabletMinimized = false;
 const receipts = [];
 const hits = [];
 
@@ -594,6 +596,7 @@ function drawChrome() {
   const nav = [["overview", "CORE SAMPLES"], ["operations", "MONOLITHS"], ["plans", "TABLETS"], ["evidence", "EXCAVATIONS"], ["help", "CAVE MAP"]];
   nav.forEach(([key, label], index) => button(label, 48 + index * 230, 102, 208, 47, () => { page = key; renderer.requestFrame(); }, { active: page === key, small: true }));
   button("A / SEMANTIC", 1250, 102, 302, 47, () => setMode(true), { small: true });
+  button("MINIMIZE TABLET [T]", 1250, 157, 302, 38, () => setTabletMinimized(true), { small: true, key: "tablet:minimize" });
   text(clipped(notice, 88), 55, 858, 15, notice.includes("failed") || notice.includes("requires") ? C.red : C.dim, 850);
   button(snapshot.connection?.paused ? "RESUME DATA" : "PAUSE DATA", 930, 850, 180, 34, toggleClientPause, { small: true, key: "client:data" });
   button(snapshot.connection?.status === "disconnected" ? "RECONNECT" : "DISCONNECT", 1125, 850, 180, 34, toggleClientConnection, { small: true, key: "client:connection" });
@@ -747,7 +750,7 @@ function drawEvidence() {
 
 function drawHelp() {
   slab(48, 172, 720, 658, "Cave map / keyboard and picking");
-  const help = ["Arrow keys: move among engraved hit regions", "Enter or Space: activate focused engraving", "1-5: Core Samples, Monoliths, Tablets, Excavations, Cave Map", "A: switch to synchronized semantic application", "?: open this cave map", "F: freeze or resume nonessential drone/mineral motion", "R: refresh all authoritative telemetry", "Escape: cancel editor or command review", "Pointer/touch: ray-region pick engraved surfaces", "Editor: type normally; Ctrl+Enter saves; Escape cancels"];
+  const help = ["Arrow keys: move among engraved hit regions", "Enter or Space: activate focused engraving", "1-5: Core Samples, Monoliths, Tablets, Excavations, Cave Map", "A: switch to synchronized semantic application", "T: minimize or restore the physical control tablet", "?: open this cave map", "F: freeze or resume nonessential drone/mineral motion", "R: refresh all authoritative telemetry", "Escape: cancel editor or command review", "Pointer/touch: ray-region pick engraved surfaces"];
   help.forEach((line, index) => text(line, 76, 220 + index * 47, 18, index < 5 ? C.bone : C.dim, 650));
   slab(790, 172, 762, 658, "Geology and authority");
   wrap("Runs are stratified rock cores. Agents are bioluminescent survey drones. Events and tool calls are mineral inclusions. Queue items are seed crystals. Gates are pressure locks. Iterations are branching excavations. Plans are engraved tectonic tablets. Commands are physical resonant monoliths.", 820, 220, 700, 19, C.bone, 8);
@@ -781,12 +784,40 @@ function drawConfirm() {
   button("CONFIRM INTENT", 1050, 760, 320, 48, dispatchPending, { danger: true });
 }
 
+function setTabletMinimized(minimized) {
+  tabletMinimized = Boolean(minimized);
+  announce(tabletMinimized ? "Control tablet minimized. Cavern geometry is exposed; activate RESTORE TABLET or press T." : "Control tablet restored to full controls.");
+  renderer?.requestFrame();
+}
+
+function drawMinimizedUi() {
+  hits.length = 0;
+  ui.clearRect(0, 0, TABLET_TEXTURE_WIDTH, TABLET_TEXTURE_HEIGHT);
+  ui.fillStyle = "rgba(9,13,8,.96)";
+  ui.fillRect(18, 18, TABLET_TEXTURE_WIDTH - 36, TABLET_TEXTURE_HEIGHT - 36);
+  ui.strokeStyle = C.lime;
+  ui.lineWidth = 5;
+  ui.strokeRect(24, 24, TABLET_TEXTURE_WIDTH - 48, TABLET_TEXTURE_HEIGHT - 48);
+  text("COMMAND TABLET MINIMIZED", 75, 90, 42, C.lime, 1450, "800");
+  wrap("The live cavern remains visible. Restore this physical tablet for complete swarm controls.", 75, 155, 1420, 25, C.bone, 3);
+  if (renderer?.isPortrait()) button("RESTORE TABLET [T]", 90, 360, 620, 170, () => setTabletMinimized(false), { active: true, key: "tablet:restore" });
+  else button("RESTORE TABLET [T]", 380, 330, 840, 190, () => setTabletMinimized(false), { active: true, key: "tablet:restore" });
+  text("T / RESTORE", 75, 790, 24, C.dim, 500, "700");
+}
+
 function drawUi() {
   const previousFocusKey = renderer?.focusedKey;
   hits.length = 0;
   ui.save();
   ui.setTransform(1, 0, 0, 1, 0, 0);
   ui.clearRect(0, 0, 1600, 900);
+  if (tabletMinimized) {
+    drawMinimizedUi();
+    const focus = hits[0];
+    if (renderer && focus) { renderer.focusedHit = 0; renderer.focusedKey = focus.key; ui.strokeStyle = C.lime; ui.lineWidth = 4; ui.strokeRect(focus.x - 4, focus.y - 4, focus.w + 8, focus.h + 8); }
+    ui.restore();
+    return;
+  }
   ui.fillStyle = "rgba(7,10,6,.16)"; ui.fillRect(0, 0, 1600, 900);
   drawChrome();
   if (page === "overview") drawOverview();
@@ -897,6 +928,7 @@ class CavernRenderer {
   }
   isPortrait(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return aspect < 1; }
   tabletHalf(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) {
+    if (tabletMinimized) return this.isPortrait(aspect) ? [.62, 1.1] : [1.05, .59];
     if (!this.isPortrait(aspect)) return [3.25, 1.83];
     const distance = .45 - this.cameraZ(aspect), halfWidth = Math.min(1.5, distance * aspect / 1.42 * .9);
     return [halfWidth, halfWidth * (1600 / 900)];
@@ -1020,6 +1052,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (page === "confirm" && event.key === "Escape") { pending = null; page = "operations"; renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "a") return setMode(true);
+  if (event.key.toLowerCase() === "t") { setTabletMinimized(!tabletMinimized); event.preventDefault(); return; }
   if (event.key === "?") { page = "help"; renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "f") { visualFrozen = !visualFrozen; announce(visualFrozen ? "Nonessential cavern motion frozen." : "Cavern motion resumed."); renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "r") { client.refresh().then(() => announce("Authoritative telemetry refreshed.")).catch((error) => announce(error.message, true)); return; }

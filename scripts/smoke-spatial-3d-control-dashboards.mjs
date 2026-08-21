@@ -78,6 +78,11 @@ assert.doesNotMatch(cavern, /for\(int i=0;i<(?:[3-9]|1[0-6]);i\+\+\)/, 'Command 
 assert.match(cavern, /setTimeout\(\(\) => \{ this\.animationTimer = 0; this\.requestFrame\(false\); \}, 100\)/, 'Command Cavern: bounded optional animation cadence missing');
 assert.match(cavern, /function cavernRenderSignature\(value\)/, 'Command Cavern: snapshot-diff invalidation missing');
 assert.match(cavern, /if \(changed\) renderer\.requestFrame\(\)/, 'Command Cavern: unchanged telemetry still renders');
+assert.match(cavern, /MINIMIZABLE_TECTONIC_TABLET/, 'Command Cavern: minimizable tablet marker missing');
+assert.match(cavern, /function drawMinimizedUi\(\)/, 'Command Cavern: minimized restore inscription missing');
+assert.match(cavern, /tabletMinimized\) return this\.isPortrait\(aspect\) \? \[\.62, 1\.1\] : \[1\.05, \.59\]/, 'Command Cavern: minimized physical SDF bounds missing');
+assert.match(cavern, /RESTORE TABLET \[T\]/, 'Command Cavern: scene-native restore control missing');
+assert.match(cavern, /event\.key\.toLowerCase\(\) === "t"/, 'Command Cavern: tablet keyboard toggle missing');
 
 const palace = readFileSync(resolve(publicRoot, 'next/memory-palace/app.js'), 'utf8');
 for (const marker of ['FOLIO_CLEARANCE_PORTAL', 'WORLD_LABEL_ATLAS', 'BATCHED_LABEL_QUADS', 'FRONT_CAMERA_ENVELOPE', 'RESPONSIVE_FOLIO_GUARD', 'READABLE_PROJECTED_TYPE']) assert(palace.includes(marker), `Memory Palace: ${marker} missing`);

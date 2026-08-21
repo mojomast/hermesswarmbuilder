@@ -9,132 +9,157 @@
   <link rel="stylesheet" href="/switchyard.css" />
 </head>
 <body class="switchyard">
-  <a class="skip-link" href="#operationsHub">Skip to active route controls</a>
+  <a class="skip-link" href="#operationsHub">Skip to dispatch controls</a>
   <div id="app" class="app-shell">
-    <header class="topbar" aria-live="polite">
+    <header class="topbar" aria-label="Dispatcher header">
       <div class="yard-brand">
-        <span class="yard-plate" aria-hidden="true">H</span>
-        <div><div class="brand">Hermes</div><span>Switchyard control board</span></div>
+        <span class="yard-mark" aria-hidden="true">H/17</span>
+        <div>
+          <div class="brand">Hermes Switchyard</div>
+          <span>Autonomous rail dispatch</span>
+        </div>
       </div>
 
-      <nav class="yard-nav" aria-label="Primary dashboard destinations">
-        <button class="yard-nav-item active" data-operations-action="focus-current">Route board</button>
-        <button class="yard-nav-item" data-operations-action="mission-control">Dispatch</button>
-        <a class="yard-nav-item" href="#agentStack" data-command-center-target="agents">Crews</a>
-        <button class="yard-nav-item" data-operations-action="inspect-run">Evidence</button>
-        <a class="yard-nav-item" href="#consoleContent" data-command-center-target="telemetry">Recorder</a>
-        <button class="yard-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
+      <div id="topStatus" class="top-status" role="status" aria-live="polite">Loading route state...</div>
+
+      <nav class="dispatch-shortcuts" aria-label="Board destinations">
+        <a href="#agentStack" data-command-center-target="agents">Crews</a>
+        <a href="#consoleContent" data-command-center-target="telemetry">Recorder</a>
       </nav>
 
-      <div class="top-actions">
+      <div class="top-actions" aria-label="Global controls">
         <label class="yard-search">
           <span class="sr-only">Filter events, tools, and logs</span>
-          <input id="globalFilter" class="filter-input" placeholder="Filter recorder  /" aria-label="Filter events, tools, and logs" />
+          <input id="globalFilter" class="filter-input" type="search" placeholder="Filter recorder  /" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
-        <button id="refreshNow" title="Refresh all dashboard data">Sync board</button>
-        <button id="pauseEvents">Pause feed</button>
-        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">Plan route</button>
+        <button id="pauseEvents" type="button">Pause feed</button>
+        <button id="refreshNow" type="button" title="Refresh all dashboard data">Sync</button>
+        <button id="openPlanner" class="primary plan-project-control" type="button" aria-haspopup="dialog">Plan route</button>
       </div>
-      <div id="topStatus" class="top-status">Loading yard state...</div>
     </header>
 
-    <section class="phase-band" aria-label="Workflow progress">
-      <div class="phase-band-label"><span>Track blocks</span><b>Workflow line</b></div>
-      <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
+    <section class="phase-band" aria-labelledby="trackDiagramTitle">
+      <div class="track-label">
+        <span>Signal diagram 01</span>
+        <h1 id="trackDiagramTitle">Workflow main line</h1>
+      </div>
+      <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow phase track"></nav>
     </section>
 
-    <main class="workspace">
-      <aside class="left-rail panel-scroll" aria-label="Route and crew navigation">
-        <div class="rail-intro"><span class="section-kicker">Dispatch ledger</span><strong>Routes &amp; crews</strong></div>
-        <section class="rail-section routes-section">
+    <main class="workspace" aria-label="Switchyard dispatch board">
+      <section class="route-board left-rail" aria-labelledby="routeBoardTitle">
+        <div class="board-label rail-intro">
+          <span class="section-kicker">Route register</span>
+          <h2 id="routeBoardTitle">Runs on line</h2>
+        </div>
+        <section class="rail-section routes-section" aria-label="Run routes">
           <header>Runs</header>
-          <div id="runsList" class="dense-list"></div>
+          <div id="runsList" class="dense-list route-list panel-scroll"></div>
         </section>
-        <section class="rail-section grow crews-section">
+        <section class="rail-section crews-section" aria-label="Crew index">
           <header>Agents</header>
-          <div id="agentIndex" class="dense-list"></div>
+          <div id="agentIndex" class="dense-list crew-index panel-scroll"></div>
         </section>
-        <section class="rail-section filter-section">
+        <section class="rail-section filter-section" aria-label="Recorder filters">
           <header>Filters</header>
           <div id="filterChips" class="filter-chips">
-            <button data-filter="all" class="active">All</button>
-            <button data-filter="active">Active</button>
-            <button data-filter="tools">Tools</button>
-            <button data-filter="errors">Errors</button>
-            <button data-filter="artifacts">Artifacts</button>
+            <button type="button" data-filter="all" class="active">All</button>
+            <button type="button" data-filter="active">Active</button>
+            <button type="button" data-filter="tools">Tools</button>
+            <button type="button" data-filter="errors">Errors</button>
+            <button type="button" data-filter="artifacts">Artifacts</button>
           </div>
         </section>
-        <details class="legacy-views">
-          <summary>Other control rooms</summary>
-          <nav aria-label="Legacy dashboard views">
-            <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
-          </nav>
-        </details>
-      </aside>
-
-      <section class="activity-pane panel-scroll" aria-label="Live route operations">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck"></section>
-        <section id="steeringCockpit" class="steering-cockpit"></section>
-        <div class="section-title">
-          <div><span class="section-kicker">Motive power</span><strong>Agent activity</strong></div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack"></section>
       </section>
 
-      <aside class="inspector-pane" aria-label="Evidence and interlock inspector">
-        <div class="inspector-heading"><span class="section-kicker">Interlock cabinet</span><strong>Evidence inspector</strong></div>
-        <nav class="inspector-tabs" aria-label="Inspector tabs">
-          <button data-inspector="agent" class="active">Agent</button>
-          <button data-inspector="spec">SPEC</button>
-          <button data-inspector="devplan">Plan</button>
-          <button data-inspector="artifacts">Artifacts</button>
-          <button data-inspector="logs">Logs</button>
-          <button data-inspector="run">Run data</button>
-        </nav>
-        <div id="inspectorContent" class="inspector-content panel-scroll"></div>
+      <section class="dispatch-field activity-pane panel-scroll" aria-label="Live operations and crew lanes">
+        <div class="dispatch-grid">
+          <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+          <section id="orchestratorDeck" class="orchestrator-deck" aria-label="Current dispatch step"></section>
+          <section id="steeringCockpit" class="steering-cockpit" aria-label="Mission Control interlock bank"></section>
+        </div>
+
+        <div class="section-title crew-lane-heading">
+          <div>
+            <span class="section-kicker">Parallel blocks</span>
+            <strong>Agent crew lanes</strong>
+          </div>
+          <div>
+            <button id="collapseAllAgents" type="button">Close detail</button>
+            <button id="expandActiveAgents" type="button">Open active</button>
+          </div>
+        </div>
+        <section id="agentStack" class="agent-stack" aria-label="Agent crew lanes"></section>
+      </section>
+
+      <aside class="inspector-pane interlock-cabinet" aria-labelledby="inspectorTitle">
+        <header class="inspector-heading">
+          <div>
+            <span class="section-kicker">Cabinet E-4</span>
+            <strong id="inspectorTitle">Evidence interlock</strong>
+          </div>
+          <button id="toggleInspectorCabinet" class="cabinet-toggle" type="button" aria-expanded="true" aria-controls="inspectorBay">Stow cabinet</button>
+        </header>
+        <div id="inspectorBay" class="inspector-bay">
+          <nav class="inspector-tabs" aria-label="Evidence inspector tabs">
+            <button type="button" data-inspector="agent" class="active">Agent</button>
+            <button type="button" data-inspector="spec">SPEC</button>
+            <button type="button" data-inspector="devplan">Plan</button>
+            <button type="button" data-inspector="artifacts">Artifacts</button>
+            <button type="button" data-inspector="logs">Logs</button>
+            <button type="button" data-inspector="run">Run data</button>
+          </nav>
+          <div id="inspectorContent" class="inspector-content panel-scroll"></div>
+        </div>
       </aside>
     </main>
 
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize event recorder" role="separator" aria-orientation="horizontal"></div>
-    <section class="bottom-console" aria-label="Event recorder">
-      <div class="console-heading"><span class="section-kicker">Event recorder</span><strong>Telemetry</strong><small>Continuous route record</small></div>
-      <nav class="console-tabs" aria-label="Telemetry tabs">
-        <button data-console="events" class="active">Events</button>
-        <button data-console="tools">Tool calls</button>
-        <button data-console="logs">Logs</button>
-        <button data-console="artifacts">Artifacts</button>
-        <button data-console="raw">Raw stream</button>
-        <button id="followConsole" class="follow-toggle" title="Keep telemetry pinned to the latest entry">Follow: on</button>
-      </nav>
-      <div id="consoleContent" class="console-content panel-scroll"></div>
+    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize event recorder" role="separator" aria-label="Resize event recorder" aria-orientation="horizontal" aria-valuemin="150" aria-valuemax="720" tabindex="0"></div>
+    <section class="bottom-console recorder-bay" aria-labelledby="recorderTitle">
+      <header class="console-heading">
+        <span class="recorder-led" aria-hidden="true"></span>
+        <div><span class="section-kicker">Continuous tape</span><strong id="recorderTitle">Event recorder</strong></div>
+        <small>Telemetry / evidence / raw line</small>
+        <button id="toggleRecorderBay" type="button" aria-expanded="false" aria-controls="recorderBody">Expand recorder</button>
+      </header>
+      <div id="recorderBody" class="recorder-body">
+        <nav class="console-tabs" aria-label="Event recorder tabs">
+          <button type="button" data-console="events" class="active">Events</button>
+          <button type="button" data-console="tools">Tool calls</button>
+          <button type="button" data-console="logs">Logs</button>
+          <button type="button" data-console="artifacts">Artifacts</button>
+          <button type="button" data-console="raw">Raw stream</button>
+          <button id="followConsole" class="follow-toggle" type="button" title="Keep telemetry pinned to the latest entry">Follow: on</button>
+        </nav>
+        <div id="consoleContent" class="console-content panel-scroll" role="log" aria-live="off"></div>
+      </div>
     </section>
 
-    <aside id="detailDrawer" class="detail-drawer" hidden></aside>
+    <aside id="detailDrawer" class="detail-drawer" aria-label="Detailed record" hidden></aside>
 
-    <section id="planningWorkspace" class="planning-workspace" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden>
+    <section id="planningWorkspace" class="planning-workspace" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" tabindex="-1" hidden>
       <header class="planning-header">
-        <div><b id="plannerTitle">Project planning</b><span class="muted"> persisted revision, review, approval, and launch workspace</span></div>
-        <div class="planning-header-actions"><span id="planSaveState" class="status-pill" role="status" aria-live="polite">saved</span><button id="closePlanner" aria-label="Close project planning workspace">Close</button></div>
+        <div><b id="plannerTitle">Project route planning</b><span class="muted"> persisted revision, review, approval, and launch workspace</span></div>
+        <div class="planning-header-actions"><span id="planSaveState" class="status-pill" role="status" aria-live="polite">saved</span><button id="closePlanner" type="button" aria-label="Close project planning workspace">Close</button></div>
       </header>
       <nav class="planning-mobile-tabs" aria-label="Planning workspace sections">
-        <button data-plan-pane="plans" class="active">Plans</button><button data-plan-pane="assist">Assist</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="monitor">Monitor</button><button data-plan-pane="handoff">Handoff</button>
+        <button type="button" data-plan-pane="plans" class="active">Plans</button><button type="button" data-plan-pane="assist">Assist</button><button type="button" data-plan-pane="edit">Edit</button><button type="button" data-plan-pane="review">Review</button><button type="button" data-plan-pane="monitor">Monitor</button><button type="button" data-plan-pane="handoff">Handoff</button>
       </nav>
       <div id="planGlobalError" class="planning-alert" role="alert" aria-live="assertive" hidden></div>
       <div class="planning-grid">
         <aside class="planning-list panel-scroll" data-planning-pane="plans" aria-label="Persisted project plans">
-          <div class="planning-pane-head"><b>Plans</b><button data-open-assist>Plan with orchestrator</button><button data-new-plan="classic">New classic</button><button data-new-plan="managed">New managed</button></div>
+          <div class="planning-pane-head"><b>Plans</b><button type="button" data-open-assist>Plan with orchestrator</button><button type="button" data-new-plan="classic">New classic</button><button type="button" data-new-plan="managed">New managed</button></div>
           <div id="projectPlanList" class="dense-list"></div>
         </aside>
         <section class="planning-assist panel-scroll" data-planning-pane="assist" aria-label="Planning orchestrator assistance"><div id="planAssistance"></div></section>
-        <main class="planning-editor panel-scroll" data-planning-pane="edit"><div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div></main>
-        <aside class="planning-review panel-scroll" data-planning-pane="review"><div id="projectPlanReview" class="empty">Select a plan to review its immutable saved revision.</div></aside>
+        <section class="planning-editor panel-scroll" data-planning-pane="edit" aria-label="Project plan editor"><div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div></section>
+        <aside class="planning-review panel-scroll" data-planning-pane="review" aria-label="Project plan review"><div id="projectPlanReview" class="empty">Select a plan to review its immutable saved revision.</div></aside>
       </div>
     </section>
   </div>
   <script src="/app.js" type="module"></script>
+  <script src="/switchyard.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>
 </body>
 </html>

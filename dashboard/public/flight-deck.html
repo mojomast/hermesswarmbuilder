@@ -4,132 +4,147 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#090a0a" />
+  <meta name="theme-color" content="#08100f" />
   <title>Hermes Flight Deck</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/flight-deck.css" />
 </head>
 <body class="flight-deck">
-  <a class="skip-link" href="#operationsHub">Skip to current mission</a>
+  <a class="skip-link" href="#operationsHub">Skip to primary flight display</a>
+  <a class="skip-link skip-link-secondary" href="#steeringCockpit">Skip to Mission Control</a>
+
   <div id="app" class="app-shell">
-    <header class="topbar" aria-live="polite">
-      <div class="flight-identity" aria-label="Hermes mission flight deck">
-        <span class="flight-roundel" aria-hidden="true"><i>H</i></span>
-        <div>
-          <div class="brand">HERMES / FLIGHT DECK</div>
-          <span>Autonomous mission operations</span>
-        </div>
+    <header class="overhead-panel" aria-label="Flight deck annunciator">
+      <div class="overhead-identity">
+        <span class="airframe-mark" aria-hidden="true">H</span>
+        <div><b>HERMES</b><span>MISSION FLIGHT DECK</span></div>
       </div>
 
-      <nav class="flight-nav" aria-label="Primary flight deck destinations">
-        <button class="flight-nav-item active" data-operations-action="focus-current">Mission</button>
-        <button class="flight-nav-item" data-operations-action="mission-control">Controls</button>
-        <button class="flight-nav-item" data-command-center-target="agents">Crew</button>
+      <div class="annunciator-status">
+        <span class="panel-label">MASTER STATUS</span>
+        <div id="topStatus" class="top-status" aria-live="polite">Establishing mission telemetry...</div>
+      </div>
+
+      <nav class="flight-nav" aria-label="Flight deck destinations">
+        <button class="flight-nav-item active" data-operations-action="focus-current">Primary</button>
+        <button class="flight-nav-item" data-command-center-target="agents">Manifest</button>
         <button class="flight-nav-item" data-operations-action="inspect-run">Evidence</button>
+        <button class="flight-nav-item" data-operations-action="mission-control">Control</button>
         <button class="flight-nav-item" data-command-center-target="telemetry">Recorder</button>
-        <button class="flight-nav-item plan-project-control" data-operations-action="project-planner">Planning</button>
+        <button class="flight-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
       </nav>
 
       <div class="top-actions">
         <label class="flight-search">
-          <span>FLT SEARCH</span>
-          <input id="globalFilter" class="filter-input" placeholder="event / tool / log" aria-label="Filter events, tools, and logs" />
+          <span class="sr-only">Filter events, tools, and logs</span>
+          <input id="globalFilter" class="filter-input" placeholder="Search flight data /" aria-label="Filter events, tools, and logs" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
         <button id="refreshNow" title="Refresh all dashboard data">Sync</button>
-        <button id="pauseEvents">Pause Stream</button>
+        <button id="pauseEvents">Pause stream</button>
         <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">New plan</button>
       </div>
-      <div id="topStatus" class="top-status">Loading flight state...</div>
+
+      <section class="workflow-annunciator" aria-label="Mission workflow">
+        <span class="panel-label">FLIGHT SEQUENCE</span>
+        <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
+      </section>
     </header>
 
-    <section class="phase-band" aria-label="Mission sequence">
-      <div class="phase-band-label"><span>SEQ</span><b>MISSION PROFILE</b></div>
-      <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
-    </section>
+    <main id="flightDeckMain" class="flight-frame">
+      <div class="workspace">
+        <section class="left-rail crew-manifest" aria-labelledby="manifestTitle">
+          <header class="manifest-heading">
+            <span class="panel-index">MNF</span>
+            <div><span class="section-kicker">Live assignment board</span><h1 id="manifestTitle">Crew / Runs Manifest</h1></div>
+          </header>
 
-    <main class="workspace">
-      <aside class="left-rail panel-scroll" aria-label="Crew and run roster">
-        <div class="rail-intro">
-          <span class="section-kicker">FLT 02 / ROSTER</span>
-          <strong>Crew &amp; Agents</strong>
-          <small>Assignment and run context</small>
-        </div>
-        <section class="rail-section">
-          <header>Runs</header>
-          <div id="runsList" class="dense-list"></div>
+          <section class="rail-section manifest-runs">
+            <header>Runs</header>
+            <div id="runsList" class="dense-list manifest-track panel-scroll"></div>
+          </section>
+
+          <section class="rail-section manifest-agents">
+            <header>Agents</header>
+            <div id="agentIndex" class="dense-list manifest-track panel-scroll"></div>
+          </section>
+
+          <section class="rail-section manifest-filters">
+            <header>Display</header>
+            <div id="filterChips" class="filter-chips">
+              <button data-filter="all" class="active">All</button>
+              <button data-filter="active">Active</button>
+              <button data-filter="tools">Tools</button>
+              <button data-filter="errors">Faults</button>
+              <button data-filter="artifacts">Evidence</button>
+            </div>
+          </section>
+
+          <details class="legacy-views">
+            <summary>Other displays</summary>
+            <nav aria-label="Other dashboard views">
+              <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
+            </nav>
+          </details>
         </section>
-        <section class="rail-section grow">
-          <header>Agents</header>
-          <div id="agentIndex" class="dense-list"></div>
-        </section>
-        <section class="rail-section">
-          <header>Filters</header>
-          <div id="filterChips" class="filter-chips">
-            <button data-filter="all" class="active">All</button>
-            <button data-filter="active">Active</button>
-            <button data-filter="tools">Tools</button>
-            <button data-filter="errors">Faults</button>
-            <button data-filter="artifacts">Evidence</button>
+
+        <section class="activity-pane primary-flight-display panel-scroll" aria-label="Primary flight display">
+          <header class="display-bezel">
+            <span class="panel-index">PFD</span>
+            <div><span class="section-kicker">Mission state / immediate action</span><strong>Primary Flight Display</strong></div>
+          </header>
+          <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+          <section id="orchestratorDeck" class="orchestrator-deck" aria-label="Current mission step"></section>
+          <div class="section-title">
+            <div><span class="section-kicker">Crew execution detail</span><strong>Active Stations</strong></div>
+            <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
           </div>
+          <section id="agentStack" class="agent-stack" aria-label="Agent station activity"></section>
         </section>
-        <details class="legacy-views">
-          <summary>Alternate instruments</summary>
-          <nav aria-label="Legacy dashboard views">
-            <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
+
+        <aside class="inspector-pane mission-display" aria-labelledby="evidenceDisplayTitle">
+          <header class="display-bezel inspector-heading">
+            <span class="panel-index">MED</span>
+            <div><span class="section-kicker">Selected mission record</span><strong id="evidenceDisplayTitle">Mission / Evidence</strong></div>
+          </header>
+          <nav class="inspector-tabs" aria-label="Mission evidence views">
+            <button data-inspector="agent" class="active">Agent</button>
+            <button data-inspector="spec">SPEC</button>
+            <button data-inspector="devplan">Plan</button>
+            <button data-inspector="artifacts">Artifacts</button>
+            <button data-inspector="logs">Logs</button>
+            <button data-inspector="run">Run data</button>
           </nav>
-        </details>
-      </aside>
+          <div id="inspectorContent" class="inspector-content panel-scroll"></div>
+        </aside>
+      </div>
 
-      <section class="activity-pane panel-scroll" aria-label="Current mission and bounded controls">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck"></section>
-        <section id="steeringCockpit" class="steering-cockpit"></section>
-        <div class="section-title">
-          <div>
-            <span class="section-kicker">FLT 03 / CREW ACTIVITY</span>
-            <strong>Agent Flight Detail</strong>
-          </div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack"></section>
+      <section class="lower-pedestal" aria-labelledby="pedestalTitle">
+        <header class="pedestal-label">
+          <span class="panel-index">CTL</span>
+          <div><span class="section-kicker">Bounded operator authority</span><strong id="pedestalTitle">Mission Control Pedestal</strong></div>
+        </header>
+        <section id="steeringCockpit" class="steering-cockpit panel-scroll"></section>
       </section>
 
-      <aside class="inspector-pane" aria-label="Evidence bay">
-        <div class="inspector-heading">
-          <span class="section-kicker">FLT 04 / EVIDENCE BAY</span>
-          <strong>Mission Evidence</strong>
-          <small>Selected context / immutable record</small>
-        </div>
-        <nav class="inspector-tabs" aria-label="Evidence bay tabs">
-          <button data-inspector="agent" class="active">Agent</button>
-          <button data-inspector="spec">SPEC</button>
-          <button data-inspector="devplan">Plan</button>
-          <button data-inspector="artifacts">Artifacts</button>
-          <button data-inspector="logs">Logs</button>
-          <button data-inspector="run">Run data</button>
+      <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize flight data recorder" role="separator" aria-label="Resize flight data recorder" aria-orientation="horizontal" aria-controls="flightRecorder"></div>
+      <section id="flightRecorder" class="bottom-console" aria-labelledby="recorderTitle">
+        <header class="console-heading">
+          <span class="panel-index">FDR</span>
+          <div><span class="section-kicker">Time ordered trace</span><strong id="recorderTitle">Flight Data Recorder</strong></div>
+          <button class="recorder-toggle" type="button" data-recorder-toggle aria-expanded="false" aria-controls="consoleContent">Expand recorder</button>
+        </header>
+        <nav class="console-tabs" aria-label="Flight data channels">
+          <button data-console="events" class="active">Events</button>
+          <button data-console="tools">Tool calls</button>
+          <button data-console="logs">Logs</button>
+          <button data-console="artifacts">Artifacts</button>
+          <button data-console="raw">Raw stream</button>
+          <button id="followConsole" class="follow-toggle" title="Keep telemetry pinned to the latest entry">Follow: on</button>
         </nav>
-        <div id="inspectorContent" class="inspector-content panel-scroll"></div>
-      </aside>
+        <div id="consoleContent" class="console-content panel-scroll"></div>
+      </section>
     </main>
-
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize telemetry recorder" role="separator" aria-label="Resize telemetry recorder" aria-orientation="horizontal"></div>
-    <section class="bottom-console" aria-label="Telemetry recorder">
-      <div class="console-heading">
-        <span class="section-kicker">FLT 05 / DATA</span>
-        <strong>Telemetry Recorder</strong>
-        <small>Time ordered mission trace</small>
-      </div>
-      <nav class="console-tabs" aria-label="Telemetry recorder tabs">
-        <button data-console="events" class="active">Events</button>
-        <button data-console="tools">Tool calls</button>
-        <button data-console="logs">Logs</button>
-        <button data-console="artifacts">Artifacts</button>
-        <button data-console="raw">Raw stream</button>
-        <button id="followConsole" class="follow-toggle" title="Keep telemetry pinned to the latest entry">Follow: on</button>
-      </nav>
-      <div id="consoleContent" class="console-content panel-scroll"></div>
-    </section>
 
     <aside id="detailDrawer" class="detail-drawer" hidden></aside>
 
@@ -148,11 +163,12 @@
           <div id="projectPlanList" class="dense-list"></div>
         </aside>
         <section class="planning-assist panel-scroll" data-planning-pane="assist" aria-label="Planning orchestrator assistance"><div id="planAssistance"></div></section>
-        <main class="planning-editor panel-scroll" data-planning-pane="edit"><div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div></main>
+        <section class="planning-editor panel-scroll" data-planning-pane="edit" aria-label="Project plan editor"><div id="projectPlanEditor" class="empty">Create or select a persisted plan.</div></section>
         <aside class="planning-review panel-scroll" data-planning-pane="review"><div id="projectPlanReview" class="empty">Select a plan to review its immutable saved revision.</div></aside>
       </div>
     </section>
   </div>
+
   <script src="/app.js" type="module"></script>
   <script src="/flight-deck.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>

@@ -9,71 +9,60 @@
   <link rel="stylesheet" href="/swarm-atlas.css" />
 </head>
 <body class="swarm-atlas">
-  <a class="skip-link" href="#operationsHub">Skip to current objective</a>
+  <a class="skip-link" href="#operationsHub">Skip to active route</a>
+  <a class="skip-link skip-link-secondary" href="#surveyJournal">Skip to survey log</a>
+
   <div id="app" class="app-shell">
     <header class="topbar" aria-live="polite">
-      <a class="atlas-brand" href="#operationsHub" aria-label="Hermes Swarm Atlas, return to current objective">
+      <a class="atlas-brand" href="#operationsHub" aria-label="Hermes Swarm Atlas, return to active route">
         <span class="atlas-mark" aria-hidden="true"><i></i></span>
-        <span><b>Hermes</b><small>Swarm Atlas / Field 03</small></span>
+        <span><b>Hermes</b><small>Swarm Atlas / Live Traverse</small></span>
       </a>
 
-      <nav class="atlas-nav" aria-label="Atlas regions">
-        <a class="active" href="#operationsHub" data-operations-action="focus-current">Route</a>
-        <a href="#steeringCockpit" data-operations-action="mission-control">Field station</a>
-        <a href="#expeditionParty" data-command-center-target="agents">Expedition</a>
-        <a href="#inspectorContent" data-operations-action="inspect-run">Chart legend</a>
-        <a href="#surveyJournal" data-command-center-target="telemetry">Journal</a>
-        <button class="plan-project-control" data-operations-action="project-planner">Plan route</button>
+      <nav class="atlas-nav" aria-label="Atlas destinations">
+        <button class="active" data-operations-action="focus-current">Active route</button>
+        <button data-operations-action="mission-control">Field station</button>
+        <button data-command-center-target="agents">Expedition</button>
+        <button data-operations-action="inspect-run">Evidence</button>
+        <button data-command-center-target="telemetry">Survey log</button>
+        <button class="plan-project-control" data-operations-action="project-planner">Plot route</button>
       </nav>
 
       <div class="top-actions">
         <label class="atlas-search">
           <span class="sr-only">Filter events, tools, and logs</span>
-          <input id="globalFilter" class="filter-input" placeholder="Search survey records  /" aria-label="Filter events, tools, and logs" />
+          <input id="globalFilter" class="filter-input" placeholder="Search observations  /" aria-label="Filter events, tools, and logs" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
         <button id="refreshNow" title="Refresh all atlas data">Resurvey</button>
-        <button id="pauseEvents">Pause journal</button>
-        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">Plot route</button>
+        <button id="pauseEvents">Pause log</button>
+        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">New route</button>
       </div>
-      <div id="topStatus" class="top-status">Locating expedition...</div>
+      <div id="topStatus" class="top-status">Establishing coordinates...</div>
     </header>
 
-    <section class="phase-band" aria-label="Workflow coordinates">
-      <span class="phase-band-label">Coordinate line <i>W.00-15</i></span>
-      <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
-    </section>
+    <main id="atlasWorkspace" class="workspace" aria-label="Live expedition map">
+      <div class="map-coordinate map-coordinate-north" aria-hidden="true">N 41° 04' / LIVE OPERATIONS FIELD</div>
+      <div class="map-coordinate map-coordinate-east" aria-hidden="true">E 014° 21' / OBSERVATION DATUM</div>
 
-    <main class="workspace">
-      <section class="activity-pane panel-scroll" aria-label="Active expedition route">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck" aria-label="Present expedition activity"></section>
-        <section id="steeringCockpit" class="steering-cockpit" aria-label="Mission Control field station"></section>
-        <div id="expeditionParty" class="section-title">
-          <div>
-            <span class="section-kicker">Expedition party / live positions</span>
-            <strong>Agent traverse</strong>
-          </div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack" aria-label="Expedition party activity"></section>
+      <section class="phase-band" aria-label="Workflow route">
+        <div class="phase-band-label"><span>Route</span><i>WPT 00-15</i></div>
+        <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
       </section>
 
-      <aside class="left-rail panel-scroll" aria-label="Routes and expedition party">
-        <div class="rail-intro">
-          <span class="section-kicker">Index / N 41.071</span>
-          <strong>Route register</strong>
-        </div>
-        <section class="rail-section">
-          <header>Routes <span>RUN.LOG</span></header>
-          <div id="runsList" class="dense-list"></div>
+      <aside class="left-rail" aria-label="Route tabs and expedition markers">
+        <section class="rail-section route-tabs">
+          <header>Runs <span>ROUTE REGISTER</span></header>
+          <div id="runsList" class="dense-list panel-scroll"></div>
         </section>
-        <section class="rail-section grow">
-          <header>Expedition party <span>PTY.POS</span></header>
-          <div id="agentIndex" class="dense-list"></div>
+
+        <section class="rail-section expedition-roster">
+          <header>Agents <span>EXPEDITION MARKERS</span></header>
+          <div id="agentIndex" class="dense-list panel-scroll"></div>
         </section>
-        <section class="rail-section">
-          <header>Survey filter <span>OBS.SET</span></header>
+
+        <section class="rail-section map-filters">
+          <header>Filters <span>OBSERVATION LAYERS</span></header>
           <div id="filterChips" class="filter-chips">
             <button data-filter="all" class="active">All</button>
             <button data-filter="active">Active</button>
@@ -82,47 +71,67 @@
             <button data-filter="artifacts">Artifacts</button>
           </div>
         </section>
+
         <details class="legacy-views">
-          <summary>Other field instruments</summary>
+          <summary>Atlas directory</summary>
           <nav aria-label="Other dashboard views">
             <a href="/">Studio</a><a href="/command-center.html">Command</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
           </nav>
         </details>
       </aside>
 
-      <aside class="inspector-pane" aria-label="Chart legend and evidence">
-        <div class="inspector-heading">
-          <span class="section-kicker">Chart legend / selected context</span>
-          <strong>Evidence key</strong>
+      <section class="activity-pane panel-scroll" aria-label="Active expedition route">
+        <div class="route-axis" aria-hidden="true"><span>ORIGIN</span><i></i><span>ACTIVE FIX</span><i></i><span>FORWARD ROUTE</span></div>
+        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+        <section id="orchestratorDeck" class="orchestrator-deck" aria-label="Current route marker"></section>
+        <section id="steeringCockpit" class="steering-cockpit" aria-label="Field Station controls"></section>
+        <div id="expeditionParty" class="section-title">
+          <div>
+            <span class="section-kicker">Expedition / field reports</span>
+            <strong>Agents along the active route</strong>
+          </div>
+          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
         </div>
-        <nav class="inspector-tabs" aria-label="Inspector tabs">
-          <button data-inspector="agent" class="active">Agent</button>
-          <button data-inspector="spec">SPEC</button>
-          <button data-inspector="devplan">Plan</button>
-          <button data-inspector="artifacts">Artifacts</button>
-          <button data-inspector="logs">Logs</button>
-          <button data-inspector="run">Run data</button>
-        </nav>
-        <div id="inspectorContent" class="inspector-content panel-scroll"></div>
-      </aside>
-    </main>
+        <section id="agentStack" class="agent-stack" aria-label="Expedition agent reports"></section>
+      </section>
 
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize survey journal" role="separator" aria-orientation="horizontal"></div>
-    <section id="surveyJournal" class="bottom-console" aria-label="Survey journal telemetry">
-      <div class="console-heading">
-        <span class="section-kicker">Survey journal / live feed</span>
-        <strong>Field observations</strong>
-      </div>
-      <nav class="console-tabs" aria-label="Telemetry tabs">
-        <button data-console="events" class="active">Events</button>
-        <button data-console="tools">Tool calls</button>
-        <button data-console="logs">Logs</button>
-        <button data-console="artifacts">Artifacts</button>
-        <button data-console="raw">Raw stream</button>
-        <button id="followConsole" class="follow-toggle" title="Keep telemetry pinned to the latest entry">Follow: on</button>
-      </nav>
-      <div id="consoleContent" class="console-content panel-scroll"></div>
-    </section>
+      <aside class="inspector-pane map-legend" aria-label="Evidence map legend">
+        <div class="inspector-heading">
+          <div><span class="section-kicker">Map legend / selected evidence</span><strong>Evidence key</strong></div>
+          <button id="toggleLegend" class="overlay-toggle" type="button" aria-controls="legendBody" aria-expanded="false">Open legend</button>
+        </div>
+        <div id="legendBody" class="legend-body">
+          <nav class="inspector-tabs" aria-label="Inspector tabs">
+            <button data-inspector="agent" class="active">Agent</button>
+            <button data-inspector="spec">SPEC</button>
+            <button data-inspector="devplan">Plan</button>
+            <button data-inspector="artifacts">Artifacts</button>
+            <button data-inspector="logs">Logs</button>
+            <button data-inspector="run">Run data</button>
+          </nav>
+          <div id="inspectorContent" class="inspector-content panel-scroll"></div>
+        </div>
+      </aside>
+
+      <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize the expanded survey log" role="separator" aria-orientation="horizontal"></div>
+      <section id="surveyJournal" class="bottom-console survey-log" aria-label="Survey log telemetry">
+        <div class="console-heading">
+          <div><span class="section-kicker">Survey log / live telemetry</span><strong>Field observations</strong></div>
+          <button id="toggleSurveyLog" class="overlay-toggle" type="button" aria-controls="surveyLogBody" aria-expanded="false">Expand log</button>
+        </div>
+        <div id="surveyLogBody" class="survey-log-body">
+          <nav class="console-tabs" aria-label="Telemetry tabs">
+            <button data-console="events" class="active">Events</button>
+            <button data-console="tools">Tool calls</button>
+            <button data-console="logs">Logs</button>
+            <button data-console="artifacts">Artifacts</button>
+            <button data-console="raw">Raw stream</button>
+            <button id="followConsole" class="follow-toggle" title="Keep telemetry pinned to the latest entry">Follow: on</button>
+          </nav>
+          <div id="consoleContent" class="console-content panel-scroll"></div>
+        </div>
+      </section>
+    </main>
 
     <aside id="detailDrawer" class="detail-drawer" hidden></aside>
 
@@ -147,6 +156,7 @@
     </section>
   </div>
   <script src="/app.js" type="module"></script>
+  <script src="/swarm-atlas.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>
 </body>
 </html>

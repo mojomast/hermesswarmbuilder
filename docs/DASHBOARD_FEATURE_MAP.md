@@ -5,11 +5,11 @@ This map is the parity contract for the legacy Studio at `/` and the six full-co
 ## Full-Control Interface Studies
 
 - `/command-center.html`: balanced operational command surface.
-- `/flight-deck.html`: aerospace mission flight deck.
-- `/briefing-room.html`: editorial intelligence briefing room.
-- `/swarm-atlas.html`: cartographic expedition atlas.
-- `/switchyard.html`: industrial rail dispatch board.
-- `/quiet-observatory.html`: low-fatigue scientific observatory.
+- `/flight-deck.html`: overhead annunciator, horizontal crew/run manifest, primary flight display, evidence display, lower control pedestal, and expandable recorder.
+- `/briefing-room.html`: vertically scrolling editorial dossier with lead-story operations, asymmetric action desk, edition chronology, off-canvas source notes, and inline live wire.
+- `/swarm-atlas.html`: full-canvas cartographic field with vertical workflow waypoints, edge route tabs, expedition markers, floating evidence legend, and expandable survey-log overlay.
+- `/switchyard.html`: horizontal dispatch board with workflow track diagram, route register, dispatch/interlock bank, parallel crew lanes, stowable evidence cabinet, and recorder ticker.
+- `/quiet-observatory.html`: focus-first observation target with session ribbon, retractable instrument shelf, observation channels, evidence notebook, and expandable time ruler.
 
 Every dashboard, including the five legacy tools, loads `dashboard-directory.js`. Its fixed directory links all eleven live surfaces without duplicating navigation data in each implementation.
 

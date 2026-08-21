@@ -51,6 +51,7 @@ function sectionControls(id){return `<span class="section-controls" data-section
 function cycleDensity(){const modes=['comfortable','compact','dense'];model.density=modes[(Math.max(0,modes.indexOf(model.density))+1)%modes.length];persistLayoutPrefs();applyDashboardLayoutPrefs()}
 function toggleSectionHidden(id){if(model.hiddenSections.has(id))model.hiddenSections.delete(id);else model.hiddenSections.add(id);persistLayoutPrefs();applyDashboardLayoutPrefs()}
 function toggleSectionCollapsed(id){if(model.collapsedSections.has(id))model.collapsedSections.delete(id);else model.collapsedSections.add(id);persistLayoutPrefs();applyDashboardLayoutPrefs()}
+function revealDashboardSections(...ids){let changed=false;for(const id of ids){changed=model.hiddenSections.delete(id)||changed;changed=model.collapsedSections.delete(id)||changed}if(changed){persistLayoutPrefs();applyDashboardLayoutPrefs()}}
 function resetLayoutPrefs(){model.density='compact';model.hiddenSections.clear();model.collapsedSections=new Set(['steering']);persistLayoutPrefs();applyDashboardLayoutPrefs();renderAll()}
 function applyDashboardLayoutPrefs(){
   const root=document.documentElement; root.dataset.density=model.density||'compact';
@@ -816,6 +817,10 @@ function initGlobalDelegation() {
     if(hideSectionBtn){e.preventDefault();e.stopPropagation();toggleSectionHidden(hideSectionBtn.dataset.hideSection);renderAll();return;}
     const resetLayoutBtn=e.target.closest('[data-reset-layout]');
     if(resetLayoutBtn){e.preventDefault();resetLayoutPrefs();return;}
+    const commandCenterTarget=e.target.closest('[data-command-center-target]')?.dataset.commandCenterTarget;
+    if(commandCenterTarget==='agents')revealDashboardSections('activityStack','leftRail','agentIndex');
+    if(commandCenterTarget==='telemetry')revealDashboardSections('console');
+    if(commandCenterTarget==='chronology')revealDashboardSections('leftRail','runs','agentIndex','filters');
     const runEl = e.target.closest('[data-run]');
     if (runEl && $('runsList')?.contains(runEl)) {
       model.selectedRunId = runEl.dataset.run;
@@ -987,6 +992,7 @@ document.addEventListener('click',async e=>{
     const summary=deriveOperationsHub();
     if(operationsAction==='inspect-run'){
       if(!summary.selectedRunId){announceOperationsHub('Inspect selected run is unavailable: no current or selected run is available.');return;}
+      revealDashboardSections('inspector');
       model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);model.inspector='run';setPref('hermes.apb.dashboard.inspectorTab',model.inspector);model.lastInspectorKey=null;await loadRunResources(true);skipNextFocusRestore=true;renderAll();focusOperationsDestination(document.querySelector('.inspector-pane'));return;
     }
     if(operationsAction==='deblock'){
@@ -998,7 +1004,7 @@ document.addEventListener('click',async e=>{
     if(operationsAction==='project-planner'){openPlanner();return;}
     if(operationsAction==='focus-current'){
       if(summary.queueCount){model.hiddenSections.delete('steering');model.collapsedSections.delete('steering');persistLayoutPrefs();applyDashboardLayoutPrefs();skipNextFocusRestore=true;renderAll();focusOperationsDestination($('#steeringCockpit .queue-list')||$('steeringCockpit'),{block:'start'});return;}
-      if(summary.selectedRunId){model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);skipNextFocusRestore=true;renderAll();focusOperationsDestination(document.querySelector(`[data-run="${CSS.escape(summary.selectedRunId)}"]`)||$('runsList'));return;}
+      if(summary.selectedRunId){revealDashboardSections('leftRail','runs');model.selectedRunId=summary.selectedRunId;setPref('hermes.apb.dashboard.selectedRunId',model.selectedRunId);skipNextFocusRestore=true;renderAll();focusOperationsDestination(document.querySelector(`[data-run="${CSS.escape(summary.selectedRunId)}"]`)||$('runsList'));return;}
       announceOperationsHub('Focus queue/current run is unavailable: no actionable queue item, current run, or selected run is available.');
       return;
     }

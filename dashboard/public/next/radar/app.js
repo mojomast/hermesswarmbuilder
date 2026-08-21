@@ -174,10 +174,13 @@ function renderRadar() {
   const focusedTarget = document.activeElement?.closest?.("[data-target-type]");
   const focusedIdentity = focusedTarget ? `${focusedTarget.dataset.targetType}:${focusedTarget.dataset.targetId}` : null;
   const records = targetRecords();
+  const selectedRun = snapshot.selectedRunId || currentRunId();
+  const priority = (record) => record.type === "run" && record.id === selectedRun ? 0 : record.type === "run" && isBlocked(record.data) ? 1 : record.type === "agent" ? 2 : 3;
+  const visualRecords = [...records].sort((a, b) => priority(a) - priority(b)).slice(0, 42);
   const trackLayer = clear($("radarTracks"));
   const agentLayer = clear($("radarAgents"));
-  records.forEach((record, index) => {
-    const { group, position } = targetGraphic(record, index, records);
+  visualRecords.forEach((record, index) => {
+    const { group, position } = targetGraphic(record, index, visualRecords);
     if (record.type === "run") {
       const active = record.id === currentRunId();
       trackLayer.append(svgNode("path", { d: `M 500 500 Q ${(500 + position.x) / 2 + 45} ${(500 + position.y) / 2 - 35} ${position.x} ${position.y}`, class: `track-path${active ? " active" : ""}`, "aria-hidden": true }));

@@ -104,6 +104,13 @@ function normalizeState(s: any) {
   return s;
 }
 function readState() { return normalizeState(safeReadJson(paths.state, defaultState())); }
+function writeState(state: any) {
+  withProjectionLock(STATE_ROOT, () => {
+    const next = normalizeState(state);
+    next.updatedAt = now();
+    writeJson(paths.state, next);
+  });
+}
 
 function readTailUtf8(path: string, maxBytes = EVENT_TAIL_BYTES) {
   if (!existsSync(path)) return "";
@@ -508,13 +515,26 @@ async function handleCommand(req: Request) {
     if (!advice || advice.status !== "pending") return json({ error: "pending deblock advice not found" }, 404);
     advice.status = type === "approve-deblock-advice" ? "approved" : "denied"; advice.decidedAt = now(); advice.decidedBy = actor;
     if (advice.status === "approved") {
-      const state = readState(); const request = { id: uid("deblock"), prompt: advice.answer, runId: advice.runId || state.currentRunId || null, blocker: advice.blocker, status: "pending", requestedBy: actor, requestedAt: now(), adviceId: advice.id };
+      const state = readState(); const runId = advice.runId || state.currentRunId || null; const request = { id: uid("deblock"), prompt: advice.answer, runId, blocker: advice.blocker, status: "pending", requestedBy: actor, requestedAt: now(), adviceId: advice.id };
       control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
       control.activeSteering = [{ id: uid("steer"), scope: "current_run", priority: "required", text: `APPROVED DEBLOCK ADVICE ${advice.id}: ${advice.answer}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id }, ...(control.activeSteering || [])].slice(0, 20);
+      const sourceIter = listIterations().find((item: any) => item.runId === runId);
+      const continuation = normalizeIterationRequestPayload("continue-from-iteration", {
+        runId, sourceRunId: runId, sourceIterationId: sourceIter?.id || sourceIter?.iterationId || null,
+        repoPath: sourceIter?.repoPath, baseRef: sourceIter?.baseRef || sourceIter?.commit || "HEAD",
+        objective: sourceIter?.objective || control.currentObjective?.text || "",
+        changeText: `Execute approved deblock advice ${advice.id}: ${advice.answer}`,
+        acceptanceGateIds: sourceIter?.acceptanceGateIds || [], limits: control.autoIteration
+      }, control, actor);
+      const errors = iterationRequestErrors(continuation);
+      if (errors.length) return json({ error: "approved deblock advice could not be converted into a continuation", details: errors }, 409);
+      control.nextRunRequest = continuation;
       control.requestedRunNow = true;
+      upsertIterationFromRequest(continuation, "requested");
+      if (state.status === "blocked" || state.status === "on-hold") { state.status = "deblocking"; state.phase = "deblocking"; state.lastAction = `Approved deblock advice ${advice.id}; continuation ${continuation.id} queued for the next runner tick.`; writeState(state); }
     }
     writeControl(control);
-    return json(commandAck(command, { adviceId: advice.id, status: advice.status, effective: advice.status === "approved" ? "current-run steering queued" : "no run changes" }));
+    return json(commandAck(command, { adviceId: advice.id, status: advice.status, nextRunRequest: advice.status === "approved" ? control.nextRunRequest : null, effective: advice.status === "approved" ? "continuation queued" : "no run changes" }));
   }
   if (type === "remove-steering") { const id = payload.id || payload.steeringId; control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
   if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }

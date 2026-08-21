@@ -20,8 +20,8 @@ writeFileSync(join(state, 'events.jsonl'), [
   JSON.stringify({ id: 'evt-2', ts: new Date().toISOString(), level: 'info', type: 'event', message: 'two' }),
   JSON.stringify({ id: 'evt-3', ts: new Date().toISOString(), level: 'info', type: 'event', message: 'three' })
 ].join('\n') + '\n');
-writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'completed', phase: 'completed', agents: {} }, null, 2));
-writeFileSync(join(state, 'control.json'), JSON.stringify({ schemaVersion: 'apb.control.v1', activeSteering: [], autoIteration: { enabled: false, maxVariantsPerIteration: 3 } }, null, 2));
+writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'blocked', phase: 'blocked', agents: {} }, null, 2));
+writeFileSync(join(state, 'control.json'), JSON.stringify({ schemaVersion: 'apb.control.v1', activeSteering: [], autoIteration: { enabled: false, maxVariantsPerIteration: 3 }, deblockAdvice: [{ id: 'advice-fixture', runId, answer: 'Repair the isolated artifact contract and continue safely.', status: 'pending' }] }, null, 2));
 writeFileSync(join(state, 'queue.json'), JSON.stringify({ schemaVersion: 'apb.queue.v1', items: [] }, null, 2));
 writeFileSync(join(state, 'gates.json'), JSON.stringify({ schemaVersion: 'apb.gates.v1', gates: [{ id: 'gate-1', description: 'fixture gate', decisions: [] }] }, null, 2));
 writeFileSync(join(runRoot, 'run.json'), JSON.stringify({ id: runId, status: 'completed', startedAt: new Date().toISOString(), repoPath: fixtureRepoPath, objective: 'Fixture objective' }, null, 2));
@@ -60,6 +60,12 @@ try {
   if (!detail.variants[0]._artifact?.path || !detail.evaluations[0]._artifact?.path) throw new Error('artifact metadata missing');
   const invalid = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'start-next-iteration', payload: { repoPath: 'relative/repo', objective: '', changeText: '' } }) });
   if (invalid.status !== 400) throw new Error('malformed managed launch request was not rejected early');
+  const approved = await post('approve-deblock-advice', { adviceId: 'advice-fixture' });
+  if (approved.effective !== 'continuation queued') throw new Error('approved deblock advice did not queue a continuation');
+  const approvedControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
+  if (!approvedControl.nextRunRequest || !approvedControl.requestedRunNow || approvedControl.nextRunRequest.type !== 'continue') throw new Error('approved deblock advice did not persist a managed continuation');
+  const deblockingState = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'));
+  if (deblockingState.status !== 'deblocking') throw new Error('approved deblock advice did not leave blocked state for deblocking');
   await post('continue-from-iteration', { runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture', changeText: 'Complete one bounded fixture change.' });
   const control = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
   if (!control.nextRunRequest || !control.requestedRunNow) throw new Error('nextRunRequest not persisted');

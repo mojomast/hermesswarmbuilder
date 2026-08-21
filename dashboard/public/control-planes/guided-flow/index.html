@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard B: 2D Guided Control Plane - Hermes Swarm Builder</title>
+  <link rel="stylesheet" href="guided-flow.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header" role="banner">
+    <div class="brand-title">
+      <span>HERMES CONTROL PLANE</span>
+      <span class="authority-pill">GOVERNED WORKSPACE</span>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <button id="btn-ai-assist" class="btn-secondary" style="min-height: 36px; padding: 6px 12px;">
+        💬 Planning Assistant
+      </button>
+      <select id="role-select" class="form-select" style="min-height: 36px; padding: 4px 8px; width: auto;" aria-label="Simulated RBAC Role">
+        <option value="Administrator">Role: Administrator</option>
+        <option value="Author">Role: Author</option>
+        <option value="Approver">Role: Approver</option>
+        <option value="Operator">Role: Operator</option>
+        <option value="Viewer">Role: Viewer</option>
+        <option value="Auditor">Role: Auditor</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Progressive Disclosure Stepper Bar -->
+  <nav id="stepper-nav" class="stepper-nav" aria-label="Lifecycle Workflow Steps">
+    <ul class="stepper-list">
+      <li class="step-item active" data-step="plans" tabindex="0" role="button">
+        <span class="step-num">1</span>
+        <span>Plan Authoring</span>
+      </li>
+      <li class="step-item" data-step="review" tabindex="0" role="button">
+        <span class="step-num">2</span>
+        <span>Revision Review</span>
+      </li>
+      <li class="step-item" data-step="approval" tabindex="0" role="button">
+        <span class="step-num">3</span>
+        <span>Approval & Launch</span>
+      </li>
+      <li class="step-item" data-step="iterations" tabindex="0" role="button">
+        <span class="step-num">4</span>
+        <span>Managed Iterations</span>
+      </li>
+      <li class="step-item" data-step="synthesis" tabindex="0" role="button">
+        <span class="step-num">5</span>
+        <span>Synthesis</span>
+      </li>
+      <li class="step-item" data-step="gates" tabindex="0" role="button">
+        <span class="step-num">6</span>
+        <span>Acceptance Gates</span>
+      </li>
+      <li class="step-item" data-step="handoff" tabindex="0" role="button">
+        <span class="step-num">7</span>
+        <span>Terminal Handoff</span>
+      </li>
+    </ul>
+  </nav>
+
+  <!-- Main Guided Workspace -->
+  <main class="guided-container" role="main">
+    <!-- View 1: Plans List & Authoring -->
+    <section id="view-plans" class="view-panel active" aria-label="Project Plans">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2>Governed Project Plans</h2>
+        <button id="btn-new-plan" class="btn-primary">+ Author New Plan</button>
+      </div>
+
+      <!-- New Plan Card (Collapsible) -->
+      <div id="plan-form-card" class="guided-card" style="display: none;">
+        <div class="card-title">Author Governed Project Plan</div>
+        <form id="plan-form">
+          <div class="form-group">
+            <label class="form-label" for="plan-title">Project Title</label>
+            <input type="text" id="plan-title" class="form-input" placeholder="e.g. Modern Accessible Control Plane" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="plan-pipeline">Execution Pipeline</label>
+            <select id="plan-pipeline" class="form-select">
+              <option value="classic">Classic Pipeline (Build new project from scratch)</option>
+              <option value="managed">Managed Pipeline (Improve existing Git repository)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="plan-repo-path">Target Repository Path (Managed only)</label>
+            <input type="text" id="plan-repo-path" class="form-input" placeholder="/home/mojo/projects/target-repo">
+            <div class="form-hint">Must be an absolute local path with clean working tree.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="plan-objective">Bounded Objective & Acceptance Scope</label>
+            <textarea id="plan-objective" class="form-textarea" placeholder="Define exact requirements and non-goals..." required></textarea>
+          </div>
+          <div class="btn-deck">
+            <button type="submit" class="btn-primary">Save Initial Draft (Revision #1)</button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('plan-form-card').style.display='none'">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Plan Cards Container -->
+      <div id="plan-list-container">
+        <!-- Rendered Plan Cards -->
+      </div>
+    </section>
+
+    <!-- View 2: Revision Review -->
+    <section id="view-review" class="view-panel" aria-label="Plan Revision Review">
+      <h2>Immutable Revision Review</h2>
+      <div id="review-container">
+        <!-- Dynamic Review Summary -->
+      </div>
+    </section>
+
+    <!-- View 3: Approval & Launch -->
+    <section id="view-approval" class="view-panel" aria-label="Approval Authority">
+      <h2>Approval Authority & Launch Gate</h2>
+      <div id="approval-container">
+        <!-- Dynamic Approval Deck -->
+      </div>
+    </section>
+
+    <!-- View 4: Managed Iterations -->
+    <section id="view-iterations" class="view-panel" aria-label="Managed Iterations">
+      <h2>Managed Iteration Workspace</h2>
+      <div id="iteration-container">
+        <!-- Dynamic Iterations & Scorecards -->
+      </div>
+    </section>
+
+    <!-- View 5: Synthesis -->
+    <section id="view-synthesis" class="view-panel" aria-label="Synthesis Selection">
+      <h2>Synthesis & Integration</h2>
+      <div id="synthesis-container">
+        <!-- Dynamic Synthesis Detail -->
+      </div>
+    </section>
+
+    <!-- View 6: Acceptance Gates -->
+    <section id="view-gates" class="view-panel" aria-label="Acceptance Gates">
+      <h2>Quality Gates & Evidence Audit</h2>
+      <div id="gates-container">
+        <!-- Dynamic Gates Detail -->
+      </div>
+    </section>
+
+    <!-- View 7: Terminal Handoff -->
+    <section id="view-handoff" class="view-panel" aria-label="Terminal Handoff">
+      <h2>Handoff & Operator Continuity</h2>
+      <div id="handoff-container">
+        <!-- Dynamic Handoff Actions -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Planning Assistant Modal -->
+  <div id="assistance-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: var(--bg-card); width: 600px; max-width: 90%; border-radius: 12px; padding: 20px; border: 1px solid var(--border-subtle); display: flex; flex-direction: column; max-height: 80vh;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0;">Autonomous Planning Assistant</h3>
+        <button id="btn-close-assist" style="background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer;">✕</button>
+      </div>
+      <div id="assistance-messages" style="flex: 1; overflow-y: auto; background: var(--bg-input); padding: 12px; border-radius: 6px; min-height: 250px; font-size: 13px;">
+        <!-- Chat history -->
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 12px;">
+        <input type="text" id="assistance-input" class="form-input" placeholder="Ask planning questions or describe ideas...">
+        <button id="btn-assistance-send" class="btn-primary" style="min-height: 44px;">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="guided-flow.js"></script>
+</body>
+</html>

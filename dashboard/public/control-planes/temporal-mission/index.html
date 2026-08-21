@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard D: 3D Temporal Mission Environment - Hermes Swarm Builder</title>
+  <link rel="stylesheet" href="temporal-mission.css">
+</head>
+<body>
+  <!-- Top HUD -->
+  <header class="temporal-hud-top" role="banner">
+    <div class="hud-title">
+      <span>HERMES 3D TEMPORAL MISSION</span>
+      <span id="hud-status" class="time-badge">ACTIVE CORRIDOR</span>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
+      <span id="hud-gen" class="time-badge">Gen: 1/10</span>
+    </div>
+  </header>
+
+  <main role="main" aria-label="3D Temporal Mission Workspace">
+    <!-- 3D Longitudinal Corridor Canvas -->
+    <canvas id="temporal-canvas" aria-hidden="true"></canvas>
+
+    <!-- Left Chronological Waterfall Table Overlay (WCAG 2.2 AA) -->
+    <aside class="waterfall-sidebar" aria-label="Longitudinal Mission Stages">
+      <div class="waterfall-header">
+        <span>Chronological Stages</span>
+        <span style="font-size: 10px; color: var(--text-muted);">Z-Axis Order</span>
+      </div>
+      <div id="waterfall-list" class="waterfall-content" role="list">
+        <!-- Dynamic Stage Cards -->
+      </div>
+    </aside>
+
+    <!-- Right Chamber Inspector -->
+    <section class="chamber-inspector" aria-label="Stage Chamber Details">
+      <div id="inspector-content">
+        <!-- Chamber Details -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Longitudinal Timeline Scrubber -->
+  <nav class="timeline-scrubber-dock" role="navigation" aria-label="Timeline Scrubber">
+    <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft'}))" title="Previous Chamber">◀ Prev</button>
+    <input type="range" id="scrubber-slider" class="scrubber-slider" min="-300" max="250" value="0" aria-label="Timeline Z-Axis Position">
+    <span id="slider-label" style="font-family: var(--font-mono); font-size: 11px; min-width: 220px; color: var(--color-time);">3. Variant Arena (Z = 0m)</span>
+    <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}))" title="Next Chamber">Next ▶</button>
+  </nav>
+
+  <script type="module" src="temporal-mission.js"></script>
+</body>
+</html>

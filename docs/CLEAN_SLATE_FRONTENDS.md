@@ -1,6 +1,6 @@
 # Clean-Slate Frontends
 
-The twenty-three clients under `dashboard/public/next/` are independent frontend implementations. They share the server contract and `headless-dashboard-client.js`, but no renderer, stylesheet, DOM structure, or design system.
+The twenty-six clients under `dashboard/public/next/` are independent frontend implementations. They share the server contract and `headless-dashboard-client.js`, but no renderer, stylesheet, DOM structure, or design system.
 
 | Client | Primary model | Primary Framework / Renderer | Route |
 |---|---|---|---|
@@ -27,6 +27,9 @@ The twenty-three clients under `dashboard/public/next/` are independent frontend
 | Swarm Nebula | Spherical run stars, agent clouds, event particles, blocker shockwaves | Three.js Instancing + Point Clouds + Ray Picking | `/next/swarm-nebula/index.html` |
 | Flowfield Command | 3D execution corridors, agent emitters, gate planes, blocker turbulence | Raw WebGL2 Transform Feedback + GPU Ping-Pong Buffers | `/next/flowfield-command/index.html` |
 | Voxel Foundry | Fabrication cell, voxel workpieces, toolheads, inspection gantries, sparks | Raw WebGL2 Instanced Cubes + Framebuffer Picking | `/next/voxel-foundry/index.html` |
+| Memory Palace | Cutaway archive, run folios, evidence rooms, command balcony | Raw WebGL2 Architectural Instancing + Spatial Inscriptions | `/next/memory-palace/index.html` |
+| Jacquard Swarmworks | Mechanical loom, woven runs, agent shuttles, gate combs, plan drums | Three.js Physical Loom + Ray-Picked Scene Controls | `/next/jacquard-swarmworks/index.html` |
+| Command Cavern | Procedural cave, rock-core runs, survey drones, tectonic tablet | Raw WebGL2 SDF Ray Marching + Ray-to-Tablet Picking | `/next/command-cavern/index.html` |
 
 Each directory contains `RESEARCH.md` with independently gathered interface guidance and the decisions applied to that client.
 

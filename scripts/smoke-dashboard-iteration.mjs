@@ -47,6 +47,7 @@ async function waitReady() {
 async function get(path) { const r = await fetch(base + path); if (!r.ok) throw new Error(`${path} ${r.status}: ${await r.text()}`); return r.json(); }
 async function post(type, payload) { const r = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, actor: 'smoke', payload }) }); if (!r.ok) throw new Error(`${type} ${r.status}: ${await r.text()}`); return r.json(); }
 async function reject(type, payload, status) { const r = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, actor: 'smoke', payload }) }); const body = await r.json(); if (r.status !== status || !body.error) throw new Error(`${type} expected ${status}, received ${r.status}: ${JSON.stringify(body)}`); return body; }
+async function rawCommand(type, payload) { const r = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, actor: 'smoke', payload }) }); return { status: r.status, body: await r.json() }; }
 function acceptedCommandCount() { try { return readFileSync(join(state, 'commands.jsonl'), 'utf8').trim().split(/\n/).filter(Boolean).length; } catch { return 0; } }
 function acceptedAuditCount() { try { return readFileSync(join(state, 'audit.jsonl'), 'utf8').trim().split(/\n/).filter(Boolean).length; } catch { return 0; } }
 try {
@@ -90,10 +91,22 @@ try {
   if (arrayGate.gate.requiredEvidence.join(',') !== 'artifacts/one.json,artifacts/two.json') throw new Error('add-gate corrupted array evidence');
   const stringGate = await post('add-gate', { id: 'gate-lines', description: 'line evidence', requiredEvidence: 'artifacts/one.json\nartifacts/two.json' });
   if (stringGate.gate.requiredEvidence.join(',') !== 'artifacts/one.json,artifacts/two.json') throw new Error('add-gate did not split newline evidence');
+  const duplicateResults = await Promise.all([rawCommand('add-gate', { id: 'gate-race', description: 'first atomic contender', requiredEvidence: [] }), rawCommand('add-gate', { id: 'gate-race', description: 'second atomic contender', requiredEvidence: [] })]);
+  if (duplicateResults.filter(x => x.status === 200).length !== 1 || duplicateResults.filter(x => x.status === 409).length !== 1) throw new Error(`duplicate gate IDs were not rejected atomically: ${JSON.stringify(duplicateResults)}`);
+  const persistedRaceGates = JSON.parse(readFileSync(join(state, 'gates.json'), 'utf8')).gates.filter(x => x.id === 'gate-race');
+  if (persistedRaceGates.length !== 1) throw new Error('duplicate gate ID was persisted');
   await reject('update-gate', { gateId: 'gate-lines', description: 'line evidence' }, 409);
+  await reject('update-gate', { gateId: 'gate-lines', status: 'passed' }, 400);
+  await reject('update-gate', { gateId: 'gate-lines', decisions: [], evidence: [], updatedAt: 'forged', createdAt: 'forged' }, 400);
+  const unchangedGate = JSON.parse(readFileSync(join(state, 'gates.json'), 'utf8')).gates.find(x => x.id === 'gate-lines');
+  if (unchangedGate.status !== 'pending' || unchangedGate.decisions || unchangedGate.evidence || unchangedGate.createdAt === 'forged') throw new Error('update-gate mutated authority-owned metadata');
+  await post('update-gate', { gateId: 'gate-lines', description: 'updated definition', severity: 'should' });
+  const updatedGate = JSON.parse(readFileSync(join(state, 'gates.json'), 'utf8')).gates.find(x => x.id === 'gate-lines');
+  if (updatedGate.description !== 'updated definition' || updatedGate.severity !== 'should' || updatedGate.status !== 'pending') throw new Error('update-gate did not persist only definition fields');
   const sourceLimits = { maxIterations: 1, maxVariantsPerIteration: 1, maxParallelVariants: 1, maxAcceptedFeatures: 1, maxVisualMotifChanges: 0, maxNewSections: 0, stopAfterNoImprovement: 1 };
   await reject('continue-from-iteration', { sourceRunId: 'wrong-run', sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'invalid lineage', changeText: 'Do not accept.', limits: sourceLimits }, 400);
   await reject('continue-from-iteration', { sourceRunId: runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'invalid limits', changeText: 'Do not accept.', limits: { ...sourceLimits, maxParallelVariants: 2 } }, 400);
+  await reject('continue-from-iteration', { sourceRunId: runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'forged gate lineage', changeText: 'Do not accept.', acceptanceGateIds: ['fixture-gate'], snapshottedAcceptanceGates: [{ id: 'fixture-gate', description: 'forged definition', severity: 'must', required: true, requiredEvidence: ['artifacts/variants/variant-1.json'] }], limits: sourceLimits }, 400);
   const approved = await post('approve-deblock-advice', { adviceId: 'advice-fixture' });
   if (approved.effective !== 'continuation queued') throw new Error('approved deblock advice did not queue a continuation');
   const approvedControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
@@ -108,6 +121,12 @@ try {
   const commands = readFileSync(join(state, 'commands.jsonl'), 'utf8').trim().split(/\n/).map(JSON.parse);
   const lastCommand = commands.at(-1);
   if (lastCommand.payload.repoPath !== fixtureRepoPath || lastCommand.target.runId !== runId) throw new Error('command payload/target context not preserved');
+  const acceptedBeforeArtifactRejections = acceptedCommandCount();
+  await reject('gate-decision', { gateId: 'gate-1', runId: 'missing-run', status: 'passed', evidenceArtifacts: [] }, 400);
+  await reject('gate-decision', { gateId: 'gate-1', runId, status: 'passed', evidenceArtifacts: ['artifacts/missing.json'] }, 400);
+  await reject('attach-gate-evidence', { gateId: 'gate-1', runId, artifacts: ['../run.json'] }, 400);
+  if (acceptedCommandCount() !== acceptedBeforeArtifactRejections) throw new Error('rejected run evidence commands emitted accepted command records');
+  await post('attach-gate-evidence', { gateId: 'gate-1', runId, artifacts: ['artifacts/gate-report.json'], notes: 'retained fixture evidence' });
   await post('gate-decision', { gateId: 'gate-1', runId, status: 'passed', evidenceArtifacts: ['artifacts/gate-report.json'] });
   const gateArtifact = JSON.parse(readFileSync(join(runRoot, 'artifacts', 'gate-decisions.json'), 'utf8'));
   if (!gateArtifact.find(x => x.evidenceArtifacts?.includes('artifacts/gate-report.json'))) throw new Error('run gate decision artifact not updated');

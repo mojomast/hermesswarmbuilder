@@ -30,6 +30,9 @@ const clients = [
   ['swarm-nebula', 'app.js', ['<canvas id="nebulaCanvas"', 'id="semanticView"']],
   ['flowfield-command', 'app.js', ['<canvas id="flow-canvas"', 'id="run-table"']],
   ['voxel-foundry', 'app.js', ['<canvas id="foundryCanvas"', 'id="semanticCell"']],
+  ['memory-palace', 'app.js', ['<canvas id="palace"', 'id="semanticSurface"']],
+  ['jacquard-swarmworks', 'app.js', ['<canvas id="loom"', 'id="semanticApp"']],
+  ['command-cavern', 'app.js', ['<canvas id="cavern"', 'id="semanticApp"']],
 ];
 
 const requiredMethods = [

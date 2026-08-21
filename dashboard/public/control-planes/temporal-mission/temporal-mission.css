@@ -1,0 +1,215 @@
+/**
+ * Dashboard D: 3D Temporal Mission Environment Stylesheet
+ * Spatiotemporal longitudinal timeline HUD with accessible chronological waterfall overlay,
+ * timeline scrubber dock, and WebGPU/WebGL2 viewport.
+ */
+
+:root {
+  --bg-space: #05070c;
+  --bg-hud: rgba(15, 23, 42, 0.94);
+  --border-hud: rgba(168, 85, 247, 0.3);
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --color-time: #a855f7;
+  --color-active: #38bdf8;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #f43f5e;
+  
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-space);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-time);
+  outline-offset: 2px;
+}
+
+#temporal-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Header */
+.temporal-hud-top {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  height: 48px;
+  background: var(--bg-hud);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hud);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  z-index: 10;
+}
+
+.hud-title {
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-badge {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: var(--color-time);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Left Chronological Waterfall Overlay */
+.waterfall-sidebar {
+  position: absolute;
+  top: 76px;
+  left: 16px;
+  bottom: 80px;
+  width: 360px;
+  background: var(--bg-hud);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hud);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.waterfall-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-hud);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.waterfall-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.chamber-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--color-time);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.chamber-card:hover, .chamber-card.active {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: var(--color-time);
+}
+
+/* Bottom Longitudinal Timeline Scrubber */
+.timeline-scrubber-dock {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  height: 52px;
+  background: var(--bg-hud);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hud);
+  border-radius: 26px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  z-index: 10;
+}
+
+.scrubber-slider {
+  flex: 1;
+  accent-color: var(--color-time);
+  cursor: pointer;
+}
+
+.btn-time {
+  background: transparent;
+  border: 1px solid var(--border-hud);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-time:hover {
+  background: rgba(168, 85, 247, 0.2);
+}
+
+/* Right Chamber Inspector */
+.chamber-inspector {
+  position: absolute;
+  top: 76px;
+  right: 16px;
+  width: 320px;
+  background: var(--bg-hud);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-hud);
+  border-radius: 8px;
+  padding: 16px;
+  z-index: 10;
+}
+
+@media (max-width: 768px) {
+  .waterfall-sidebar {
+    width: calc(100% - 32px);
+    height: 40vh;
+    top: auto;
+    bottom: 80px;
+  }
+  .chamber-inspector {
+    display: none;
+  }
+}

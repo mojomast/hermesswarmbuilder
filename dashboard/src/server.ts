@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, writeFileSync } from "fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync } from "fs";
 import { createHash } from "crypto";
 import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
@@ -346,6 +346,7 @@ function iterationRequestErrors(req: any) {
   const lineageRequest = ["continue", "fork", "use-as-next-direction"].includes(req.type);
   if (lineageRequest) {
     if (!req.sourceRunId) errors.push("sourceRunId is required for lineage requests");
+    else if (typeof req.sourceRunId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(req.sourceRunId)) errors.push("sourceRunId must be a bounded ASCII identifier");
     if (!req.sourceIterationId) errors.push("sourceIterationId is required for lineage requests");
     const source = req.sourceIterationId ? listIterations().find((item: any) => item.id === req.sourceIterationId) : null;
     if (req.sourceIterationId && !source) errors.push("sourceIterationId does not identify a retained iteration");
@@ -358,14 +359,53 @@ function iterationRequestErrors(req: any) {
     if (Number.isInteger(req.limits.maxParallelVariants) && Number.isInteger(req.limits.maxVariantsPerIteration) && req.limits.maxParallelVariants > req.limits.maxVariantsPerIteration) errors.push("maxParallelVariants cannot exceed maxVariantsPerIteration");
   }
   if (!Array.isArray(req.acceptanceGateIds) || req.acceptanceGateIds.some((id: any) => typeof id !== "string" || !id.trim())) errors.push("acceptanceGateIds must be an array of non-empty strings");
-  if (lineageRequest && req.acceptanceGateIds?.length) {
-    if (!Array.isArray(req.snapshottedAcceptanceGates)) errors.push("snapshottedAcceptanceGates are required for lineage gate IDs");
+  else if (new Set(req.acceptanceGateIds).size !== req.acceptanceGateIds.length) errors.push("acceptanceGateIds must be unique");
+  if (lineageRequest && (req.acceptanceGateIds?.length || req.snapshottedAcceptanceGates?.length)) {
+    if (req.acceptanceGateIds?.length && !Array.isArray(req.snapshottedAcceptanceGates)) errors.push("snapshottedAcceptanceGates are required for lineage gate IDs");
     else {
-      const snapshottedIds = new Set(req.snapshottedAcceptanceGates.map((gate: any) => gate?.id));
+      const snapshots = req.snapshottedAcceptanceGates || [];
+      const snapshottedIds = new Set(snapshots.map((gate: any) => gate?.id));
+      if (snapshottedIds.size !== snapshots.length) errors.push("snapshottedAcceptanceGates must have unique IDs");
       for (const id of req.acceptanceGateIds) if (!snapshottedIds.has(id)) errors.push(`acceptance gate ${id} is missing its source snapshot`);
+      const sourceRunRoot = typeof req.sourceRunId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(req.sourceRunId) ? safeJoin(STATE_ROOT, "runs", req.sourceRunId) : null;
+      const sources = sourceRunRoot ? [
+        safeReadJson(join(sourceRunRoot, "iteration-state.json"), null),
+        safeReadJson(join(sourceRunRoot, "lifecycle-contract.json"), null),
+        safeReadJson(join(sourceRunRoot, "artifacts", "lifecycle-contract.json"), null),
+        safeReadJson(join(sourceRunRoot, "artifacts", "iterations", "iteration.json"), null)
+      ] : [];
+      const authoritative = sources.find((source: any) => Array.isArray(source?.acceptanceGates))?.acceptanceGates;
+      if (authoritative) {
+        const definition = (gate: any) => ({ id: gate?.id, description: gate?.description, severity: gate?.severity, required: gate?.required, requiredEvidence: gate?.requiredEvidence });
+        const authoritativeById = new Map(authoritative.map((gate: any) => [gate?.id, gate]));
+        for (const snapshot of snapshots) {
+          const sourceGate = authoritativeById.get(snapshot?.id);
+          if (!sourceGate) errors.push(`acceptance gate ${snapshot?.id || "<missing-id>"} is not defined by the source iteration`);
+          else if (JSON.stringify(definition(snapshot)) !== JSON.stringify(definition(sourceGate))) errors.push(`acceptance gate ${snapshot.id} does not match the source iteration definition`);
+        }
+      }
     }
   }
   return errors;
+}
+function runArtifactError(runId: any, artifacts: any) {
+  if (typeof runId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) return "runId must be a bounded ASCII identifier";
+  if (!Array.isArray(artifacts)) return "artifact paths must be an array";
+  const runRoot = safeJoin(STATE_ROOT, "runs", runId);
+  if (!existsSync(runRoot) || !statSync(runRoot).isDirectory()) return `run ${runId} is not retained`;
+  const artifactsRoot = join(runRoot, "artifacts");
+  if (!existsSync(artifactsRoot) || !statSync(artifactsRoot).isDirectory()) return `run ${runId} has no retained artifact root`;
+  const realArtifactsRoot = realpathSync(artifactsRoot);
+  for (const value of artifacts) {
+    if (typeof value !== "string" || !value.trim()) return "artifact paths must be non-empty strings";
+    const path = value.startsWith("artifacts/") ? value.slice("artifacts/".length) : value;
+    if (path.includes("\0") || path.includes("\\") || isAbsolute(path) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path) || path.split("/").some((part) => !part || part === "." || part === "..")) return `artifact path ${value} is not a safe relative path`;
+    const target = safeJoin(artifactsRoot, ...path.split("/"));
+    if (!existsSync(target) || !statSync(target).isFile()) return `artifact ${value} does not exist for run ${runId}`;
+    const realTarget = realpathSync(target);
+    if (realTarget !== realArtifactsRoot && !realTarget.startsWith(realArtifactsRoot + sep)) return `artifact path ${value} escapes the run artifact root`;
+  }
+  return null;
 }
 function appendRunGateDecision(runId: string, decision: any) {
   const path = safeJoin(STATE_ROOT, "runs", runId, "artifacts", "gate-decisions.json");
@@ -604,11 +644,12 @@ async function handleCommand(req: Request) {
     const id = payload.id || payload.gateId;
     if (!id) return json({ error: "gate id is required" }, 400);
     if (!gates.gates.some((gate: any) => gate.id === id)) return json({ error: `gate ${id} not found` }, 404);
+    if (payload.runId) { const error = runArtifactError(payload.runId, payload.evidenceArtifacts || []); if (error) return json({ error }, 400); }
     const decision = { schemaVersion: "apb.gate-decision.v1", id: uid("decision"), gateId: id, runId: payload.runId || null, status: payload.status || "needs-evidence", decision: payload.decision || payload.status || "noted", evidenceArtifacts: payload.evidenceArtifacts || [], notes: payload.notes || "", decidedAt: now(), decidedBy: actor };
     for (const gate of gates.gates) if (gate.id === id) { gate.decisions = [decision, ...(gate.decisions || [])].slice(0, 20); gate.status = decision.status; gate.updatedAt = now(); gate.updatedBy = actor; }
     writeGates(gates); if (decision.runId) appendRunGateDecision(decision.runId, decision); return json(commandAck(command, { gateId: id, decision }));
   }
-  if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); if (!gates.gates.some((gate: any) => gate.id === id)) return json({ error: `gate ${id} not found` }, 404); for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); if (!gates.gates.some((gate: any) => gate.id === id)) return json({ error: `gate ${id} not found` }, 404); const artifacts = payload.artifacts || payload.evidenceArtifacts || []; if (payload.runId) { const error = runArtifactError(payload.runId, artifacts); if (error) return json({ error }, 400); } for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts, notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
   if (type === "run-now") { control.requestedRunNow = true; writeControl(control); return json(commandAck(command, { effective: "next_runner_tick" })); }
   if (type === "add-queue-item") { const objective = String(payload.objective || "").trim(); if (!objective) return json({ error: "queue item objective is required" }, 400); const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective, context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }
   if (type === "clear-queue") {
@@ -625,8 +666,8 @@ async function handleCommand(req: Request) {
   }
   if (type === "pin-queue-item") { const id = payload.id || payload.itemId; if (!id) return json({ error: "queue item id is required" }, 400); const item = queue.items.find((x: any) => x.id === id); if (!item) return json({ error: `queue item ${id} not found` }, 404); if (item.status === "archived") return json({ error: `queue item ${id} is archived` }, 409); if (control.pinnedQueueItemId === id && item.status === "pinned") return json({ error: `queue item ${id} is already pinned` }, 409); for (const row of queue.items) row.status = row.id === id ? "pinned" : (row.status === "pinned" ? "queued" : row.status); control.pinnedQueueItemId = id; writeQueue(queue); writeControl(control); writeFileSync(paths.idea, queueItemText(item)); return json(commandAck(command, { pinnedQueueItemId: id, exportedIdeaTxt: true })); }
   if (type === "archive-queue-item") { const id = payload.id || payload.itemId; if (!id) return json({ error: "queue item id is required" }, 400); const item = queue.items.find((x: any) => x.id === id); if (!item) return json({ error: `queue item ${id} not found` }, 404); if (item.status === "archived") return json({ error: `queue item ${id} is already archived` }, 409); item.status = "archived"; if (control.pinnedQueueItemId === id) control.pinnedQueueItemId = null; writeQueue(queue); writeControl(control); return json(commandAck(command, { archived: id })); }
-  if (type === "add-gate") { const evidence = requiredEvidence(payload.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); const gate = { id: payload.id || uid("gate"), phase: payload.phase || "final-audit", severity: payload.severity || "must", description: payload.description || payload.title || "Acceptance gate", requiredEvidence: evidence, status: "pending", createdAt: now(), createdBy: actor }; gates.gates.push(gate); writeGates(gates); return json(commandAck(command, { gate })); }
-  if (type === "update-gate") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); const gate = gates.gates.find((row: any) => row.id === id); if (!gate) return json({ error: `gate ${id} not found` }, 404); const updates = Object.fromEntries(Object.entries(payload).filter(([key]) => !["id", "gateId"].includes(key))); if ("requiredEvidence" in updates) { const evidence = requiredEvidence(updates.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); updates.requiredEvidence = evidence; } const changed = Object.entries(updates).some(([key, value]) => JSON.stringify(gate[key]) !== JSON.stringify(value)); if (!changed) return json({ error: `gate ${id} update has no changes` }, 409); Object.assign(gate, updates, { updatedAt: now(), updatedBy: actor }); writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "add-gate") { const evidence = requiredEvidence(payload.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); const gate = { id: payload.id || uid("gate"), phase: payload.phase || "final-audit", severity: payload.severity || "must", description: payload.description || payload.title || "Acceptance gate", requiredEvidence: evidence, status: "pending", createdAt: now(), createdBy: actor }; const added = withProjectionLock(STATE_ROOT, () => { const current = readGates(); if (current.gates.some((row: any) => row.id === gate.id)) return false; current.gates.push(gate); writeGates(current); return true; }); if (!added) return json({ error: `gate ${gate.id} already exists` }, 409); return json(commandAck(command, { gate })); }
+  if (type === "update-gate") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); const gate = gates.gates.find((row: any) => row.id === id); if (!gate) return json({ error: `gate ${id} not found` }, 404); const allowed = new Set(["phase", "severity", "description", "requiredEvidence"]); const prohibited = Object.keys(payload).filter((key) => !["id", "gateId"].includes(key) && !allowed.has(key)); if (prohibited.length) return json({ error: `update-gate cannot mutate fields: ${prohibited.join(", ")}` }, 400); const updates = Object.fromEntries(Object.entries(payload).filter(([key]) => allowed.has(key))); if (!Object.keys(updates).length) return json({ error: `gate ${id} update has no definition fields` }, 400); if ("requiredEvidence" in updates) { const evidence = requiredEvidence(updates.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); updates.requiredEvidence = evidence; } const changed = Object.entries(updates).some(([key, value]) => JSON.stringify(gate[key]) !== JSON.stringify(value)); if (!changed) return json({ error: `gate ${id} update has no changes` }, 409); Object.assign(gate, updates, { updatedAt: now(), updatedBy: actor }); writeGates(gates); return json(commandAck(command, { gateId: id })); }
   return json({ error: `unknown command type ${type}` }, 400);
 }
 

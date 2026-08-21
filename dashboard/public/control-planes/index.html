@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hermes Swarm Builder - Clean-Slate Control Planes (August 2026)</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #131b2e;
+      --card-hover: #1c2742;
+      --border: #22304e;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --purple: #a855f7;
+      --green: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 40px 20px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; color: #fff; }
+    .subtitle { color: var(--muted); font-size: 16px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      color: inherit;
+    }
+    .card:hover {
+      background: var(--card-hover);
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: monospace;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .badge-2d { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
+    .badge-3d { background: rgba(168, 85, 247, 0.15); color: var(--purple); }
+    h2 { font-size: 20px; margin-bottom: 8px; color: #fff; }
+    p { color: var(--muted); font-size: 14px; margin-bottom: 16px; flex: 1; }
+    .meta {
+      font-family: monospace;
+      font-size: 12px;
+      color: #64748b;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Hermes Swarm Builder Control Planes</h1>
+      <p class="subtitle">Four clean-slate, high-assurance frontends grounded in docs/CONTROL_PLANE_DASHBOARD_SPEC.md (August 2026)</p>
+    </header>
+
+    <div class="grid">
+      <!-- Dashboard A -->
+      <a href="ops-console/" class="card">
+        <div>
+          <span class="badge badge-2d">2D Operations Console</span>
+          <h2>Dashboard A: Operations Console</h2>
+          <p>High-density, keyboard-efficient operations console optimized for expert SREs and flight controllers. Split-pane layout, correlated tool-call lifecycles, streaming ANSI terminal, attention queue, and instant typed checkpoint controls.</p>
+        </div>
+        <div class="meta">Route: /control-planes/ops-console/ • Hotkeys: Ctrl+K / :</div>
+      </a>
+
+      <!-- Dashboard B -->
+      <a href="guided-flow/" class="card">
+        <div>
+          <span class="badge badge-2d">2D Guided Control Plane</span>
+          <h2>Dashboard B: Guided Control Plane</h2>
+          <p>Approachable, workflow-oriented governance console for plan authors, reviewers, and occasional operators. Progressive disclosure steppers, immutable revision validation, side-by-side variant scorecards, and touch-optimized action decks.</p>
+        </div>
+        <div class="meta">Route: /control-planes/guided-flow/ • Touch-first: 48px targets</div>
+      </a>
+
+      <!-- Dashboard C -->
+      <a href="spatial-topology/" class="card">
+        <div>
+          <span class="badge badge-3d">3D Spatial Topology</span>
+          <h2>Dashboard C: Spatial Operations Topology</h2>
+          <p>Fully 3D WebGPU control plane mapping live swarm topology into functional operational zones (XZ plane) and vertical authority layers (Y axis). Instanced polyhedra, flow conduits, volumetric blockers, on-demand rendering, and accessible treegrid sync.</p>
+        </div>
+        <div class="meta">Route: /control-planes/spatial-topology/ • WebGPU/WebGL2 • Three.js</div>
+      </a>
+
+      <!-- Dashboard D -->
+      <a href="temporal-mission/" class="card">
+        <div>
+          <span class="badge badge-3d">3D Temporal Mission</span>
+          <h2>Dashboard D: Temporal Mission Environment</h2>
+          <p>Spatiotemporal 3D environment mapping time along a navigable longitudinal Z-axis. Sequential architectural portals, radially diverging variant splines, 3D evaluation radar prisms, synthesis convergence funnels, and longitudinal timeline scrubbing.</p>
+        </div>
+        <div class="meta">Route: /control-planes/temporal-mission/ • Z-Axis Corridor • Three.js</div>
+      </a>
+    </div>
+  </div>
+</body>
+</html>

@@ -231,6 +231,27 @@ export class ProjectPlanStore {
   private exactSubject(payload: any, ledger: any) {
     if (payload.revision !== ledger.currentRevision || payload.planDigest !== ledger.currentDigest) throw new ProjectPlanError("revision or digest does not match the current plan", 409);
   }
+  private validateLineageSource(sourcePlanId: string, sourceRunId: string | null, sourceIterationId: string | null) {
+    let run: any = null;
+    if (sourceRunId) {
+      const runPath = join(this.stateRoot, "runs", sourceRunId, "run.json");
+      if (!existsSync(runPath)) throw new ProjectPlanError("sourceRunId does not identify a retained run", 404);
+      run = readJson(runPath);
+      if (run.planId !== sourcePlanId) throw new ProjectPlanError("sourceRunId is not owned by the source plan", 409);
+    }
+    if (!sourceIterationId) return;
+    const iterations = readJson(join(this.stateRoot, "iterations.json"), { items: [] });
+    let iteration = (Array.isArray(iterations.items) ? iterations.items : []).find((item: any) => item?.id === sourceIterationId || item?.iterationId === sourceIterationId);
+    if (!iteration && sourceRunId) {
+      const candidate = readJson(join(this.stateRoot, "runs", sourceRunId, "iteration-state.json"), null);
+      if (candidate?.id === sourceIterationId || candidate?.iterationId === sourceIterationId) iteration = candidate;
+    }
+    if (!iteration) throw new ProjectPlanError("sourceIterationId does not identify a retained iteration", 404);
+    if (sourceRunId && iteration.runId !== sourceRunId) throw new ProjectPlanError("sourceIterationId is not owned by sourceRunId", 409);
+    const iterationRun = run || (iteration.runId ? readJson(join(this.stateRoot, "runs", iteration.runId, "run.json"), null) : null);
+    const ownerPlanId = iteration.planId || iteration.projectLaunch?.planId || iterationRun?.planId;
+    if (ownerPlanId !== sourcePlanId) throw new ProjectPlanError("sourceIterationId is not owned by the source plan", 409);
+  }
   private audit(type: string, result: any) {
     appendFileSync(join(this.stateRoot, "audit.jsonl"), `${JSON.stringify({ schemaVersion: "apb.audit.v1", id: newId("audit"), ts: now(), actor: ACTOR, action: type, target: { kind: "project-plan", id: result.planId || null }, summary: { planId: result.planId || null, revision: result.revision || result.currentRevision || null, state: result.state || null, decisionId: result.decisionId || null, launchId: result.launchId || null } })}\n`);
   }
@@ -287,6 +308,7 @@ export class ProjectPlanStore {
       const source = this.revision(sourceId, payload.revision); const mode = type.endsWith("fork") ? "fork" : "clone";
       const sourceRunId = payload.sourceRunId == null ? null : assertId(payload.sourceRunId, "payload.sourceRunId");
       const sourceIterationId = payload.sourceIterationId == null ? null : assertId(payload.sourceIterationId, "payload.sourceIterationId");
+      this.validateLineageSource(sourceId, sourceRunId, sourceIterationId);
       const baseRef = payload.baseRef == null ? source.content.repository.baseRef : boundedString(payload.baseRef, "payload.baseRef", 512, true);
       const content = normalizeProjectPlanContent({ ...source.content, repository: { ...source.content.repository, baseRef, baseCommit: null }, lineage: { mode, sourcePlanId: sourceId, sourceRevision: source.revision, sourceRunId, sourceIterationId } });
       const planId = newId("plan"); const revision = this.writeRevision(planId, 1, null, content); const ts = now(); const ledger = { schemaVersion: "apb.project-plan-ledger.v1", planId, version: 1, currentRevision: 1, currentDigest: revision.contentDigest, state: "draft", validation: { revision: 1, digest: revision.contentDigest, valid: false, errors: ["not submitted for review"] }, effectiveApprovalId: null, activeLaunchId: null, createdAt: ts, updatedAt: ts };

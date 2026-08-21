@@ -13,7 +13,7 @@ Live steering and observability system for Hermes autonomous project builder run
 
 ## Dynamic dashboard views
 
-The dashboard provides twenty-three clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
+The dashboard provides twenty-six clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
 
 ### Clean-slate clients
 
@@ -42,6 +42,9 @@ These clients share only the DOM-free `headless-dashboard-client.js` API/SSE lay
 21. **Swarm Nebula (`/next/swarm-nebula/index.html`)**: Three.js instanced 3D command sphere with agent particles, run stars, blocker shockwaves, and ray picking.
 22. **Flowfield Command (`/next/flowfield-command/index.html`)**: raw WebGL2 transform-feedback execution corridors, gate planes, emitters, and turbulence regions.
 23. **Voxel Foundry (`/next/voxel-foundry/index.html`)**: raw WebGL2 instanced fabrication cell with voxel workpieces, robotic toolheads, spark particles, and GPU picking.
+24. **Memory Palace (`/next/memory-palace/index.html`)**: raw WebGL2 cutaway archive with spatial workstations, architectural evidence rooms, and scene-native command review.
+25. **Jacquard Swarmworks (`/next/jacquard-swarmworks/index.html`)**: Three.js mechanical control loom where runs become cloth, agents become shuttles, gates become combs, and commands become punched cards.
+26. **Command Cavern (`/next/command-cavern/index.html`)**: raw WebGL2 signed-distance-field cavern with a perspective-mapped tectonic command tablet and ray-to-surface picking.
 
 Research sources and applied design decisions are stored in each client directory. See [`docs/CLEAN_SLATE_FRONTENDS.md`](../docs/CLEAN_SLATE_FRONTENDS.md) for architecture and parity details.
 

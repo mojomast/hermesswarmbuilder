@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Jacquard Swarmworks | Hermes Control Loom</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="loom" tabindex="0" aria-label="Jacquard Swarmworks three dimensional control loom. Press question mark for help or A for the accessible application."></canvas>
+    <textarea id="canvasEditor" aria-label="Canvas control card editor" spellcheck="false"></textarea>
+    <p id="canvasStatus" class="sr-only" role="status" aria-live="polite"></p>
+    <div id="graphicsFailure" hidden>
+      <h1>Jacquard Swarmworks graphics unavailable</h1>
+      <p>The synchronized semantic application has been opened.</p>
+    </div>
+  </main>
+
+  <section id="semanticApp" class="semantic-app" aria-labelledby="semanticTitle" aria-hidden="true" inert>
+    <header>
+      <div><p class="kicker">HERMES CONTROL LOOM / NON-VISUAL EQUIVALENT</p><h1 id="semanticTitle" tabindex="-1">Jacquard Swarmworks</h1></div>
+      <button id="closeSemantic" type="button">Return to 3D loom (A)</button>
+    </header>
+    <nav aria-label="Semantic workspaces" id="semanticTabs"></nav>
+    <div class="semantic-status" id="semanticStatus"></div>
+    <section id="semanticContent" aria-live="polite"></section>
+  </section>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

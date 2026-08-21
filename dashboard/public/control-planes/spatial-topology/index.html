@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard C: 3D Spatial Operations Topology - Hermes Swarm Builder</title>
+  <link rel="stylesheet" href="spatial-topology.css">
+</head>
+<body>
+  <!-- Top Spatial HUD -->
+  <header class="spatial-hud-top" role="banner">
+    <div class="hud-title">
+      <span>HERMES 3D SPATIAL TOPOLOGY</span>
+      <span id="hud-status" class="hud-pill active">INITIALIZING</span>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
+      <span id="hud-freshness" style="color: var(--text-muted);">Updated: --</span>
+    </div>
+  </header>
+
+  <main role="main" aria-label="3D Spatial Operations Workspace">
+    <!-- 3D WebGPU / WebGL2 Canvas -->
+    <canvas id="spatial-canvas" aria-hidden="true"></canvas>
+
+    <!-- Left Accessible Semantic Treegrid Overlay (WCAG 2.2 AA) -->
+    <aside class="semantic-sidebar" aria-label="3D Swarm Topology Navigation">
+      <div class="sidebar-header">
+        <span>Swarm Topology Hierarchy</span>
+        <span style="font-size: 10px; color: var(--text-muted);">Tab/Arrow Keys</span>
+      </div>
+      <div class="treegrid-container">
+        <table class="tree-table" role="treegrid" aria-label="Agent Nodes and Zones">
+          <thead>
+            <tr>
+              <th scope="col">Entity</th>
+              <th scope="col">Zone</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tree-table-body">
+            <!-- Dynamic Semantic Tree Rows -->
+          </tbody>
+        </table>
+      </div>
+    </aside>
+
+    <!-- Right Node Inspector -->
+    <section class="node-inspector" aria-label="Selected Node Detail">
+      <div id="inspector-content">
+        <div style="color: var(--text-muted); font-size: 12px;">Click a 3D agent polyhedra or select a row in the treegrid to inspect telemetry.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Camera Dock -->
+  <nav class="camera-dock" role="navigation" aria-label="Camera Bookmarks">
+    <button id="btn-reset-cam" class="btn-cam" aria-keyshortcuts="Home R">Reset View (R)</button>
+    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '1'}))" title="Zone 1: Ingestion">1: Admission</button>
+    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '2'}))" title="Zone 2: Planning">2: Reasoning</button>
+    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '3'}))" title="Zone 3: Worktrees">3: CodeGen</button>
+    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '4'}))" title="Zone 4: Validation">4: Testing</button>
+    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '5'}))" title="Zone 5: Release">5: Release</button>
+  </nav>
+
+  <script type="module" src="spatial-topology.js"></script>
+</body>
+</html>

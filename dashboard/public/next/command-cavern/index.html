@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Command Cavern | Hermes SwarmBuilder</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main id="cavernMode">
+    <canvas id="cavern" tabindex="0" aria-label="Command Cavern three-dimensional control plane. Press A for the complete semantic application, question mark for help, or use arrow keys and Enter to operate the engraved scene."></canvas>
+    <textarea id="canvasKeyboard" aria-label="Three-dimensional scene text editor input" tabindex="-1"></textarea>
+  </main>
+
+  <main id="semanticApp" hidden aria-labelledby="semanticTitle">
+    <header class="semantic-head">
+      <div><p class="kicker">Graphics-independent control plane</p><h1 id="semanticTitle">Command Cavern: semantic application</h1></div>
+      <button id="returnToCavern" type="button">Return to 3D cavern</button>
+    </header>
+    <p class="safety">Accepted command receipts record requested intent, not observed completion. Verify state, events, audit, and run evidence.</p>
+    <nav class="semantic-nav" aria-label="Application sections">
+      <button data-semantic-page="overview">Overview</button><button data-semantic-page="operations">All operations</button><button data-semantic-page="plans">Project plans</button><button data-semantic-page="evidence">Evidence and resources</button><button data-semantic-page="help">Help</button>
+      <a href="/">Dashboard directory</a>
+    </nav>
+    <div id="semanticStatus" role="status" aria-live="polite"></div>
+    <section id="semanticContent" tabindex="-1"></section>
+  </main>
+
+  <div id="liveRegion" class="sr-only" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Memory Palace | Hermes Swarm Archive</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <canvas id="palace" tabindex="0" aria-describedby="canvasHelp live" aria-label="Interactive three dimensional cutaway swarm archive with a physical control folio. Drag to orbit, wheel to zoom, click the folio, or press M for semantic controls."></canvas>
+  <p id="canvasHelp" class="sr-only">Arrow keys move between scene controls. Enter activates one. W, A, S, and D orbit. Plus and minus zoom. Tab leaves the canvas. Question mark opens scene help. M switches to semantic mode.</p>
+  <label id="sceneTextBridgeLabel" class="sr-only" for="sceneTextBridge">Scene workstation text editor. Press Control Enter to save or Escape to cancel.</label>
+  <textarea id="sceneTextBridge" class="scene-text-bridge" tabindex="-1" aria-labelledby="sceneTextBridgeLabel" spellcheck="false"></textarea>
+
+  <main id="semanticSurface" class="semantic-surface" aria-labelledby="semanticTitle" aria-hidden="true" inert>
+    <header>
+      <div><p class="kicker">HERMES CONTROL PLANE / NON-VISUAL EQUIVALENT</p><h1 id="semanticTitle">Memory Palace semantic archive</h1></div>
+      <button id="return3d" type="button">Return to 3D mode (M)</button>
+    </header>
+    <p class="safety">Server values are observed evidence. Commands below express requested intent only. An accepted receipt is not proof of execution or completion.</p>
+    <nav aria-label="Semantic workstations">
+      <a href="#status">Status</a><a href="#operations">Operations</a><a href="#plans">Plans</a><a href="#assistance">Assistance</a><a href="#evidence">Evidence</a><a href="#help">Help</a>
+    </nav>
+
+    <section id="status" tabindex="-1"><h2>Observed archive status</h2><div id="semanticStatus"></div></section>
+    <section id="operations" tabindex="-1">
+      <h2>All operation commands</h2>
+      <p>Choose any exported command. Tailored builders add current context, immutable gate snapshots, bounded limits, and explicit run ownership where required.</p>
+      <form id="operationForm">
+        <div class="form-grid">
+          <label>Command<select id="operationType" name="type"></select></label>
+          <label>Explicit run ID<input name="runId" autocomplete="off"></label>
+          <label>Record ID (gate, queue, advice, steering)<input name="recordId" autocomplete="off"></label>
+          <label>Text, prompt, title, or notes<textarea name="text"></textarea></label>
+          <label>Objective<textarea name="objective"></textarea></label>
+          <label>Absolute repository path<input name="repoPath" autocomplete="off"></label>
+          <label>Base ref<input name="baseRef" value="HEAD" autocomplete="off"></label>
+          <label>Source iteration ID<input name="sourceIterationId" autocomplete="off"></label>
+          <label>Source run ID<input name="sourceRunId" autocomplete="off"></label>
+          <label>Gate IDs, one per line<textarea name="gateIds"></textarea></label>
+          <label>Artifact paths, one per line<textarea name="artifacts"></textarea></label>
+          <label>Target generations (1-10)<input name="targetGenerations" type="number" min="1" max="10" value="1"></label>
+          <label>Additional supported payload JSON<textarea name="extra" spellcheck="false">{}</textarea></label>
+        </div>
+        <button type="submit" class="primary">Review operation payload</button>
+      </form>
+      <h3>Command lifecycle this session</h3><ol id="commandHistory" aria-live="polite"></ol>
+    </section>
+
+    <section id="plans" tabindex="-1">
+      <h2>Project plan ledger and all lifecycle actions</h2>
+      <div class="split"><div><h3>Plan register</h3><button id="refreshPlans" type="button">Refresh plans</button><div id="planList" class="button-list"></div></div><div><h3>Loaded exact revision</h3><pre id="planDetail">No plan selected.</pre></div></div>
+      <form id="planForm">
+        <label>Action<select id="planAction" name="action"></select></label>
+        <label>Complete plan content JSON for create/update<textarea name="content" rows="16" spellcheck="false"></textarea></label>
+        <label>Decision notes (required for rejection)<textarea name="notes"></textarea></label>
+        <button type="submit" class="primary">Review plan action</button>
+      </form>
+    </section>
+
+    <section id="assistance" tabindex="-1">
+      <h2>Planning assistance</h2><p>Messages may be sent to the configured inference provider. Suggestions are inert: they do not save, approve, launch, or execute.</p>
+      <div class="actions"><button type="button" data-new-assistance="classic">New classic</button><button type="button" data-new-assistance="managed">New managed</button><button id="refreshAssistance" type="button">Refresh list</button></div>
+      <div id="assistanceList" class="button-list"></div><div id="assistanceThread" role="log" aria-live="polite"></div>
+      <form id="assistanceForm"><label>Versioned planning message<textarea name="message" maxlength="16000" required></textarea></label><button type="submit">Send message</button></form>
+      <button id="proposalToDraft" type="button" disabled>Create editable draft from proposal</button>
+    </section>
+
+    <section id="evidence" tabindex="-1">
+      <h2>Runs, agents, events, tools, resources, documents, audit, iterations, gates, and queue</h2>
+      <label>Explicit resource run<select id="resourceRun"></select></label>
+      <div class="actions"><button type="button" data-document="spec">Load SPEC</button><button type="button" data-document="devplan">Load DEVPLAN</button></div>
+      <div class="evidence-grid"><section><h3>Runs and run resources</h3><div id="runs"></div></section><section><h3>Agents and tools</h3><div id="agents"></div><div id="tools"></div></section><section><h3>Events</h3><ol id="events"></ol></section><section><h3>Gates and queue</h3><div id="gates"></div><div id="queue"></div></section><section><h3>Iterations</h3><div id="iterations"></div></section><section><h3>Audit</h3><ol id="audit"></ol></section></div>
+      <h3 id="resourceTitle">No run-bound resource loaded</h3><pre id="resourceText"></pre>
+    </section>
+
+    <section id="help" tabindex="-1"><h2>Navigation and interpretation</h2><p>Arrow keys move among scene controls and Enter activates. W, A, S, and D orbit; wheel, pinch, plus, or minus zoom. Tab is never trapped and leaves the canvas. Press 0 to reset the camera, M to switch modes, and ? for scene help.</p><p>The circular archive is layout, not an operational measurement. Runs, agents, tools, plans, gates, queue items, iterations, events, and audit records are server evidence. Red means reported blocker or failure evidence, not a prediction.</p><p>Reduced-motion changes are applied at runtime. Rendering is invalidation-driven and sleeps while hidden. WebGL creation, shader failure, and context loss expose this semantic surface; restoration permits returning to the archive.</p></section>
+  </main>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle"><form method="dialog"><h2 id="confirmTitle">Confirm requested intent</h2><p>Verify identities and bounds. Acceptance will not be described as observed completion.</p><pre id="confirmPayload"></pre><label><input id="confirmCheck" type="checkbox"> I reviewed this exact payload and target.</label><div class="actions"><button value="cancel">Cancel</button><button id="confirmSend" value="send" class="danger">Send requested intent</button></div></form></dialog>
+  <div id="live" class="sr-only" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

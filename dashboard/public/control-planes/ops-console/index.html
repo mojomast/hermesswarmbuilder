@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard A: 2D Operations Console - Hermes Swarm Builder</title>
+  <link rel="stylesheet" href="ops-console.css">
+</head>
+<body>
+  <!-- Live Screen Reader Announcer (WCAG 2.2 AA) -->
+  <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Persistent Global Header -->
+  <header class="ops-header" role="banner">
+    <div class="header-left">
+      <span style="font-weight: 700; color: #fff; letter-spacing: 0.5px;">HERMES OPS CONSOLE</span>
+      <span id="header-status" class="system-badge badge-neutral">INITIALIZING</span>
+      <span id="header-run" style="color: var(--text-secondary);">Run: --</span>
+    </div>
+    <div class="header-center">
+      <span id="header-admission" class="system-badge badge-active">Admission: ENABLED</span>
+      <span id="header-sse" class="system-badge badge-neutral">SSE: CONNECTING</span>
+      <span id="header-attention" class="system-badge badge-warning">Attention: 0</span>
+    </div>
+    <div class="header-right">
+      <span id="header-role" class="role-badge">Role: Admin</span>
+      <button id="btn-cmd-palette" class="cmd-hint" aria-keyshortcuts="Control+K Meta+K :">Ctrl+K / : Commands</button>
+    </div>
+  </header>
+
+  <!-- Main 3-Pane Tiled Workspace -->
+  <main class="ops-workspace" role="main">
+    <!-- Left Pane: Attention Queue & Agent Manifest -->
+    <section class="pane" aria-label="Attention Queue and Agent Manifest">
+      <div class="pane-header">
+        <span>Operator Attention</span>
+        <span>Priority 0-2</span>
+      </div>
+      <div id="attention-queue" class="pane-content" style="max-height: 50%;">
+        <!-- Dynamic Attention Cards -->
+      </div>
+      <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+        <span>Agent Manifest</span>
+        <span>Active Workers</span>
+      </div>
+      <div id="agent-manifest" class="pane-content">
+        <!-- Dynamic Agent Cards -->
+      </div>
+    </section>
+
+    <!-- Center Pane: Real-time Telemetry Logs & Tool Lifecycle Correlation -->
+    <section class="pane" aria-label="Live Telemetry and Tool Execution">
+      <div class="center-split">
+        <!-- Streaming Terminal -->
+        <div style="display: flex; flex-direction: column; overflow: hidden;">
+          <div class="pane-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>Live Terminal</span>
+              <span id="log-count" style="color: var(--text-muted);">[0 / 0]</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <input type="text" id="log-search" placeholder="Filter logs..." style="background: var(--bg-primary); border: 1px solid var(--border-subtle); color: #fff; padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px;">
+              <select id="log-level" style="background: var(--bg-primary); border: 1px solid var(--border-subtle); color: #fff; padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px;">
+                <option value="all">Level: ALL</option>
+                <option value="error">Errors</option>
+                <option value="warn">Warnings</option>
+                <option value="info">Info</option>
+              </select>
+              <button id="btn-follow-logs" class="cmd-hint" style="color: var(--color-active);">Follow: ON</button>
+            </div>
+          </div>
+          <div id="log-terminal" class="log-terminal" role="log" aria-label="Real-time swarm log output"></div>
+        </div>
+
+        <!-- Tool Lifecycles -->
+        <div style="display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--border-subtle);">
+          <div class="pane-header">
+            <span>Correlated Tool Lifecycles</span>
+            <span>Last 20 Calls</span>
+          </div>
+          <div style="flex: 1; overflow-y: auto;">
+            <table class="data-table" role="grid" aria-label="Tool execution records">
+              <thead>
+                <tr>
+                  <th scope="col">Tool Call ID</th>
+                  <th scope="col">Action / Tool</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Agent</th>
+                </tr>
+              </thead>
+              <tbody id="tool-table-body">
+                <!-- Tool Call Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Pane: Evidence, Diffs & Checkpoint Commands -->
+    <section class="pane" aria-label="Evidence and Checkpoint Control Deck">
+      <div class="pane-header">
+        <span>Inspected Evidence / Input</span>
+        <span>Provenance</span>
+      </div>
+      <div id="evidence-viewer" class="pane-content" style="max-height: 40%; font-family: var(--font-mono); font-size: 11px;">
+        <div style="color: var(--text-muted);">Select a tool call or attention card to inspect raw evidence.</div>
+      </div>
+
+      <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+        <span>Worktree Diffs & Validations</span>
+        <span>Runner Checked</span>
+      </div>
+      <div class="pane-content" style="flex: 1;">
+        <div id="diff-viewer" class="diff-viewer">
+          <span class="diff-hunk">@@ -1,5 +1,12 @@ Active Branch Diff</span>
+          <span class="diff-add">+ Verified source branch integrity (HEAD unmodified)</span>
+          <span class="diff-add">+ Isolated worktrees bound to runs/artifacts</span>
+          <span style="color: #64748b;">  No pending uncommitted working tree modifications.</span>
+        </div>
+      </div>
+
+      <!-- Checkpoint Control Deck -->
+      <div class="control-deck" role="toolbar" aria-label="Checkpoint Execution Controls">
+        <button id="btn-hold" class="btn-ctrl btn-warning" title="Hold future admission and pause active managed work">
+          <span>⏸️</span> Hold & Pause
+        </button>
+        <button id="btn-pause" class="btn-ctrl btn-warning" title="Request checkpoint pause at next boundary">
+          <span>⏹️</span> Pause Checkpoint
+        </button>
+        <button id="btn-stop" class="btn-ctrl btn-danger" title="Request graceful stop preserving worktrees">
+          <span>🛑</span> Graceful Stop
+        </button>
+        <button id="btn-resume" class="btn-ctrl" title="Resume admission and clear hold/stop intents">
+          <span>▶️</span> Resume
+        </button>
+        <button id="btn-run-now" class="btn-ctrl" style="grid-column: span 2; border-color: var(--color-active); color: var(--color-active);" title="Request runner tick admission immediately">
+          <span>⚡</span> Request Run Now
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Command Palette Modal -->
+  <div id="palette-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Command Palette">
+    <div class="palette-box">
+      <input type="text" id="palette-input" class="palette-input" placeholder="Type command (:hold, :pause, :stop, :resume, :role, :clear-queue)...">
+      <div id="palette-results" class="palette-results">
+        <!-- Dynamic command search results -->
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="ops-console.js"></script>
+</body>
+</html>

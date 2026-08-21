@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#111313">
+  <title>Hermes Swarm Sequencer</title>
+  <link rel="stylesheet" href="./sequencer.css">
+</head>
+<body>
+  <a class="skip" href="#arrangement">Skip to arrangement</a>
+  <a class="skip secondary" href="#inspector">Skip to inspector</a>
+  <header class="transport" aria-label="Swarm transport">
+    <div class="brand"><strong>HERMES</strong><span>SWARM SEQUENCER / 03</span></div>
+    <div class="transport-buttons" role="group" aria-label="Live data transport">
+      <button id="goStart" title="Move playhead to first measure (Home)">|&lt;<span class="sr-only">First measure</span></button>
+      <button id="liveToggle" class="play" title="Pause or resume live updates (Space)">Pause live</button>
+      <button id="refresh" title="Refresh all data (R)">Refresh</button>
+      <button id="reconnect" title="Reconnect live transport">Reconnect</button>
+      <button id="disconnect" title="Disconnect live transport">Disconnect</button>
+    </div>
+    <div class="position" aria-live="polite"><span>MEASURE</span><output id="position">01.1</output></div>
+    <label class="run-picker"><span>Arrangement</span><select id="runSelect" aria-label="Select run arrangement"></select></label>
+    <div class="connection"><span id="connectionLamp" class="lamp" aria-hidden="true"></span><span id="connection">Disconnected</span></div>
+    <button id="openModes" class="mode-button" aria-controls="modeRail" aria-expanded="false">Modes</button>
+  </header>
+
+  <nav id="modeRail" class="mode-rail" aria-label="Sequencer modes">
+    <button data-mode="arrangement" class="active">Arrange</button>
+    <button data-mode="operations">Operations</button>
+    <button data-mode="queue">Set list</button>
+    <button data-mode="gates">Markers</button>
+    <button data-mode="resources">Resources</button>
+    <button data-mode="iterations">Iterations</button>
+    <button data-mode="plans">Project plans</button>
+    <button data-mode="assist">Plan assist</button>
+  </nav>
+
+  <main id="arrangement" class="workspace">
+    <section class="arranger" aria-labelledby="arrangementTitle">
+      <div class="arranger-tools">
+        <div><span class="eyebrow">Linear workflow</span><h1 id="arrangementTitle">Swarm arrangement</h1></div>
+        <div class="view-tools">
+          <label>Filter <input id="filter" type="search" placeholder="agents, events, tools" autocomplete="off"></label>
+          <label>Type <select id="eventType"><option value="all">All clips</option><option value="tools">Tools</option><option value="errors">Errors</option><option value="events">Events</option></select></label>
+          <label>Density <select id="density"><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option value="dense">Dense</option></select></label>
+          <label>Zoom <input id="zoom" type="range" min="42" max="180" step="6" value="84"><output id="zoomValue">84 px</output></label>
+          <button id="fit">Fit</button>
+        </div>
+      </div>
+      <div id="canvasScroller" class="canvas-scroller" tabindex="0" aria-label="Workflow timeline. Use arrow keys to move between clips, Home and End to jump, Enter to inspect, plus and minus to zoom." aria-describedby="canvasHelp">
+        <p id="canvasHelp" class="sr-only">Workflow phases are measures, agents are tracks, events and tool calls are clips, gates are markers, and steering is shown as automation. A semantic clip list follows the canvas.</p>
+        <canvas id="timeline" width="1600" height="720" aria-hidden="true"></canvas>
+      </div>
+      <div class="arrangement-status">
+        <span id="selectionStatus" role="status" aria-live="polite">No clip selected</span>
+        <span><kbd>←</kbd><kbd>→</kbd> clips <kbd>↑</kbd><kbd>↓</kbd> tracks <kbd>Enter</kbd> inspect <kbd>Space</kbd> live <kbd>+</kbd><kbd>−</kbd> zoom</span>
+      </div>
+      <details class="semantic-events">
+        <summary>Accessible event and tool list</summary>
+        <div id="semanticList" role="list" aria-label="Timeline clips"></div>
+      </details>
+    </section>
+
+    <aside id="inspector" class="inspector" aria-labelledby="inspectorTitle">
+      <header><div><span class="eyebrow">Selection / control</span><h2 id="inspectorTitle">Inspector</h2></div><button id="closeInspector" aria-label="Close inspector">Close</button></header>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+      <div id="inspectorBody" class="inspector-body"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="./sequencer.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

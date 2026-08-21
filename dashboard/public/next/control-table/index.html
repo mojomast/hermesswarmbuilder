@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#101512">
+  <title>Control Table | Hermes</title>
+  <link rel="stylesheet" href="./control-table.css">
+</head>
+<body>
+  <a class="skip-link" href="#workbook">Skip to workbook</a>
+  <header class="workbook-head">
+    <div class="brand-block">
+      <span class="app-mark" aria-hidden="true">H5</span>
+      <div><strong>CONTROL TABLE</strong><small>Hermes operations workbook</small></div>
+    </div>
+    <div class="document-title"><span id="projectName">No project</span><small id="runIdentity">No active run</small></div>
+    <div class="live-controls" aria-label="Live data controls">
+      <span id="connectionState" class="connection" role="status">Connecting</span>
+      <button id="refreshButton" type="button" title="Refresh all workbook data (Ctrl+R)">Refresh</button>
+      <button id="pauseButton" type="button" aria-pressed="false">Pause live</button>
+      <button id="reconnectButton" type="button">Reconnect</button>
+      <button id="disconnectButton" type="button">Disconnect</button>
+      <button id="commandButton" class="accent" type="button" aria-haspopup="dialog">Command</button>
+    </div>
+  </header>
+
+  <nav id="workflow" class="workflow" aria-label="Workflow phases"></nav>
+
+  <section class="formula-region" aria-label="Selected cell and record status">
+    <output id="cellName" class="name-box" aria-label="Selected cell">A1</output>
+    <span class="fx" aria-hidden="true">fx</span>
+    <output id="formulaBar" class="formula-bar" aria-live="polite">Select a record to inspect it.</output>
+    <button id="inspectButton" type="button" disabled>Inspect</button>
+  </section>
+
+  <section id="blockerRow" class="blocker-row" role="alert" hidden>
+    <b>BLOCKER</b><span id="blockerText"></span><button id="deblockButton" type="button">Open deblock editor</button>
+  </section>
+
+  <main id="workbook" class="workbook" tabindex="-1">
+    <section class="table-tools" aria-label="Sheet tools">
+      <label class="search"><span>Filter sheet</span><input id="sheetFilter" type="search" placeholder="Search cells  /" autocomplete="off"></label>
+      <div id="sheetSummary" class="sheet-summary" role="status">0 rows</div>
+      <button id="addRowButton" type="button">Add row</button>
+      <button id="sheetActionButton" type="button">Sheet actions</button>
+      <details class="keyboard-help"><summary>Keyboard</summary><p>Arrows move cells. Home/End move across a row. Ctrl+Home/End move to table corners. Page Up/Down moves ten rows. Enter inspects or activates. Shift+Space selects a row. Ctrl+Page Up/Down changes sheets. Escape closes the side sheet.</p></details>
+    </section>
+
+    <div id="gridViewport" class="grid-viewport" tabindex="-1">
+      <table id="dataGrid" role="grid" aria-label="Agents sheet" aria-rowcount="1" aria-colcount="1">
+        <caption id="gridCaption">Agents operational records</caption>
+        <thead></thead><tbody></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" hidden>No records match this sheet.</div>
+    </div>
+
+    <div class="sheet-footer">
+      <nav id="sheetTabs" class="sheet-tabs" role="tablist" aria-label="Workbook sheets"></nav>
+      <div class="status-cells"><span id="selectionStatus">READY</span><span id="rowCount">COUNT 0</span><span id="lastUpdated">NOT SYNCED</span></div>
+    </div>
+  </main>
+
+  <div id="sheetScrim" class="sheet-scrim" hidden></div>
+  <aside id="sideSheet" class="side-sheet" aria-labelledby="sideSheetTitle" aria-modal="true" role="dialog" hidden>
+    <header><div><small id="sideSheetKind">RECORD</small><h1 id="sideSheetTitle">Inspector</h1></div><button id="closeSideSheet" type="button" aria-label="Close side sheet">Close</button></header>
+    <nav id="inspectorTabs" class="inspector-tabs" role="tablist" aria-label="Inspector views"></nav>
+    <div id="sideSheetBody" class="side-sheet-body"></div>
+  </aside>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./control-table.js"></script>
+  <script src="../../dashboard-directory.js" defer></script>
+</body>
+</html>

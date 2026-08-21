@@ -13,7 +13,26 @@ Live steering and observability system for Hermes autonomous project builder run
 
 ## Dynamic dashboard views
 
-The dashboard provides six full-control interface studies plus five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
+The dashboard provides ten clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
+
+### Clean-slate clients
+
+These clients share only the DOM-free `headless-dashboard-client.js` API/SSE layer. They do not load the legacy `app.js` renderer or `styles.css`, and each implements its own information architecture and interaction model.
+
+1. **Radar (`/next/radar/index.html`)**: polar SVG operational picture.
+2. **Daily Swarm (`/next/broadsheet/index.html`)**: vertically flowing editorial broadsheet.
+3. **Swarm Sequencer (`/next/sequencer/index.html`)**: Canvas timeline with tracks, clips, markers, and transport controls.
+4. **Operator Shell (`/next/operator-shell/index.html`)**: keyboard command environment with split text buffers.
+5. **Control Table (`/next/control-table/index.html`)**: spreadsheet workbook with ARIA grid navigation.
+6. **Field Guide (`/next/field-guide/index.html`)**: mobile-first guided operations binder.
+7. **Constellation (`/next/constellation/index.html`)**: orbital SVG graph with a semantic network equivalent.
+8. **Casefiles (`/next/casefiles/index.html`)**: evidence-focused case registry and authorization bureau.
+9. **Patchbay (`/next/patchbay/index.html`)**: modular signal-routing control surface.
+10. **Swarm Gallery (`/next/gallery/index.html`)**: room-based exhibition and curator workflow.
+
+Research sources and applied design decisions are stored in each client directory. See [`docs/CLEAN_SLATE_FRONTENDS.md`](../docs/CLEAN_SLATE_FRONTENDS.md) for architecture and parity details.
+
+### Earlier interface studies
 
 1. **Command Center (`/command-center.html`)**: primary operator surface with full Studio feature parity, live priorities first, immediately reachable controls, and layouts tuned for 1080p through 4K.
 2. **Flight Deck (`/flight-deck.html`)**: aerospace mission deck with annunciators, crew roster, evidence bay, and telemetry recorder.

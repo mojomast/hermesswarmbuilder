@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071011">
+  <title>Constellation | Hermes</title>
+  <link rel="stylesheet" href="./constellation.css">
+</head>
+<body>
+  <a class="skip-link" href="#node-index">Skip to keyboard node index</a>
+  <a class="skip-link second" href="#semantic-network">Skip to semantic network</a>
+
+  <header class="mast">
+    <div class="identity">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div><p>Hermes / Spatial operations</p><h1>Constellation</h1></div>
+    </div>
+    <div class="mission-readout">
+      <span id="phase-kicker">CALIBRATING</span>
+      <strong id="objective">Locating the active objective...</strong>
+    </div>
+    <div class="stream-controls" aria-label="Stream controls">
+      <span id="connection" class="signal" role="status">OFFLINE</span>
+      <button type="button" id="refresh">Refresh</button>
+      <button type="button" id="pause-stream">Pause stream</button>
+      <button type="button" id="resume-stream">Resume</button>
+      <button type="button" id="toggle-connection">Disconnect</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="sky-panel" aria-labelledby="map-title">
+      <div class="sky-heading">
+        <div><p class="eyebrow">Live system map</p><h2 id="map-title">Operational sky</h2></div>
+        <div class="legend" aria-label="Visual legend">
+          <span><i class="legend-shape circle"></i>agent</span>
+          <span><i class="legend-shape square"></i>run</span>
+          <span><i class="legend-shape diamond"></i>gate</span>
+          <span><i class="legend-shape anomaly"></i>blocked</span>
+        </div>
+      </div>
+      <figure class="network-figure" aria-labelledby="map-title map-caption">
+        <svg id="constellation" viewBox="0 0 1200 760" role="graphics-document document" aria-labelledby="svg-title svg-desc" preserveAspectRatio="xMidYMid meet">
+          <title id="svg-title">Hermes orchestration network</title>
+          <desc id="svg-desc">A stable overview of the orchestrator, role-based agent orbits, run systems, workflow phases, and satellite clusters. Use the keyboard node index below for equivalent navigation.</desc>
+          <defs>
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#b6d8d0" stroke-opacity=".055" stroke-width="1"/></pattern>
+            <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <rect width="1200" height="760" fill="url(#grid)" role="none"></rect>
+          <g id="phase-layer" role="group" aria-label="Workflow phase ring"></g>
+          <g id="path-layer" role="group" aria-label="Event and tool relationships"></g>
+          <g id="system-layer" role="group" aria-label="Run systems"></g>
+          <g id="node-layer" role="group" aria-label="Selectable operational objects"></g>
+        </svg>
+        <figcaption id="map-caption"><strong>Overview without zoom.</strong> Objects hold stable radial zones. Select a body for detail; relationships are summarized in the equivalent tables below.</figcaption>
+      </figure>
+
+      <section class="index-strip" aria-labelledby="index-title">
+        <div><p class="eyebrow">Keyboard route</p><h2 id="index-title">Node index</h2><p>Arrow keys move, Home/End jump, Enter opens detail.</p></div>
+        <div id="node-index" class="node-index" role="grid" aria-label="Constellation node index" aria-describedby="index-title"></div>
+      </section>
+
+      <details id="semantic-network" class="semantic-network">
+        <summary>Accessible network equivalent <span id="semantic-count"></span></summary>
+        <p>The tables preserve object status and relationships without requiring interpretation of position, paths, motion, or color.</p>
+        <div class="table-wrap"><table><caption>All constellation objects</caption><thead><tr><th scope="col">Object</th><th scope="col">Type</th><th scope="col">Role / phase</th><th scope="col">Status</th><th scope="col">Relationship</th><th scope="col">Inspect</th></tr></thead><tbody id="object-table"></tbody></table></div>
+        <div class="table-wrap"><table><caption>All retained event and tool relationships</caption><thead><tr><th scope="col">Time</th><th scope="col">Source</th><th scope="col">Kind</th><th scope="col">Run</th><th scope="col">Description</th><th scope="col">Inspect</th></tr></thead><tbody id="relationship-table"></tbody></table></div>
+      </details>
+    </section>
+
+    <aside class="dock" aria-label="Object inspector and action dock">
+      <div class="dock-tabs" role="tablist" aria-label="Dock views">
+        <button type="button" role="tab" aria-selected="true" aria-controls="inspect-panel" id="inspect-tab" data-dock="inspect">Inspect</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="navigate-panel" id="navigate-tab" data-dock="navigate" tabindex="-1">Navigate</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="actions-panel" id="actions-tab" data-dock="actions" tabindex="-1">Act</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="plans-panel" id="plans-tab" data-dock="plans" tabindex="-1">Plans</button>
+      </div>
+
+      <section id="inspect-panel" class="dock-panel" role="tabpanel" aria-labelledby="inspect-tab">
+        <header class="panel-head"><div><p class="eyebrow">Selected object</p><h2 id="selection-title" tabindex="-1">Orchestrator</h2></div><span id="selection-status" class="status-token">idle</span></header>
+        <div id="object-summary" class="object-summary"></div>
+        <div id="resource-actions" class="resource-actions"></div>
+        <details class="object-raw"><summary>Structured object inspector</summary><div id="object-inspector"></div></details>
+      </section>
+
+      <section id="navigate-panel" class="dock-panel" role="tabpanel" aria-labelledby="navigate-tab" hidden>
+        <label class="search-label">Filter all objects <input id="object-filter" type="search" autocomplete="off" placeholder="agent, run, event, tool..."></label>
+        <div class="nav-groups">
+          <details open><summary>Runs <span id="run-count"></span></summary><div id="run-list" class="object-list"></div></details>
+          <details open><summary>Agents <span id="agent-count"></span></summary><div id="agent-list" class="object-list"></div></details>
+          <details><summary>Iterations <span id="iteration-count"></span></summary><div id="iteration-list" class="object-list"></div></details>
+          <details><summary>Events <span id="event-count"></span></summary><div id="event-list" class="object-list"></div></details>
+          <details><summary>Tool calls <span id="tool-count"></span></summary><div id="tool-list" class="object-list"></div></details>
+          <details><summary>Evidence and audit <span id="audit-count"></span></summary><div id="audit-list" class="object-list"></div></details>
+        </div>
+      </section>
+
+      <section id="actions-panel" class="dock-panel" role="tabpanel" aria-labelledby="actions-tab" hidden>
+        <div id="action-notice" class="notice" role="status" aria-live="polite">Actions are sent through the dashboard client.</div>
+        <details open><summary>Operational controls</summary><div class="button-grid">
+          <button data-command="run-now">Run now</button><button data-command="pause">Pause</button><button data-command="resume">Resume</button><button data-command="hold">Hold admission</button><button data-command="unhold">Unhold</button><button class="danger" data-command="stop">Graceful stop</button>
+        </div></details>
+        <details><summary>Showcase and next iteration</summary>
+          <form data-special="showcase" class="form-stack"><label>Target generations <input name="targetGenerations" type="number" min="1" max="10" value="10"></label><label>Repository <input name="repoPath" value="/home/mojo/autonomous-projects/hermes-showcase-site" required></label><label>Objective <textarea name="objective" required></textarea></label><button class="primary">Start showcase loop</button></form>
+          <div class="button-grid"><button data-command="pause-showcase-loop">Pause loop</button><button data-command="resume-showcase-loop">Resume loop</button><button data-command="stop-showcase-loop">Stop loop</button><button data-special-button="showcase-target">Set target only</button></div>
+          <form data-special="next-iteration" class="form-stack"><label>Bounded next direction <textarea name="changeText" required>Complete one bounded objective-linked generation without unrelated feature or stack churn.</textarea></label><button>Start next iteration</button></form>
+        </details>
+        <details id="deblock-section"><summary>Blocker and advice decisions <span id="blocker-indicator"></span></summary>
+          <div id="blocker-detail"></div>
+          <form data-command-form="deblock" class="form-stack"><label>Recovery prompt <textarea name="prompt" maxlength="8000" required></textarea></label><button class="primary">Queue deblock</button></form>
+          <form data-command-form="deblock-advice" class="form-stack"><label>Advice question <textarea name="prompt" maxlength="8000" placeholder="Recommend the smallest safe recovery."></textarea></label><button>Ask recovery adviser</button></form>
+          <div id="advice-list" class="action-list"></div>
+        </details>
+        <details><summary>Steering</summary>
+          <form data-command-form="set-current-objective" class="form-stack"><label>Current objective <textarea name="text" required></textarea></label><button>Set objective</button></form>
+          <form data-command-form="steer" class="form-stack"><label>Directive <textarea name="text" required></textarea></label><label>Scope <select name="scope"><option value="next_run">Next run</option><option value="current_run">Current run</option><option value="queue">Queue</option></select></label><label>Priority <select name="priority"><option>required</option><option>preferred</option></select></label><button>Apply steering</button></form>
+          <div id="steering-list" class="action-list"></div>
+        </details>
+        <details><summary>Queue</summary>
+          <form data-command-form="add-queue-item" class="form-stack"><label>Title <input name="title" required></label><label>Objective <textarea name="objective" required></textarea></label><label>Context <textarea name="context"></textarea></label><label>Constraints, one per line <textarea name="constraints"></textarea></label><label>Priority <input name="priority" type="number" value="50"></label><label class="check"><input name="pin" type="checkbox"> Pin after adding</label><button>Add queue item</button></form>
+          <div id="queue-actions" class="action-list"></div><button class="danger" data-command="clear-queue" data-confirm="Clear the queue and linked steering?">Clear queue</button>
+        </details>
+        <details><summary>Gates and decisions</summary>
+          <form data-command-form="add-gate" class="form-stack"><label>Description <input name="description" required></label><label>Phase <input name="phase" value="final-audit"></label><label>Severity <select name="severity"><option>must</option><option>should</option></select></label><label>Required evidence, one per line <textarea name="requiredEvidence"></textarea></label><button>Add gate</button></form>
+          <div id="gate-actions" class="action-list"></div>
+        </details>
+        <details><summary>Continuation and fork</summary>
+          <form data-special="lineage" class="form-stack"><label>Mode <select name="mode"><option value="continue-from-iteration">Continue</option><option value="fork-from-iteration">Fork</option><option value="use-as-next-direction">Use as next direction</option></select></label><label>Repository path <input name="repoPath" required></label><label>Base ref <input name="baseRef" value="HEAD" required></label><label>Objective <textarea name="objective" required></textarea></label><label>Bounded change <textarea name="changeText" required></textarea></label><button>Create iteration request</button></form>
+        </details>
+      </section>
+
+      <section id="plans-panel" class="dock-panel" role="tabpanel" aria-labelledby="plans-tab" hidden>
+        <div class="plan-toolbar"><button id="new-classic-plan">New classic</button><button id="new-managed-plan">New managed</button><button id="planning-assist">Planning assist</button></div>
+        <div id="plan-list" class="object-list"></div>
+        <div id="plan-workspace" class="plan-workspace"><p class="empty">Select or create a persisted plan.</p></div>
+        <details><summary>Planning assistance</summary><div id="assistance-workspace"></div></details>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast" role="alert" aria-live="assertive" hidden></div>
+  <script type="module" src="./constellation.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

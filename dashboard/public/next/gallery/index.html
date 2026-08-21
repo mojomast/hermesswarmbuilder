@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>The Swarm Gallery | Hermes</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="mobile-controls.css">
+</head>
+<body>
+  <a class="skip-link" href="#current-work">Skip to current work</a>
+  <header class="museum-header">
+    <a class="wordmark" href="#entrance" aria-label="The Swarm Gallery entrance"><span>HERMES</span><b>The Swarm Gallery</b></a>
+    <div class="visit-status" aria-live="polite"><i id="statusLight"></i><span id="connectionLabel">Preparing gallery</span></div>
+    <div class="header-actions">
+      <label class="search"><span>Search collection</span><input id="globalSearch" type="search" autocomplete="off" placeholder="Agents, tools, events…"></label>
+      <button id="pauseStream" type="button">Pause live updates</button>
+      <button id="toggleConnection" type="button">Disconnect</button>
+      <button id="refreshAll" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <nav class="wayfinding" aria-label="Gallery rooms">
+    <p><span>You are here</span><strong id="currentRoomLabel">Entrance</strong></p>
+    <ol id="roomList">
+      <li><a href="#entrance" data-room-link="entrance"><b>00</b> Entrance</a></li>
+      <li><a href="#current-work" data-room-link="current-work"><b>01</b> Current Work</a></li>
+      <li><a href="#agent-rooms" data-room-link="agent-rooms"><b>02</b> Agent Rooms</a></li>
+      <li><a href="#archive" data-room-link="archive"><b>03</b> Archive</a></li>
+      <li><a href="#media-wall" data-room-link="media-wall"><b>04</b> Media Wall</a></li>
+      <li><a href="#curator-desk" data-room-link="curator-desk"><b>05</b> Curator’s Desk</a></li>
+    </ol>
+    <p class="key-help"><kbd>Alt</kbd> + <kbd>↑</kbd>/<kbd>↓</kbd> moves rooms</p>
+  </nav>
+
+  <main id="gallery">
+    <section id="entrance" class="room entrance" tabindex="-1" aria-labelledby="entrance-title">
+      <div class="room-number">00</div>
+      <div class="entrance-copy">
+        <p class="kicker">Live exhibition / autonomous work in progress</p>
+        <h1 id="entrance-title">A swarm is not a grid.<br>It is a sequence of rooms.</h1>
+        <p class="lede">Follow the work from objective to evidence. Every agent has a place, every event has a timestamp, and every intervention remains at the curator’s desk.</p>
+        <a class="direction" href="#current-work">Begin with the current work <span aria-hidden="true">↓</span></a>
+      </div>
+      <dl id="entranceFacts" class="entrance-facts"><div><dt>Live run</dt><dd>Loading</dd></div></dl>
+    </section>
+
+    <section id="current-work" class="room current-work" tabindex="-1" aria-labelledby="work-title">
+      <header class="room-heading"><div><span>Room 01</span><p>Central exhibition hall</p></div><h2 id="work-title">Current Work</h2></header>
+      <article id="heroExhibit" class="hero-exhibit" aria-live="polite"><p class="loading">Preparing the central exhibit…</p></article>
+      <div class="route-band" aria-labelledby="route-title"><h3 id="route-title">Workflow route</h3><ol id="workflowRoute"></ol></div>
+    </section>
+
+    <section id="agent-rooms" class="room agent-wing" tabindex="-1" aria-labelledby="agents-title">
+      <header class="room-heading"><div><span>Room 02</span><p>Working studios</p></div><h2 id="agents-title">Agent Rooms</h2></header>
+      <p class="room-intro">Each studio is a distinct place, listed in route order. Open a door for tools, output, and the agent’s recent record.</p>
+      <div class="agent-filter"><button class="selected" data-agent-filter="all">All rooms</button><button data-agent-filter="active">Occupied</button><button data-agent-filter="blocked">Needs attention</button></div>
+      <ol id="agentRooms" class="agent-rooms" aria-live="polite"></ol>
+    </section>
+
+    <section id="archive" class="room archive" tabindex="-1" aria-labelledby="archive-title">
+      <header class="room-heading"><div><span>Room 03</span><p>Labels and drawers</p></div><h2 id="archive-title">Evidence Archive</h2></header>
+      <div class="archive-layout">
+        <aside aria-label="Archive index">
+          <h3>Collection index</h3>
+          <div class="archive-tabs" aria-label="Archive collections">
+            <button aria-pressed="true" data-archive-tab="runs">Runs</button>
+            <button aria-pressed="false" data-archive-tab="documents">Documents</button>
+            <button aria-pressed="false" data-archive-tab="files">Files</button>
+            <button aria-pressed="false" data-archive-tab="iterations">Iterations</button>
+            <button aria-pressed="false" data-archive-tab="audit">Audit</button>
+          </div>
+          <div id="archiveIndex" class="archive-index"></div>
+        </aside>
+        <article id="archiveDisplay" class="archive-display" tabindex="-1"><p class="empty">Choose a collection drawer to inspect its evidence and lineage.</p></article>
+      </div>
+    </section>
+
+    <section id="media-wall" class="room media-wall" tabindex="-1" aria-labelledby="wall-title">
+      <header class="room-heading"><div><span>Room 04</span><p>Chronological installation</p></div><h2 id="wall-title">Telemetry Media Wall</h2></header>
+      <div class="wall-tools">
+        <p id="wallSummary">No telemetry installed yet.</p>
+        <div><button class="selected" data-event-filter="all">All</button><button data-event-filter="tools">Tools</button><button data-event-filter="errors">Attention</button></div>
+      </div>
+      <ol id="eventWall" class="event-wall" aria-label="Chronological telemetry events"></ol>
+    </section>
+
+    <section id="curator-desk" class="room curator-room" tabindex="-1" aria-labelledby="desk-title">
+      <header class="room-heading inverted"><div><span>Room 05</span><p>Staff only / interventions</p></div><h2 id="desk-title">Curator’s Desk</h2></header>
+      <p class="curator-intro">Observation ends here. Commands are deliberately separated from the exhibition and recorded by the system.</p>
+      <div id="attentionNotice" class="attention-notice" role="status"></div>
+      <div class="desk-layout">
+        <section class="desk-section"><h3>Immediate controls</h3><div class="control-row"><button data-command="pause">Pause run</button><button data-command="hold">Hold intake</button><button data-command="resume">Resume</button><button data-command="unhold">Unhold</button><button class="danger" data-command="stop">Stop</button><button data-command="run-now">Run now</button></div></section>
+        <section class="desk-section"><h3>Objective and recovery</h3><form id="steerForm"><label>Steering direction<textarea name="text" required maxlength="8000"></textarea></label><button>Steer</button></form><form id="deblockForm"><label>Deblock prompt<textarea name="prompt" maxlength="8000"></textarea></label><button>Deblock</button><button type="button" data-advice="request">Ask advice</button></form><div id="adviceDisplay"></div></section>
+        <section class="desk-section"><h3>Showcase and iteration</h3><label>Target generations <input id="showcaseTarget" type="number" min="1" max="10" value="10"></label><div class="control-row"><button data-showcase="start">Start showcase</button><button data-command="pause-showcase-loop">Pause</button><button data-command="resume-showcase-loop">Resume</button><button data-command="stop-showcase-loop">Stop</button><button data-showcase="target">Set target</button><button data-iteration-action="start">Start next iteration</button></div></section>
+        <section class="desk-section"><h3>Queue</h3><form id="queueForm"><label>Title<input name="title" required></label><label>Objective<textarea name="objective" required></textarea></label><label>Context<textarea name="context"></textarea></label><label><input name="pin" type="checkbox"> Pin on admission</label><button>Add queue item</button></form><div id="queueDisplay"></div><button data-command="clear-queue">Clear queue</button></section>
+        <section class="desk-section"><h3>Acceptance gates</h3><form id="gateForm"><label>Gate ID<input name="id" required></label><label>Description<textarea name="description" required></textarea></label><label>Severity<select name="severity"><option>must</option><option>should</option></select></label><button>Add gate</button></form><div id="gateDisplay"></div></section>
+        <section class="desk-section full"><h3>Complete command catalogue</h3><p>All operational, showcase, iteration, deblock, steering, queue, and gate commands remain available here. Payload accepts JSON only.</p><form id="commandForm" class="command-form"><label>Action<select id="commandType" name="type"></select></label><label>Payload JSON<textarea name="payload">{}</textarea></label><button>Issue command</button></form></section>
+        <section class="desk-section planning-entry"><h3>Project planning office</h3><p>Create, revise, review, approve, launch, clone, fork, archive, and plan with the orchestrator.</p><button id="openPlanner" class="primary">Enter planning office</button></section>
+      </div>
+    </section>
+  </main>
+
+  <aside id="detailDrawer" class="detail-drawer" hidden aria-labelledby="drawerTitle"><div class="drawer-head"><h2 id="drawerTitle">Object detail</h2><button id="closeDrawer">Close</button></div><div id="drawerContent"></div></aside>
+
+  <section id="planner" class="planner" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden tabindex="-1">
+    <header><div><span>Curatorial planning office</span><h2 id="plannerTitle">Project Plan Lifecycle</h2></div><button id="closePlanner">Close office</button></header>
+    <nav aria-label="Planning sections"><button data-plan-view="plans" class="selected">Plans</button><button data-plan-view="editor">Editor</button><button data-plan-view="review">Review & launch</button><button data-plan-view="assist">Assistance</button></nav>
+    <div id="planStatus" role="status" aria-live="polite"></div>
+    <div class="planner-body"><aside id="planList"></aside><div id="planWorkspace"></div></div>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

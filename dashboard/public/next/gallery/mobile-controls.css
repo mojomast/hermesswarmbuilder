@@ -1,0 +1,26 @@
+@media (max-width: 1050px) {
+  :root { --header: 132px; }
+  .museum-header {
+    height: var(--header);
+    grid-template-columns: 1fr auto;
+    align-content: center;
+    row-gap: .45rem;
+  }
+  .header-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: .15rem;
+  }
+  .header-actions > * { flex: 0 0 auto; }
+  .header-actions .search input { width: 190px; }
+}
+
+@media (max-width: 700px) {
+  :root { --header: 132px; }
+  .museum-header { padding: .55rem .8rem; }
+  .header-actions button { min-height: 38px; }
+  .room { padding-top: 3rem; }
+  .entrance { min-height: calc(100vh - 194px); }
+}

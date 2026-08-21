@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Casefiles | Hermes Operations Registry</title>
+  <link rel="stylesheet" href="./casefiles.css">
+</head>
+<body>
+  <a class="skip" href="#caseRecord">Skip to case record</a>
+  <header class="registry-head">
+    <div class="seal" aria-hidden="true">H</div>
+    <div class="registry-title"><span>Hermes Operations Registry</span><strong>Casefiles</strong></div>
+    <label class="search"><span>Search all records <kbd>/</kbd></span><input id="search" type="search" placeholder="Case, investigator, note, tool, exhibit"></label>
+    <div class="registry-actions">
+      <span id="connection" class="connection" role="status">Connecting</span>
+      <button id="pauseStream" type="button">Pause live file</button>
+      <button id="toggleConnection" type="button">Disconnect</button>
+      <button id="refresh" type="button">Refresh</button>
+      <button id="openPlans" class="ink" type="button">Authorizations</button>
+    </div>
+  </header>
+
+  <div class="phase-ledger" aria-label="Case lifecycle"><span>Lifecycle</span><ol id="phases"></ol></div>
+
+  <main class="cabinet-layout">
+    <aside class="cabinet" aria-labelledby="cabinetTitle">
+      <div class="drawer-label"><span>Cabinet 08</span><h1 id="cabinetTitle">Active case folders</h1><small id="caseCount">0 indexed</small></div>
+      <div id="runList" class="folder-list" role="listbox" aria-label="Case folders"></div>
+    </aside>
+
+    <article id="caseRecord" class="case-record" tabindex="-1" aria-labelledby="caseTitle">
+      <header id="caseCover" class="case-cover"></header>
+      <nav id="folderTabs" class="folder-tabs" role="tablist" aria-label="Case folder sections">
+        <button role="tab" aria-controls="recordPanel" aria-selected="true" tabindex="0" data-tab="brief">Brief</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="investigators">Investigators</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="journal">Journal</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="exhibits">Exhibits</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="findings">Findings</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="iterations">Iterations</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="intake">Intake</button>
+        <button role="tab" aria-controls="recordPanel" aria-selected="false" tabindex="-1" data-tab="controls">Controls</button>
+      </nav>
+      <section id="recordPanel" class="record-panel" role="tabpanel" tabindex="0"></section>
+    </article>
+
+    <aside class="record-index" aria-labelledby="indexTitle">
+      <div class="index-heading"><span>Cross-reference</span><h2 id="indexTitle">Case index</h2></div>
+      <dl id="caseIndex"></dl>
+      <section class="legend"><h3>Evidence key</h3><p><i class="ribbon artifact"></i> Artifact exhibit</p><p><i class="ribbon log"></i> Log exhibit</p><p><i class="ribbon finding"></i> Finding or decision</p></section>
+      <section id="alerts" class="alerts" aria-live="polite"></section>
+    </aside>
+  </main>
+
+  <dialog id="recordDialog" class="record-dialog" aria-labelledby="recordDialogTitle"><header><h2 id="recordDialogTitle" tabindex="-1">Record detail</h2><button data-close-dialog="recordDialog" type="button">Close</button></header><div id="recordDialogBody" class="dialog-body"></div></dialog>
+
+  <dialog id="plansDialog" class="plans-dialog" aria-labelledby="plansTitle">
+    <header><div><span>Authorization bureau</span><h2 id="plansTitle" tabindex="-1">Warrants &amp; project authorizations</h2></div><button data-close-dialog="plansDialog" type="button">Close bureau</button></header>
+    <nav class="plan-tabs" role="tablist" aria-label="Authorization sections"><button role="tab" aria-controls="planWorkspace" tabindex="0" data-plan-tab="ledger" aria-selected="true">Ledger</button><button role="tab" aria-controls="planWorkspace" tabindex="-1" data-plan-tab="editor" aria-selected="false">Draft</button><button role="tab" aria-controls="planWorkspace" tabindex="-1" data-plan-tab="review" aria-selected="false">Review</button><button role="tab" aria-controls="planWorkspace" tabindex="-1" data-plan-tab="assist" aria-selected="false">Planning assistance</button></nav>
+    <div id="planNotice" class="plan-notice" role="alert" hidden></div>
+    <div id="planWorkspace" class="plan-workspace" role="tabpanel" tabindex="0"></div>
+  </dialog>
+
+  <template id="emptyTemplate"><div class="empty"><strong>No record entered</strong><p>This section has no filed material.</p></div></template>
+  <script type="module" src="./casefiles.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

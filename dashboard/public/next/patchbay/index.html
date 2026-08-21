@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Hermes Patchbay</title>
+  <link rel="stylesheet" href="./patchbay.css">
+</head>
+<body>
+  <a class="skip-link" href="#patchField">Skip to patch field</a>
+  <header class="masthead">
+    <div class="identity">
+      <span class="wordmark" aria-hidden="true">H//PB</span>
+      <div><h1>Patchbay</h1><p>Autonomous signal routing</p></div>
+    </div>
+    <div id="systemReadout" class="system-readout" role="status" aria-live="polite">Loading system signal...</div>
+    <div class="header-actions">
+      <button id="streamToggle" type="button">Pause stream</button>
+      <button id="connectionToggle" type="button">Disconnect</button>
+      <button id="refreshButton" type="button">Refresh signal</button>
+      <button id="linearToggle" type="button" aria-pressed="false">Linear controls</button>
+      <button id="openPlanner" class="hot" type="button">Open plan rack</button>
+    </div>
+  </header>
+
+  <nav class="signal-nav" aria-label="Patchbay domains">
+    <a href="#workflowModule">Workflow</a><a href="#agentModule">Agents</a><a href="#controlModule">Control</a>
+    <a href="#queueModule">Queue</a><a href="#gateModule">Gates</a><a href="#evidenceModule">Evidence</a>
+    <span>Press M to enter modules; arrow keys move between them</span>
+  </nav>
+
+  <main id="patchField" class="patch-field" aria-label="Operational patch field">
+    <svg id="cableLayer" class="cable-layer" aria-hidden="true"></svg>
+
+    <section id="workflowModule" class="module module-workflow" data-module tabindex="-1" aria-labelledby="workflowTitle">
+      <i class="port port-in" data-port="workflow-in" aria-hidden="true"></i>
+      <header><span class="module-code">01 / CLOCK</span><h2 id="workflowTitle">Workflow sequencer</h2><span id="workflowState" class="state-tag">idle</span></header>
+      <div id="workflowPhases" class="phase-sequence" aria-label="Workflow phases"></div>
+      <dl id="workflowFacts" class="meter-grid"></dl>
+      <i class="port port-out" data-port="workflow-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="runModule" class="module module-runs" data-module tabindex="-1" aria-labelledby="runTitle">
+      <i class="port port-in" data-port="run-in" aria-hidden="true"></i>
+      <header><span class="module-code">02 / SOURCE</span><h2 id="runTitle">Run selector</h2><span id="runCount" class="state-tag">0</span></header>
+      <label class="control-label" for="runSelect">Selected stream</label>
+      <select id="runSelect"><option value="">No run available</option></select>
+      <div id="runSummary" class="readout">Waiting for a run source.</div>
+      <div class="button-row"><button type="button" data-evidence-tab="run">Scope run JSON</button><button type="button" data-action="run-now">Run now</button></div>
+      <i class="port port-out" data-port="run-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="agentModule" class="module module-agents" data-module tabindex="-1" aria-labelledby="agentTitle">
+      <i class="port port-in" data-port="agent-in" aria-hidden="true"></i>
+      <header><span class="module-code">03 / SIGNAL</span><h2 id="agentTitle">Active modules</h2><span id="agentCount" class="state-tag">0</span></header>
+      <p class="module-note">Agents generate signal. Tool calls modulate their output.</p>
+      <div id="agentList" class="channel-bank"></div>
+      <i class="port port-out" data-port="agent-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="eventModule" class="module module-events" data-module tabindex="-1" aria-labelledby="eventTitle">
+      <i class="port port-in" data-port="event-in" aria-hidden="true"></i>
+      <header><span class="module-code">04 / MONITOR</span><h2 id="eventTitle">Event and tool scope</h2><span id="eventCount" class="state-tag">0</span></header>
+      <div class="segmented" role="group" aria-label="Monitor source"><button type="button" data-monitor="events" aria-pressed="true">Events</button><button type="button" data-monitor="tools" aria-pressed="false">Tools</button></div>
+      <label class="control-label" for="eventFilter">Filter monitor</label><input id="eventFilter" type="search" placeholder="agent, tool, event type">
+      <div id="eventList" class="scope-list" role="log" aria-live="off"></div>
+      <i class="port port-out" data-port="event-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="controlModule" class="module module-control" data-module tabindex="-1" aria-labelledby="controlTitle">
+      <i class="port port-in" data-port="control-in" aria-hidden="true"></i>
+      <header><span class="module-code">05 / CONTROL</span><h2 id="controlTitle">Steering matrix</h2><span id="admissionState" class="state-tag">enabled</span></header>
+      <div class="button-row transport"><button type="button" data-action="pause">Pause</button><button type="button" data-action="resume">Resume</button><button type="button" data-action="hold">Hold</button><button type="button" data-action="unhold">Unhold</button><button class="danger" type="button" data-action="stop">Stop</button></div>
+      <form id="steerForm" class="compact-form"><label>Directive<textarea name="text" maxlength="8000" required placeholder="Explicit bounded steering instruction"></textarea></label><label>Scope<select name="scope"><option value="next_run">Next run</option><option value="current_run">Current run</option><option value="queue">Queue</option></select></label><label>Priority<select name="priority"><option value="required">Required</option><option value="preferred">Preferred</option></select></label><button class="hot" type="submit">Patch steering</button><button id="setObjective" type="button">Set directive as current objective</button></form>
+      <div id="steeringList" class="mini-list"></div>
+      <i class="port port-out" data-port="control-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="deblockModule" class="module module-deblock" data-module tabindex="-1" aria-labelledby="deblockTitle">
+      <i class="port port-in" data-port="deblock-in" aria-hidden="true"></i>
+      <header><span class="module-code">06 / RECOVERY</span><h2 id="deblockTitle">Deblock processor</h2><span id="blockState" class="state-tag">clear</span></header>
+      <div id="blockerReadout" class="readout">No blocker reported.</div>
+      <form id="deblockForm" class="compact-form"><label>Recovery prompt<textarea name="prompt" maxlength="8000" required placeholder="Smallest safe recovery request"></textarea></label><button class="hot" type="submit">Queue deblock</button><button type="button" id="askAdvice">Ask advice first</button></form>
+      <div id="adviceReadout" class="mini-list"></div>
+      <i class="port port-out" data-port="deblock-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="queueModule" class="module module-queue" data-module tabindex="-1" aria-labelledby="queueTitle">
+      <i class="port port-in" data-port="queue-in" aria-hidden="true"></i>
+      <header><span class="module-code">07 / BUFFER</span><h2 id="queueTitle">Direction queue</h2><span id="queueCount" class="state-tag">0</span></header>
+      <form id="queueForm" class="compact-form"><label>Title<input name="title" required maxlength="200"></label><label>Objective<textarea name="objective" required maxlength="4000"></textarea></label><label>Context<textarea name="context" maxlength="4000"></textarea></label><label>Constraints<textarea name="constraints" placeholder="One per line"></textarea></label><label class="check"><input name="pin" type="checkbox"> Pin as current direction</label><button class="hot" type="submit">Add queue item</button></form>
+      <div id="queueList" class="mini-list"></div>
+      <button class="danger quiet" type="button" data-action="clear-queue">Clear entire queue</button>
+      <i class="port port-out" data-port="queue-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="showcaseModule" class="module module-showcase" data-module tabindex="-1" aria-labelledby="showcaseTitle">
+      <i class="port port-in" data-port="showcase-in" aria-hidden="true"></i>
+      <header><span class="module-code">08 / LOOP</span><h2 id="showcaseTitle">Lifecycle generator</h2><span id="loopState" class="state-tag">manual</span></header>
+      <dl id="iterationFacts" class="meter-grid"></dl>
+      <label>Repository path<input id="repoPath" value="/home/mojo/autonomous-projects/hermes-showcase-site"></label>
+      <label>Objective<textarea id="iterationObjective" maxlength="4000"></textarea></label>
+      <label>Bounded change<textarea id="changeText" maxlength="4000">Complete one bounded objective-linked generation without unrelated feature or stack churn.</textarea></label>
+      <label>Showcase target <input id="showcaseTarget" type="number" min="1" max="10" value="10"></label>
+      <div class="button-row"><button class="hot" type="button" data-action="start-next-iteration">Start generation</button><button type="button" data-action="start-showcase-loop">Start loop</button><button type="button" data-action="set-showcase-target">Set target</button><button type="button" data-action="pause-showcase-loop">Pause loop</button><button type="button" data-action="resume-showcase-loop">Resume loop</button><button class="danger" type="button" data-action="stop-showcase-loop">Stop loop</button></div>
+      <label class="control-label" for="iterationSelect">Iteration lineage</label><select id="iterationSelect"><option value="">No iteration available</option></select>
+      <div class="button-row"><button type="button" data-lineage="continue-from-iteration">Continue</button><button type="button" data-lineage="fork-from-iteration">Fork</button><button type="button" data-lineage="use-as-next-direction">Use direction</button><button type="button" data-evidence-tab="iteration">Scope iteration</button></div>
+      <i class="port port-out" data-port="showcase-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="gateModule" class="module module-gates" data-module tabindex="-1" aria-labelledby="gateTitle">
+      <i class="port port-in" data-port="gate-in" aria-hidden="true"></i>
+      <header><span class="module-code">09 / VCA</span><h2 id="gateTitle">Acceptance gates</h2><span id="gateCount" class="state-tag">0</span></header>
+      <form id="gateForm" class="compact-form"><label>Gate ID<input name="id" maxlength="120" placeholder="generated if blank"></label><label>Description<textarea name="description" required></textarea></label><label>Phase<input name="phase" value="final-audit"></label><label>Severity<select name="severity"><option value="must">Must</option><option value="should">Should</option></select></label><label>Required evidence<textarea name="requiredEvidence" placeholder="One artifact path per line"></textarea></label><button class="hot" type="submit">Add gate</button></form>
+      <div id="gateList" class="mini-list"></div>
+      <i class="port port-out" data-port="gate-out" aria-hidden="true"></i>
+    </section>
+
+    <section id="evidenceModule" class="module module-evidence" data-module tabindex="-1" aria-labelledby="evidenceTitle">
+      <i class="port port-in" data-port="evidence-in" aria-hidden="true"></i>
+      <header><span class="module-code">10 / OUTPUT</span><h2 id="evidenceTitle">Evidence scope</h2><span id="evidenceState" class="state-tag">run</span></header>
+      <div class="scope-tabs" role="tablist" aria-label="Evidence source"><button role="tab" data-evidence-tab="spec">SPEC</button><button role="tab" data-evidence-tab="devplan">DEVPLAN</button><button role="tab" data-evidence-tab="artifacts">Artifacts</button><button role="tab" data-evidence-tab="logs">Logs</button><button role="tab" data-evidence-tab="run" aria-selected="true">Run</button><button role="tab" data-evidence-tab="iteration">Iteration</button><button role="tab" data-evidence-tab="audit">Audit</button></div>
+      <div id="resourceList" class="resource-list"></div>
+      <pre id="evidenceOutput" tabindex="0">Select an evidence source.</pre>
+      <i class="port port-out" data-port="evidence-out" aria-hidden="true"></i>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <section id="planner" class="planner" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden>
+    <header><div><span class="module-code">PLAN / PERSISTED</span><h2 id="plannerTitle">Project plan rack</h2></div><span id="planStatus" role="status">Ready</span><button id="closePlanner" type="button">Close plan rack</button></header>
+    <nav class="planner-tabs" aria-label="Plan rack sections"><button data-plan-pane="list">Plans</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="assist">Assistance</button></nav>
+    <div id="planError" class="error-box" role="alert" hidden></div>
+    <div class="planner-grid">
+      <aside class="plan-list" data-plan-panel="list"><div class="rack-actions"><button data-new-plan="classic">New classic</button><button data-new-plan="managed">New managed</button></div><div id="planList"></div></aside>
+      <section class="plan-editor" data-plan-panel="edit"><div id="planEditor" class="empty-state">Create or select a plan.</div></section>
+      <section class="plan-review" data-plan-panel="review"><div id="planReview" class="empty-state">Select a saved revision.</div></section>
+      <aside class="plan-assist" data-plan-panel="assist"><div id="planAssist"></div></aside>
+    </div>
+  </section>
+
+  <script type="module" src="./patchbay.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

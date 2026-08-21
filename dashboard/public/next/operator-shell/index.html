@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Keyboard-first Hermes operations environment">
+  <title>Operator Shell / Hermes APB</title>
+  <link rel="stylesheet" href="./operator-shell.css">
+</head>
+<body>
+  <a class="skip-link" href="#commandInput">Skip to command prompt</a>
+  <div class="shell" id="shell">
+    <header class="topbar">
+      <div class="identity">
+        <span class="sigil" aria-hidden="true">OS</span>
+        <div><strong>Operator Shell</strong><small>Hermes autonomous project builder</small></div>
+      </div>
+      <nav class="menu-strip" id="menuStrip" aria-label="Command menus"></nav>
+      <div class="top-actions">
+        <button type="button" class="key-button" data-open-palette aria-keyshortcuts="Control+Shift+P Meta+Shift+P"><span>Commands</span><kbd>Ctrl Shift P</kbd></button>
+        <button type="button" class="icon-button" data-command-id="theme.cycle" aria-label="Cycle color theme">Theme</button>
+      </div>
+    </header>
+
+    <main class="workbench" id="workbench">
+      <aside class="navigator" aria-label="Resource navigator">
+        <div class="navigator-head"><strong>Resources</strong><span id="resourceCount">0</span></div>
+        <div class="path-root">apb://local/</div>
+        <div id="resourceTree" class="resource-tree"></div>
+        <section class="key-map" aria-labelledby="keyMapTitle">
+          <h2 id="keyMapTitle">Key map</h2>
+          <dl>
+            <div><dt><kbd>Ctrl Shift P</kbd></dt><dd>palette</dd></div>
+            <div><dt><kbd>/</kbd></dt><dd>prompt</dd></div>
+            <div><dt><kbd>Ctrl 1 / 2</kbd></dt><dd>buffer</dd></div>
+            <div><dt><kbd>Tab</kbd></dt><dd>complete</dd></div>
+            <div><dt><kbd>Up / Down</kbd></dt><dd>history</dd></div>
+            <div><dt><kbd>?</kbd></dt><dd>help</dd></div>
+          </dl>
+        </section>
+      </aside>
+
+      <section class="buffers" aria-label="Text buffers">
+        <article class="buffer active" id="buffer0" data-buffer="0" tabindex="-1">
+          <header class="buffer-head">
+            <div><span class="buffer-index">01</span><strong id="buffer0Title">workflow</strong></div>
+            <code id="buffer0Path">apb://state/workflow</code>
+            <div class="buffer-actions"><button type="button" data-focus-buffer="0">Focus</button><button type="button" data-swap-buffer="0">Open other side</button></div>
+          </header>
+          <div class="buffer-body" id="buffer0Body"></div>
+        </article>
+        <div class="splitter" role="separator" aria-orientation="vertical" aria-label="Resize buffers" aria-valuemin="25" aria-valuemax="75" aria-valuenow="56" tabindex="0"></div>
+        <article class="buffer" id="buffer1" data-buffer="1" tabindex="-1">
+          <header class="buffer-head">
+            <div><span class="buffer-index">02</span><strong id="buffer1Title">events</strong></div>
+            <code id="buffer1Path">apb://events/live</code>
+            <div class="buffer-actions"><button type="button" data-focus-buffer="1">Focus</button><button type="button" data-swap-buffer="1">Open other side</button></div>
+          </header>
+          <div class="buffer-body event-buffer" id="buffer1Body" role="log" aria-label="Operational event log" aria-live="off" aria-relevant="additions text"></div>
+        </article>
+      </section>
+    </main>
+
+    <section class="command-deck" aria-label="Command prompt">
+      <div class="prompt-row">
+        <label for="commandInput"><span class="prompt-context" id="promptContext">operator@local</span><span class="prompt-mark" aria-hidden="true">:</span><span class="sr-only">Command</span></label>
+        <div class="command-input-wrap">
+          <input id="commandInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="promptSuggestions" aria-describedby="commandHint" placeholder="Type a command or ? for help">
+          <div id="promptSuggestions" class="inline-suggestions" role="listbox" hidden></div>
+        </div>
+        <button type="button" id="runCommand">Run</button>
+        <button type="button" class="mobile-menu-button" data-open-palette>Command menu</button>
+      </div>
+      <p id="commandHint" class="command-hint"><span id="grammarHint">grammar: show &lt;resource&gt; | open &lt;kind&gt; &lt;id&gt; | search &lt;text&gt; | action &lt;name&gt;</span><span id="resultHint">ready</span></p>
+    </section>
+
+    <footer class="status-line" aria-label="System status">
+      <span id="connectionStatus" data-tone="neutral">OFFLINE</span>
+      <span id="workflowStatus">workflow: unknown</span>
+      <span id="runStatus">run: none</span>
+      <span id="eventStatus">events: 0</span>
+      <span id="bufferStatus">buffer 01</span>
+      <button type="button" id="announceToggle" aria-pressed="false">screen-reader stream: summaries</button>
+      <time id="clock">--:--:--</time>
+    </footer>
+  </div>
+
+  <dialog id="palette" class="palette-dialog" aria-labelledby="paletteTitle">
+    <div class="palette-frame">
+      <header><div><span class="eyebrow">All capabilities</span><h1 id="paletteTitle">Command palette</h1></div><button type="button" data-close-dialog="palette">Close <kbd>Esc</kbd></button></header>
+      <label class="palette-search" for="paletteInput"><span class="sr-only">Search commands</span><input id="paletteInput" type="text" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="paletteResults" placeholder="Search commands, capabilities, or client methods"></label>
+      <div id="paletteMeta" class="palette-meta"></div>
+      <div id="paletteResults" class="palette-results" role="listbox" aria-label="Matching commands"></div>
+      <footer><span><kbd>Up</kbd><kbd>Down</kbd> navigate</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span></footer>
+    </div>
+  </dialog>
+
+  <dialog id="commandDialog" class="form-dialog" aria-labelledby="commandDialogTitle">
+    <form id="commandForm" method="dialog">
+      <header><div><span class="eyebrow" id="commandDialogGroup">Command</span><h1 id="commandDialogTitle">Configure command</h1><code id="commandDialogMethod"></code></div><button type="button" data-close-dialog="commandDialog">Close</button></header>
+      <p id="commandDialogDescription" class="dialog-description"></p>
+      <div id="commandFields" class="command-fields"></div>
+      <div id="commandFormError" class="form-error" role="alert" hidden></div>
+      <footer><button type="button" data-close-dialog="commandDialog">Cancel</button><button type="submit" class="primary" id="commandSubmit">Run command</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle">
+    <form id="confirmForm" method="dialog">
+      <span class="eyebrow">Guarded operation</span>
+      <h1 id="confirmTitle">Confirm operation</h1>
+      <p id="confirmConsequence"></p>
+      <div id="confirmPayload" class="confirm-payload"></div>
+      <label id="confirmPhraseWrap" hidden>Type <code id="confirmPhrase"></code> to continue<input id="confirmInput" autocomplete="off" spellcheck="false"></label>
+      <footer><button type="button" id="confirmCancel">Cancel</button><button type="submit" class="danger" id="confirmSubmit">Confirm</button></footer>
+    </form>
+  </dialog>
+
+  <div id="politeStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="alertStatus" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+  <script type="module" src="./operator-shell.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

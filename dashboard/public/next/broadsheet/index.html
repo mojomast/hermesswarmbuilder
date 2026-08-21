@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Daily Swarm | Live Broadsheet</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#lead">Skip to the lead story</a>
+  <header class="masthead">
+    <p class="dateline" id="dateline">Live edition</p>
+    <div class="nameplate"><span>The</span> Daily Swarm</div>
+    <p class="strap">An independent record of autonomous work</p>
+    <div class="edition-line">
+      <span id="connectionState" role="status" aria-live="polite">Connecting</span>
+      <span id="editionStamp">Awaiting first dispatch</span>
+      <span id="runCount">0 editions</span>
+    </div>
+    <nav class="section-index" aria-label="Broadsheet sections">
+      <a href="#editions">Editions</a><a href="#correspondents">Correspondents</a><a href="#desk">Decision desk</a><a href="#sources">Sources</a><a href="#wire">Live wire</a>
+    </nav>
+  </header>
+
+  <main id="paper">
+    <section id="breaking" class="breaking" aria-live="assertive" hidden></section>
+
+    <article id="lead" class="lead" aria-labelledby="objectiveHeadline">
+      <div class="kicker">Current objective</div>
+      <h1 id="objectiveHeadline">Assembling the morning edition...</h1>
+      <p id="leadDeck" class="deck">The control plane has not yet filed a state report.</p>
+      <div id="leadFacts" class="lead-facts"></div>
+      <div class="lead-actions">
+        <button type="button" data-open-dialog="deskDialog">Convene Mission Control</button>
+        <button type="button" data-open-dialog="planDialog">Open plan ledger</button>
+        <button type="button" id="refreshNow">Refresh edition</button>
+        <button type="button" id="pauseStream">Pause stream</button>
+        <button type="button" id="connectStream">Reconnect stream</button>
+        <button type="button" id="disconnectStream">Disconnect stream</button>
+      </div>
+      <div id="workflow" class="workflow" aria-label="Workflow progress"></div>
+    </article>
+
+    <section id="editions" class="section-rule" aria-labelledby="editionsTitle">
+      <header class="section-head"><p>Run chronology</p><h2 id="editionsTitle">The Editions</h2></header>
+      <div id="editionList" class="edition-list"></div>
+    </section>
+
+    <section id="correspondents" class="section-rule" aria-labelledby="agentsTitle">
+      <header class="section-head"><p>Dispatches from the floor</p><h2 id="agentsTitle">By Our Correspondents</h2></header>
+      <div id="agentColumns" class="agent-columns"></div>
+    </section>
+
+    <section id="desk" class="section-rule decision-preview" aria-labelledby="deskTitle">
+      <header class="section-head"><p>Operator authority</p><h2 id="deskTitle">Mission Control: The Editorial Decision Desk</h2></header>
+      <div id="deskBrief"></div>
+      <button type="button" class="black-button" data-open-dialog="deskDialog">Open the decision book</button>
+    </section>
+
+    <section id="sources" class="section-rule" aria-labelledby="sourcesTitle">
+      <header class="section-head"><p>Documents and record</p><h2 id="sourcesTitle">Sources &amp; Folios</h2></header>
+      <div class="source-tools">
+        <label>Run edition <select id="runSelect" aria-label="Select run edition"></select></label>
+        <label>Iteration <select id="iterationSelect" aria-label="Select iteration"></select></label>
+        <button type="button" data-document="spec">Read specification</button>
+        <button type="button" data-document="devplan">Read development plan</button>
+      </div>
+      <div id="sourceFolios" class="folios"></div>
+      <article id="sourceReader" class="source-reader" tabindex="-1" hidden></article>
+    </section>
+
+    <section id="wire" class="section-rule wire" aria-labelledby="wireTitle">
+      <header class="section-head wire-head"><div><p>Continuously updating</p><h2 id="wireTitle">The Swarm Wire</h2></div><label>Follow latest <input id="followWire" type="checkbox" checked></label></header>
+      <form id="wireFilter" class="wire-filter" role="search">
+        <label>Search dispatches <input name="query" type="search" placeholder="Event, agent, tool, message" autocomplete="off"></label>
+        <label>Report type <select name="kind"><option value="all">All reports</option><option value="events">Events</option><option value="tools">Tool calls</option><option value="errors">Errors</option></select></label>
+      </form>
+      <ol id="wireList" class="wire-list" aria-live="polite" aria-relevant="additions"></ol>
+    </section>
+  </main>
+
+  <footer class="colophon"><b>The Daily Swarm</b><span>Rendered locally. Source text is treated as untrusted copy.</span><a href="#paper">Return to page one</a></footer>
+
+  <dialog id="deskDialog" class="folio-dialog" aria-labelledby="deskDialogTitle">
+    <div class="dialog-sheet">
+      <header><div><p>Decision folio</p><h2 id="deskDialogTitle" tabindex="-1">Mission Control</h2></div><button type="button" data-close-dialog>Close</button></header>
+      <nav class="dialog-tabs" aria-label="Mission Control desks">
+        <button type="button" data-desk-tab="controls" aria-pressed="true">Controls</button><button type="button" data-desk-tab="steering" aria-pressed="false">Steering</button><button type="button" data-desk-tab="queue" aria-pressed="false">Queue</button><button type="button" data-desk-tab="gates" aria-pressed="false">Gates</button>
+      </nav>
+      <div id="deskContent" class="dialog-copy"></div>
+    </div>
+  </dialog>
+
+  <dialog id="planDialog" class="folio-dialog plan-dialog" aria-labelledby="planDialogTitle">
+    <div class="dialog-sheet">
+      <header><div><p>Persisted project planning</p><h2 id="planDialogTitle" tabindex="-1">The Plan Ledger</h2></div><span id="planStatus" role="status" aria-live="polite"></span><button type="button" data-close-dialog>Close</button></header>
+      <nav class="dialog-tabs" aria-label="Plan ledger desks">
+        <button type="button" data-plan-tab="ledger" aria-pressed="true">Ledger</button><button type="button" data-plan-tab="editor" aria-pressed="false">Draft</button><button type="button" data-plan-tab="review" aria-pressed="false">Review &amp; launch</button><button type="button" data-plan-tab="assist" aria-pressed="false">Planning assistance</button>
+      </nav>
+      <div id="planContent" class="dialog-copy"></div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle">
+    <form method="dialog"><h2 id="confirmTitle" tabindex="-1">Confirm decision</h2><p id="confirmText"></p><div><button value="cancel">Cancel</button><button id="confirmAction" class="danger" value="confirm">Confirm</button></div></form>
+  </dialog>
+
+  <div id="notices" class="notices" aria-live="polite" aria-atomic="true"></div>
+  <script src="../../dashboard-directory.js" type="module"></script>
+  <script src="./app.js" type="module"></script>
+</body>
+</html>

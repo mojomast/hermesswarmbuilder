@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#163f38">
+  <meta name="description" content="A mobile-first field guide for safely operating Hermes swarms.">
+  <title>Swarm Field Guide</title>
+  <link rel="stylesheet" href="./field-guide.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to field task</a>
+  <header class="field-header">
+    <div>
+      <span class="kicker">Hermes / field issue 06</span>
+      <h1>Swarm Field Guide</h1>
+    </div>
+    <div class="connection-cluster">
+      <div class="signal" role="status" aria-live="polite">
+        <span id="signalDot" aria-hidden="true"></span>
+        <span id="signalText">Starting offline shell</span>
+      </div>
+      <div class="connection-actions"><button id="streamToggle" type="button">Pause updates</button><button id="connectionToggle" type="button">Disconnect</button></div>
+    </div>
+  </header>
+
+  <main id="main" class="binder" tabindex="-1">
+    <section id="today" class="leaf active" data-page="today" aria-labelledby="todayTitle">
+      <header class="leaf-heading">
+        <span class="folio">01 / TODAY</span>
+        <h2 id="todayTitle">Current assignment</h2>
+        <p id="freshness">No live reading yet. Local notes remain available.</p>
+      </header>
+      <div class="objective-block">
+        <span id="statusLabel" class="status-stamp">UNKNOWN</span>
+        <h3 id="objective">Connect to receive the current objective.</h3>
+        <p id="taskLine">One task at a time. Confirm context before acting.</p>
+      </div>
+      <ol id="workflow" class="route" aria-label="Workflow route"></ol>
+      <section class="field-section" aria-labelledby="gateHeading">
+        <div class="section-heading"><div><span>Safety gates</span><h3 id="gateHeading">Prove before passing</h3></div><button class="text-button" data-open-sheet="gate">Manage</button></div>
+        <div id="gateChecklist" class="checklist"></div>
+      </section>
+      <div class="thumb-actions">
+        <button class="primary" data-open-sheet="next">Choose next safe action</button>
+        <button data-action="refresh">Refresh field copy</button>
+      </div>
+    </section>
+
+    <section id="crew" class="leaf" data-page="crew" aria-labelledby="crewTitle">
+      <header class="leaf-heading"><span class="folio">02 / CREW</span><h2 id="crewTitle">Agent contacts</h2><p>Compact live roster. Open a contact for its recent trail.</p></header>
+      <label class="search-field"><span>Filter contacts</span><input id="agentFilter" type="search" autocomplete="off" placeholder="Name, role, status"></label>
+      <div id="agentList" class="contact-list"></div>
+      <section class="field-section" aria-labelledby="eventHeading">
+        <div class="section-heading"><div><span>Radio log</span><h3 id="eventHeading">Events and tool calls</h3></div></div>
+        <div class="filter-row" aria-label="Event filters">
+          <label><span>Run</span><select id="runFilter"><option value="">All runs</option></select></label>
+          <label><span>Agent</span><select id="eventAgentFilter"><option value="">All agents</option></select></label>
+          <label><span>Kind</span><select id="eventTypeFilter"><option value="all">All events</option><option value="tools">Tools</option><option value="errors">Warnings</option></select></label>
+          <label><span>Search</span><input id="eventSearch" type="search" placeholder="Message or tool"></label>
+        </div>
+        <div id="eventList" class="logbook" role="log" aria-live="polite"></div>
+      </section>
+    </section>
+
+    <section id="journal" class="leaf" data-page="journal" aria-labelledby="journalTitle">
+      <header class="leaf-heading"><span class="folio">03 / JOURNAL</span><h2 id="journalTitle">Evidence journal</h2><p>Notes save on this device first. Attach named run artifacts to server gates through a reviewed action.</p></header>
+      <form id="journalForm" class="journal-entry">
+        <label><span>Observation</span><textarea name="note" maxlength="4000" required placeholder="Record what happened, what you verified, and any uncertainty."></textarea></label>
+        <label><span>Artifact paths, one per line</span><textarea name="artifacts" maxlength="4000" placeholder="artifacts/gate-report.json"></textarea></label>
+        <button class="primary" type="submit">Save local field note</button>
+      </form>
+      <p class="local-notice">Device-only until you explicitly attach evidence to a gate. No silent upload.</p>
+      <div id="journalEntries" class="journal-pages"></div>
+      <section class="field-section resources" aria-labelledby="resourceHeading">
+        <div class="section-heading"><div><span>Run pack</span><h3 id="resourceHeading">Evidence, resources, and docs</h3></div></div>
+        <label><span>Selected run</span><select id="resourceRun"></select></label>
+        <div class="resource-tools"><button data-document="spec">Open spec</button><button data-document="devplan">Open devplan</button></div>
+        <div id="resourceList"></div>
+        <details class="raw-details"><summary>Complete selected run record</summary><pre id="runDetail"></pre></details>
+      </section>
+    </section>
+
+    <section id="plans" class="leaf" data-page="plans" aria-labelledby="plansTitle">
+      <header class="leaf-heading"><span class="folio">04 / PLANS</span><h2 id="plansTitle">Project plan folio</h2><p>Draft, review, approve, and launch exact persisted revisions.</p></header>
+      <div class="thumb-actions split"><button class="primary" data-plan-new="classic">New classic plan</button><button data-plan-new="managed">New managed plan</button><button data-open-sheet="assist">Planning assistance</button></div>
+      <label><span>Saved plans</span><select id="planSelect"><option value="">Select a plan</option></select></label>
+      <div id="planDetail" class="plan-folio"></div>
+    </section>
+
+    <section id="more" class="leaf" data-page="more" aria-labelledby="moreTitle">
+      <header class="leaf-heading"><span class="folio">05 / INDEX</span><h2 id="moreTitle">Operations index</h2><p>Specialist actions stay reachable without crowding the current assignment.</p></header>
+      <section class="field-section" aria-labelledby="generationHeading"><div class="section-heading"><div><span>Iteration route</span><h3 id="generationHeading">Generation and lineage</h3></div><button data-open-sheet="generation">Set course</button></div><div id="generationSummary"></div><div id="iterationList" class="index-list"></div><div id="iterationDetail"></div></section>
+      <section class="field-section" aria-labelledby="queueHeading"><div class="section-heading"><div><span>Dispatch</span><h3 id="queueHeading">Queue</h3></div><button data-open-sheet="queue">Add</button></div><div id="queueList" class="index-list"></div></section>
+      <section class="field-section" aria-labelledby="steeringHeading"><div class="section-heading"><div><span>Directions</span><h3 id="steeringHeading">Steering and blockers</h3></div><button data-open-sheet="steer">Steer</button></div><div id="blockerPanel"></div><div id="steeringList" class="index-list"></div></section>
+      <button class="wide-button" data-open-sheet="command">Open all operational and showcase commands</button>
+      <details class="raw-details"><summary>Audit trail</summary><div id="auditList" class="logbook"></div></details>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Field guide pages">
+    <button data-nav="today" class="active" aria-current="page"><span aria-hidden="true">01</span>Today</button>
+    <button data-nav="crew"><span aria-hidden="true">02</span>Crew</button>
+    <button data-nav="journal"><span aria-hidden="true">03</span>Journal</button>
+    <button data-nav="plans"><span aria-hidden="true">04</span>Plans</button>
+    <button data-nav="more"><span aria-hidden="true">05</span>Index</button>
+  </nav>
+
+  <dialog id="actionSheet" class="sheet" aria-labelledby="sheetTitle">
+    <form id="sheetForm" method="dialog">
+      <header><div><span id="sheetKicker">FIELD ACTION</span><h2 id="sheetTitle" tabindex="-1">Choose an action</h2></div><button class="icon-button" type="button" data-close-sheet aria-label="Close action sheet">Close</button></header>
+      <div id="sheetBody" class="sheet-body"></div>
+      <div id="sheetReview" class="review-box" hidden></div>
+      <p id="sheetError" class="error" role="alert" hidden></p>
+      <footer><button id="sheetCancel" type="button" data-close-sheet>Cancel</button><button id="sheetSubmit" class="primary" type="submit" value="default">Review action</button></footer>
+    </form>
+  </dialog>
+  <dialog id="reader" class="reader" aria-labelledby="readerTitle"><header><h2 id="readerTitle" tabindex="-1">Field document</h2><button class="icon-button" type="button" data-close-reader>Close</button></header><pre id="readerBody"></pre></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="./field-guide.js"></script>
+  <script src="../../dashboard-directory.js"></script>
+</body>
+</html>

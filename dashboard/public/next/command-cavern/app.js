@@ -119,6 +119,28 @@ function boundedLimits(source = {}, maxIterations = 1, includeScore = true) {
 }
 function planLimits(source = {}) { return boundedLimits(source, 1, false); }
 function canonical(value) { if (value === null || typeof value !== "object") return JSON.stringify(value); if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`; return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`; }
+function cavernRenderSignature(value) {
+  return canonical({
+    state: value.state,
+    control: value.control,
+    connection: { status: value.connection?.status, transport: value.connection?.transport, paused: value.connection?.paused },
+    runs: value.runs,
+    events: value.events.slice(-80),
+    queue: value.queue,
+    gates: value.gates,
+    audit: value.audit.slice(-50),
+    iterations: value.iterations,
+    plans: value.plans,
+    planDetail: value.planDetail,
+    assistance: value.assistance,
+    assistanceDetail: value.assistanceDetail,
+    selectedRunId: value.selectedRunId,
+    selectedRun: value.selectedRun,
+    selectedIterationId: value.selectedIterationId,
+    iterationDetail: value.iterationDetail,
+    error: value.error
+  });
+}
 function deepFreeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(deepFreeze); return Object.freeze(value); }
 function intentKey(type) { return `command-cavern-${type}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function normalizeGateIds(ids) { return [...new Set(arr(ids).map(String).map((id) => id.trim()).filter(Boolean))]; }
@@ -788,7 +810,7 @@ function drawUi() {
 class CavernRenderer {
   constructor(canvas) {
     this.canvas = canvas; this.gl = null; this.program = null; this.texture = null; this.vao = null; this.frame = 0; this.animationTimer = 0; this.hidden = document.hidden; this.lost = false; this.ready = false; this.failureReason = ""; this.focusedHit = 0; this.focusedKey = null; this.uiDirty = true;
-    this.textureWidth = 0; this.textureHeight = 0; this.quality = innerWidth < 700 ? 0.42 : 0.5; this.steps = innerWidth < 700 ? 24 : 28; this.start = performance.now();
+    this.textureWidth = 0; this.textureHeight = 0; this.quality = innerWidth < 700 ? 0.38 : 0.45; this.steps = innerWidth < 700 ? 18 : 22; this.start = performance.now();
     this.bind(); this.initialize();
   }
   shader(type, source, label) {
@@ -799,7 +821,7 @@ class CavernRenderer {
   fail(message) { this.ready = false; this.failureReason = message; clearTimeout(this.animationTimer); this.animationTimer = 0; setMode(true, message); return false; }
   retry() {
     if (this.lost || this.gl?.isContextLost?.()) { this.failureReason = "The WebGL context is still lost; wait for browser restoration or reload the page."; return false; }
-    this.quality = Math.min(this.quality, 0.42); this.steps = 24; this.uiDirty = true;
+    this.quality = Math.min(this.quality, 0.38); this.steps = 18; this.uiDirty = true;
     try { return this.initialize(); } catch (error) { return this.fail(`WebGL retry failed: ${error.message}`); }
   }
   initialize() {
@@ -882,14 +904,14 @@ class CavernRenderer {
   cameraZ(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return this.isPortrait(aspect) ? -5.6 : -5.2; }
   resize() {
     const clientWidth = Math.max(1, this.canvas.clientWidth), clientHeight = Math.max(1, this.canvas.clientHeight), dpr = Math.min(1.25, Math.max(1, devicePixelRatio || 1)), requested = Math.min(.65, Math.max(.4, this.quality)) * dpr;
-    const pixelScale = Math.sqrt(800_000 / (clientWidth * clientHeight));
+    const pixelScale = Math.sqrt(500_000 / (clientWidth * clientHeight));
     const uniformScale = Math.min(requested, pixelScale, 1600 / clientWidth, 1200 / clientHeight);
     const width = Math.max(1, Math.round(clientWidth * uniformScale)), height = Math.max(1, Math.round(clientHeight * uniformScale));
     if (width !== this.canvas.width || height !== this.canvas.height) { this.canvas.width = width; this.canvas.height = height; }
   }
   requestFrame(redrawUi = true) { if (redrawUi) { this.uiDirty = true; clearTimeout(this.animationTimer); this.animationTimer = 0; } if (!this.frame && !this.hidden && !this.lost && this.ready && this.program && !$("cavernMode").hidden) this.frame = requestAnimationFrame((time) => this.render(time)); }
   render(time) {
-    this.frame = 0; if (this.hidden || this.lost || !this.ready || !this.program) return; const gl = this.gl, started = performance.now(); this.resize();
+    this.frame = 0; if (this.hidden || this.lost || !this.ready || !this.program) return; const gl = this.gl; this.resize();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height); gl.useProgram(this.program); gl.bindVertexArray(this.vao); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture);
     const aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight), tablet = this.tabletHalf(aspect);
     if (this.uiDirty) {
@@ -903,7 +925,6 @@ class CavernRenderer {
     const pinned = queueRows.filter((item) => item.status === "pinned" || item.id === snapshot.control?.pinnedQueueItemId).length;
     const failedGates = gateRows.filter((gate) => /fail|reject|needs-evidence/i.test(String(gate.status))).length;
     gl.uniform2f(this.locations.uRes, this.canvas.width, this.canvas.height); gl.uniform2f(this.locations.uTabletHalf, tablet[0], tablet[1]); gl.uniform1f(this.locations.uCameraZ, this.cameraZ(aspect)); gl.uniform1f(this.locations.uTime, (time - this.start) / 1000); gl.uniform1f(this.locations.uMotion, visualFrozen ? 0 : 1); gl.uniform1i(this.locations.uSteps, this.steps); gl.uniform1i(this.locations.uUi, 0); gl.uniform4f(this.locations.uCounts, snapshot.runs.length, agentRows.length, snapshot.events.length, queueRows.length); gl.uniform4f(this.locations.uMore, gateRows.length, snapshot.iterations.length, snapshot.plans.length, tools().length); gl.uniform4f(this.locations.uState, currentBlocker() ? 1 : 0, Math.min(1, unhealthy / Math.max(1, agentRows.length)), Math.min(1, pinned / Math.max(1, queueRows.length)), Math.min(1, failedGates / Math.max(1, gateRows.length))); gl.drawArrays(gl.TRIANGLES, 0, 3);
-    if (performance.now() - started > 22) { this.quality = Math.max(.35, this.quality - .04); this.steps = Math.max(20, this.steps - 2); }
     if (!visualFrozen && !this.animationTimer) this.animationTimer = setTimeout(() => { this.animationTimer = 0; this.requestFrame(false); }, 100);
   }
 }
@@ -1022,12 +1043,16 @@ function assertCoverage() {
 }
 
 assertCoverage();
+let lastCavernRenderSignature = "";
 client.subscribe((next) => {
   snapshot = next;
   reconcileReceipts();
   if (!selectedRunId) selectedRunId = snapshot.selectedRunId || currentRunId();
   if (selectedPlanId && snapshot.planDetail?.ledger?.planId !== selectedPlanId) selectedPlanId = snapshot.planDetail?.ledger?.planId || selectedPlanId;
-  renderSemantic(); renderer.requestFrame();
+  const signature = cavernRenderSignature(snapshot), changed = signature !== lastCavernRenderSignature;
+  lastCavernRenderSignature = signature;
+  renderSemantic();
+  if (changed) renderer.requestFrame();
 });
 client.connect().then(() => Promise.all([client.listPlanAssistance(), selectedRunId ? client.selectRun(selectedRunId) : Promise.resolve()])).then(() => announce("Cavern synchronized. Accepted intent remains distinct from observed state.")).catch((error) => announce(`Initial synchronization degraded: ${error.message}`, true));
 const forceSemantic = matchMedia("(forced-colors: active)").matches || new URLSearchParams(location.search).get("semantic") === "1";

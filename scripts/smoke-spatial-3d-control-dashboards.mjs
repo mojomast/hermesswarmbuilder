@@ -67,11 +67,16 @@ for (const client of clients) assert(directory.includes(client.route), `director
 const cavern = readFileSync(resolve(publicRoot, 'next/command-cavern/app.js'), 'utf8');
 assert.match(cavern, /function attempt3D\(\)/, 'Command Cavern: return-to-3D retry path missing');
 assert.match(cavern, /retry\(\)\s*\{/, 'Command Cavern: renderer retry method missing');
+assert.match(cavern, /returnToCavern"\)\.addEventListener\("click", attempt3D\)/, 'Command Cavern: Return button is not wired to renderer retry');
+assert.match(cavern, /if \(!renderer\.ready && !renderer\.retry\(\)\)[\s\S]{0,400}setMode\(false\)/, 'Command Cavern: retry does not enter 3D after readiness');
 assert.match(cavern, /TABLET_TEXTURE_WIDTH = 1600/, 'Command Cavern: bounded tablet texture missing');
 assert.match(cavern, /texSubImage2D/, 'Command Cavern: in-place tablet updates missing');
 assert.match(cavern, /let visualFrozen = true/, 'Command Cavern: static safe startup missing');
-assert.match(cavern, /this\.steps = innerWidth < 700 \? 24 : 28/, 'Command Cavern: bounded initial ray steps missing');
-assert.doesNotMatch(cavern, /for\(int i=0;i<(?:12|16);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');
+assert.match(cavern, /this\.steps = innerWidth < 700 \? 18 : 22/, 'Command Cavern: bounded initial ray steps missing');
+assert.match(cavern, /Math\.sqrt\(500_000 \/ \(clientWidth \* clientHeight\)\)/, 'Command Cavern: bounded pixel budget missing');
+assert.doesNotMatch(cavern, /for\(int i=0;i<(?:[3-9]|1[0-6]);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');
 assert.match(cavern, /setTimeout\(\(\) => \{ this\.animationTimer = 0; this\.requestFrame\(false\); \}, 100\)/, 'Command Cavern: bounded optional animation cadence missing');
+assert.match(cavern, /function cavernRenderSignature\(value\)/, 'Command Cavern: snapshot-diff invalidation missing');
+assert.match(cavern, /if \(changed\) renderer\.requestFrame\(\)/, 'Command Cavern: unchanged telemetry still renders');
 
 console.log('fully spatial 3D control-plane smoke passed (3 distinct environments)');

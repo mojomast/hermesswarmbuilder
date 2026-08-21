@@ -312,6 +312,7 @@ function resolveIterationRequest(control:any, state:any, queue:any): any | null 
       stopAfterNoImprovement:clampInt(source.limits?.stopAfterNoImprovement||control.autoIteration?.stopAfterNoImprovement,1,1,3)
     },
     acceptanceGateIds: Array.isArray(source.acceptanceGateIds)?source.acceptanceGateIds:(Array.isArray(pinned?.acceptanceGateIds)?pinned.acceptanceGateIds:[]),
+    snapshottedAcceptanceGates: Array.isArray(source.snapshottedAcceptanceGates)?source.snapshottedAcceptanceGates.map((gate:any)=>({...gate,requiredEvidence:Array.isArray(gate?.requiredEvidence)?[...gate.requiredEvidence]:[]})):undefined,
     allowDirty: source.allowDirty === true || source.allowDirtyRepo === true || source.limits?.allowDirty === true,
     generation: clampInt(source.generation||source.currentGeneration||control.autoIteration?.currentGeneration,1,1,10),
     targetGenerations: clampInt(source.targetGenerations||source.limits?.targetGenerations||control.autoIteration?.targetGenerations||control.autoIteration?.maxIterations,10,1,10)
@@ -678,11 +679,20 @@ function artifactEvidence(runRoot:string, requested:string){
   try{ const realRoot=realpathSync(artifactsRoot), realPath=realpathSync(path); present=lstatSync(path).isFile()&&(realPath===realRoot||realPath.startsWith(realRoot+sep))&&statSync(path).size>0; }catch{}
   return {requested,path:`artifacts/${rel}`,present,reason:present?null:"missing-or-empty"};
 }
-function evaluateAcceptanceGates(runId:string, runRoot:string, gates:any[]){
+function isArtifactEvidencePath(value:any): boolean {
+  const raw=String(value||"").replace(/\\/g,"/");
+  return raw.startsWith("artifacts/")||raw.startsWith("./artifacts/");
+}
+function evaluateAcceptanceGates(runId:string, runRoot:string, gates:any[], evaluations:any[]=[]){
   return gates.map((gate:any)=>{
-    const evidence=(gate.requiredEvidence||[]).map((x:string)=>artifactEvidence(runRoot,x));
-    const passed=!gate.required||(evidence.length>0&&evidence.every((x:any)=>x.present));
-    return {schemaVersion:"apb.gate-decision.v1",id:gate.id,gateId:gate.id,runId,status:passed?"passed":"failed",decision:passed?"accepted":"blocked",required:gate.required,description:gate.description,evidence,decidedAt:now(),decidedBy:"midnight-runner"};
+    const requiredEvidence=Array.isArray(gate.requiredEvidence)?gate.requiredEvidence:[];
+    const pathBacked=requiredEvidence.length>0&&requiredEvidence.every(isArtifactEvidencePath);
+    const violations=evaluations.flatMap((evaluation:any)=>Array.isArray(evaluation?.hardGateViolations)?evaluation.hardGateViolations:[]).filter((violation:any)=>violation?.gate===gate.id);
+    const evidence=pathBacked
+      ? requiredEvidence.map((x:string)=>artifactEvidence(runRoot,x))
+      : evaluations.flatMap((evaluation:any)=>Array.isArray(evaluation?.evidenceArtifacts)?evaluation.evidenceArtifacts:[]).map((x:string)=>artifactEvidence(runRoot,x));
+    const passed=!gate.required||(pathBacked?(evidence.length>0&&evidence.every((x:any)=>x.present)):violations.length===0&&evidence.length>0&&evidence.every((x:any)=>x.present));
+    return {schemaVersion:"apb.gate-decision.v1",id:gate.id,gateId:gate.id,runId,status:passed?"passed":"failed",decision:passed?"accepted":"blocked",required:gate.required,description:gate.description,requiredEvidence,evidence,...(!pathBacked?{evaluationViolations:violations}:{}),decidedAt:now(),decidedBy:"midnight-runner"};
   });
 }
 function shouldContinueAutoIteration(control:any): boolean {
@@ -772,7 +782,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
     const afterValidation=checkpointDisposition(runId,runRoot,req,"after-validation"); if(afterValidation) return afterValidation;
     const finalSourceHead=await gitCmd(repo.repoRoot,["rev-parse","HEAD"]), finalSourceStatus=await gitCmd(repo.repoRoot,["status","--porcelain=v1"]);
     if(finalSourceHead.exitCode!==0||finalSourceStatus.exitCode!==0||finalSourceHead.stdout.trim()!==repo.sourceHead||finalSourceStatus.stdout!==repo.sourceStatus) throw new Error("normal source branch or working tree changed during managed execution; completion is blocked and no automatic rollback was attempted");
-    const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}); const configuredDecisions=evaluateAcceptanceGates(runId,runRoot,lifecycle.acceptanceGates||[]);
+    const lifecycle=readJson(join(runRoot,"lifecycle-contract.json"),{}); const configuredDecisions=evaluateAcceptanceGates(runId,runRoot,lifecycle.acceptanceGates||[],variants.map(v=>v.evaluation));
     const evidenceDecision={schemaVersion:"apb.gate-decision.v1",id:`managed-evidence-${runId}`,gateId:"managed-evidence-integrity",runId,status:"passed",decision:"accepted",required:true,evidence:variants.flatMap(v=>[`artifacts/variants/${v.id}.json`,`artifacts/variants/${v.id}.diff`,`artifacts/evaluations/evaluation-${v.id}.json`]),decidedAt:now(),decidedBy:"midnight-runner"};
     const validationPassed=synthesis.status==="accepted"&&mashup.validation.length>0&&mashup.validation.every((x:any)=>x.passed); const validationDecision={schemaVersion:"apb.gate-decision.v1",id:`managed-validation-${runId}`,gateId:"managed-validation",runId,status:validationPassed?"passed":"failed",decision:validationPassed?"accepted":"blocked",required:true,evidence:["artifacts/synthesis/synthesis.json","artifacts/gate-report.json"],decidedAt:now(),decidedBy:"midnight-runner"};
     const gateDecisions=[evidenceDecision,validationDecision,...configuredDecisions]; const passed=validationPassed&&configuredDecisions.every((x:any)=>x.status==="passed"); writeFileSync(join(art,"gate-decisions.json"),JSON.stringify(gateDecisions,null,2));

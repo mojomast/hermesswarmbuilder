@@ -58,6 +58,7 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
     validationCommands: [['touch', join(home, 'client-command-ran')]],
     limits: { maxIterations: 1, maxVariantsPerIteration: 1, maxParallelVariants: 1, maxAcceptedFeatures: 1, maxVisualMotifChanges: 0, maxNewSections: 0, stopAfterNoImprovement: 1 }
   };
+  if (options.snapshottedAcceptanceGates) request.snapshottedAcceptanceGates = options.snapshottedAcceptanceGates;
   writeJson(join(root, 'state.json'), { schemaVersion:'apb.state.v1', status:'idle', phase:'idle', currentRunId:null, agents:{} });
   writeJson(join(root, 'control.json'), { schemaVersion:'apb.control.v1', runAdmission:'enabled', pause:{requested:false}, stop:{requested:false}, activeSteering:[], requestedRunNow:true, nextRunRequest:request, autoIteration:{enabled:false} });
   writeJson(join(root, 'queue.json'), { schemaVersion:'apb.queue.v1', items:[] });
@@ -96,6 +97,10 @@ try {
 
   const objectMapping=runScenario('object-mapping',{objectiveMappingObject:true}); fixtures.push(objectMapping.home);
   if(json(join(objectMapping.root,'run.json')).status!=='completed') throw new Error('object mapping: valid object-form objectiveMapping was blocked');
+
+  const snapshotted=runScenario('snapshotted-gates',{snapshottedAcceptanceGates:[{id:'snapshotted-gate',severity:'must',required:true,description:'Snapshot gate survives request resolution',requiredEvidence:['artifacts/variants/variant-1.json']}]}); fixtures.push(snapshotted.home);
+  const snapshottedLifecycle=json(join(snapshotted.root,'lifecycle-contract.json'));
+  if(snapshottedLifecycle.acceptanceGates.length!==1 || snapshottedLifecycle.acceptanceGates[0].id!=='snapshotted-gate' || json(join(snapshotted.root,'run.json')).status!=='completed') throw new Error('snapshotted gates: request snapshot was lost or did not pass');
 
   const missingEval=runScenario('missing-evaluator'); fixtures.push(missingEval.home);
   if(json(join(missingEval.root,'run.json')).status!=='blocked') throw new Error('missing evaluator: run did not block');

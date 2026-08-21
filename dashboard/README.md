@@ -13,7 +13,7 @@ Live steering and observability system for Hermes autonomous project builder run
 
 ## Dynamic dashboard views
 
-The dashboard provides twenty clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
+The dashboard provides twenty-three clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
 
 ### Clean-slate clients
 
@@ -39,6 +39,9 @@ These clients share only the DOM-free `headless-dashboard-client.js` API/SSE lay
 18. **Network NOC (`/next/network-noc/index.html`)**: global BGP-4 routing mesh, DWDM optical matrix, and ITU-T X.733 alarm triage.
 19. **Microscope Spectrometry (`/next/microscope-spectrometry/index.html`)**: analytical SEM P31 phosphor CRT raster scan and EDX histogram.
 20. **Reactor Core (`/next/reactor-core/index.html`)**: nuclear Class 1E safety console, 61-element hexagonal flux matrix, and armed SCRAM.
+21. **Swarm Nebula (`/next/swarm-nebula/index.html`)**: Three.js instanced 3D command sphere with agent particles, run stars, blocker shockwaves, and ray picking.
+22. **Flowfield Command (`/next/flowfield-command/index.html`)**: raw WebGL2 transform-feedback execution corridors, gate planes, emitters, and turbulence regions.
+23. **Voxel Foundry (`/next/voxel-foundry/index.html`)**: raw WebGL2 instanced fabrication cell with voxel workpieces, robotic toolheads, spark particles, and GPU picking.
 
 Research sources and applied design decisions are stored in each client directory. See [`docs/CLEAN_SLATE_FRONTENDS.md`](../docs/CLEAN_SLATE_FRONTENDS.md) for architecture and parity details.
 

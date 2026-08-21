@@ -1,1303 +1,747 @@
-import { createDashboardClient, WORKFLOW_PHASES, OPERATION_COMMANDS, PROJECT_PLAN_ACTIONS } from "../../headless-dashboard-client.js";
-import m from "../../vendor/mithril.js";
+import { createDashboardClient, WORKFLOW_PHASES, OPERATION_COMMANDS } from "../../headless-dashboard-client.js";
 
-// DOM Selector shorthand
 const $ = (id) => document.getElementById(id);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const client = createDashboardClient({ maxEvents: 1000, eventLimit: 500, pollIntervalMs: 4000 });
+const arr = (value) => Array.isArray(value) ? value : [];
+const first = (...values) => values.find((value) => value !== undefined && value !== null && value !== "") ?? "";
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+const json = (value) => { try { return JSON.stringify(value, null, 2); } catch { return String(value); } };
+const lines = (value) => String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+const lower = (value) => String(value || "").toLowerCase();
+const blocked = (value) => ["blocked", "failed", "error", "on-hold", "deblocking"].some((part) => lower(value).includes(part));
 
-// State Management
 let snapshot = client.getSnapshot();
 let activeCmdTab = "runctrl";
 let activePlanTab = "list";
 let activeEvidenceTab = "spec";
 let telemetryFilter = "all";
-let selectedPlanId = null;
+let selected = { type: "channel", id: "CH-01", label: "Channel 01", status: "empty", data: {}, channel: 1 };
 let selectedPlanDetail = null;
-let selectedAssistanceId = null;
 let assistanceDetail = null;
-let selectedToolEvent = null;
-let selectedFuelAssemblyId = "FA-01";
-
-// Full client method bindings for complete feature coverage & smoke validation
-export const actions = {
-  selectRun: (runId) => client.selectRun(runId),
-  selectIteration: (iterationId) => client.selectIteration(iterationId),
-  loadArtifact: (name, runId) => client.loadArtifact(name, runId),
-  loadLog: (name, runId, options) => client.loadLog(name, runId, options),
-  loadDocument: (kind, runId) => client.loadDocument(kind, runId),
-  getProjectPlan: (planId) => client.getProjectPlan(planId),
-  listPlanAssistance: () => client.listPlanAssistance(),
-  createProjectPlan: (data) => client.createProjectPlan(data),
-  updateProjectPlan: (planId, data) => client.updateProjectPlan(planId, data),
-  submitProjectPlanForReview: (planId, expectedVersion) => client.submitProjectPlanForReview(planId, expectedVersion),
-  approveProjectPlan: (planId, expectedVersion) => client.approveProjectPlan(planId, expectedVersion),
-  rejectProjectPlan: (planId, expectedVersion) => client.rejectProjectPlan(planId, expectedVersion),
-  launchProjectPlan: (planId, expectedVersion) => client.launchProjectPlan(planId, expectedVersion),
-  cloneProjectPlan: (planId) => client.cloneProjectPlan(planId),
-  forkProjectPlan: (planId, version) => client.forkProjectPlan(planId, version),
-  archiveProjectPlan: (planId) => client.archiveProjectPlan(planId)
-};
-
-// Utilities
-const esc = (str) => String(str ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
-const json = (val) => { try { return JSON.stringify(val, null, 2); } catch { return String(val); } };
-const lines = (val) => String(val || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-const fmtDate = (d) => { if (!d) return "None"; const dt = new Date(d); return Number.isNaN(dt.valueOf()) ? String(d) : dt.toLocaleString(); };
-
-function toast(msg, type = "info") {
-  const el = $("rcToast");
-  if (!el) return;
-  el.textContent = msg;
-  el.hidden = false;
-  el.style.background = type === "error" ? "#7f1d1d" : type === "warn" ? "#78350f" : "#0369a1";
-  el.style.border = `1px solid ${type === "error" ? "#ef4444" : type === "warn" ? "#f59e0b" : "#00e5ff"}`;
-  clearTimeout(el.__timer);
-  el.__timer = setTimeout(() => { el.hidden = true; }, 4000);
-}
-
-// -------------------------------------------------------------
-// 61-Element Hexagonal Core Lattice SVG Generator
-// -------------------------------------------------------------
-function renderHexCore() {
-  const svg = $("hexCoreSvg");
-  if (!svg) return;
-
-  const hexRadius = 24;
-  const hexHeight = hexRadius * 2;
-  const cx = 300;
-  const cy = 270;
-
-  let hexElements = [];
-  let idCounter = 1;
-  const isBlocked = !!(snapshot.state?.block || snapshot.state?.blocker || snapshot.state?.hold);
-
-  // Center hex: Ring 0 (FA-01)
-  hexElements.push({
-    id: `FA-01`,
-    ring: 0,
-    x: cx,
-    y: cy,
-    flux: isBlocked ? 0.22 : 0.96,
-    power: isBlocked ? 8.2 : 38.4,
-    burnup: 14250,
-    temp: isBlocked ? 285.0 : 318.4
-  });
-
-  // Rings 1 to 4 (6 + 12 + 18 + 24 = 60 + 1 = 61 total assemblies)
-  for (let ring = 1; ring <= 4; ring++) {
-    const count = ring * 6;
-    for (let i = 0; i < count; i++) {
-      idCounter++;
-      const id = `FA-${String(idCounter).padStart(2, "0")}`;
-      const angle = ((i * 360) / count) * (Math.PI / 180);
-      const dist = ring * (hexHeight * 0.78);
-      const x = cx + dist * Math.cos(angle);
-      const y = cy + dist * Math.sin(angle);
-      const baseFlux = isBlocked ? 0.2 : Math.max(0.25, 1.0 - (ring * 0.16) + (Math.sin(idCounter * 1.5) * 0.08));
-
-      hexElements.push({
-        id,
-        ring,
-        x,
-        y,
-        flux: baseFlux,
-        power: (baseFlux * 40.0).toFixed(1),
-        burnup: 8000 + (idCounter * 180),
-        temp: (290 + (baseFlux * 30)).toFixed(1)
-      });
-    }
-  }
-
-  // Draw SVG Elements
-  svg.innerHTML = `
-    <defs>
-      <polygon id="hexShape" points="0,-22 19,-11 19,11 0,22 -19,11 -19,-11" />
-    </defs>
-    <!-- Core Boundary Ring & Flux Contours -->
-    <circle cx="${cx}" cy="${cy}" r="225" fill="none" stroke="#1a2a3d" stroke-width="3" stroke-dasharray="6,4" />
-    <circle cx="${cx}" cy="${cy}" r="170" fill="none" stroke="#131f2f" stroke-width="1.5" />
-    <circle cx="${cx}" cy="${cy}" r="115" fill="none" stroke="#131f2f" stroke-width="1.5" />
-    <circle cx="${cx}" cy="${cy}" r="60" fill="none" stroke="#131f2f" stroke-width="1.5" />
-
-    ${hexElements.map(h => {
-      const isSelected = h.id === selectedFuelAssemblyId;
-      const color = isBlocked ? "#ef4444" : h.flux > 0.8 ? "#00e5ff" : h.flux > 0.5 ? "#10b981" : "#f59e0b";
-      const fill = isSelected ? "rgba(0, 229, 255, 0.25)" : "#070c12";
-      const strokeWidth = isSelected ? 3 : 1.5;
-
-      return `
-        <g transform="translate(${h.x}, ${h.y})" style="cursor:pointer;" data-fa-id="${h.id}" data-fa-ring="${h.ring}" data-fa-flux="${h.flux.toFixed(2)}" data-fa-power="${h.power}" data-fa-burnup="${h.burnup}" data-fa-temp="${h.temp}">
-          <use href="#hexShape" fill="${fill}" stroke="${color}" stroke-width="${strokeWidth}" />
-          <text text-anchor="middle" dy="4" fill="${color}" font-family="JetBrains Mono, monospace" font-size="8.5" font-weight="bold">${h.id}</text>
-        </g>
-      `;
-    }).join("")}
-  `;
-}
-
-// -------------------------------------------------------------
-// Safety Parameter Display System (SPDS) 8-Axis Radar Polygon
-// -------------------------------------------------------------
-const spds = $("spdsCanvas");
-const spdsCtx = spds ? spds.getContext("2d") : null;
-
-const SPDS_PARAMETERS = [
-  { name: "Reactivity", key: "reactivity", min: 0, max: 1 },
-  { name: "Core Heat", key: "heat", min: 0, max: 1 },
-  { name: "RCS Press", key: "rcs", min: 0, max: 1 },
-  { name: "Containment", key: "containment", min: 0, max: 1 },
-  { name: "Sec Sink", key: "sink", min: 0, max: 1 },
-  { name: "Radiation", key: "radiation", min: 0, max: 1 },
-  { name: "Swarm Health", key: "swarm", min: 0, max: 1 },
-  { name: "Gate Compliance", key: "gates", min: 0, max: 1 }
-];
-
-function resizeSpds() {
-  const dpr = window.devicePixelRatio || 1;
-  if (spds && spds.parentElement) {
-    const rect = spds.parentElement.getBoundingClientRect();
-    spds.width = rect.width * dpr;
-    spds.height = rect.height * dpr;
-    spdsCtx?.scale(dpr, dpr);
-  }
-}
-window.addEventListener("resize", resizeSpds);
-
-function drawSpds() {
-  if (!spds || !spdsCtx || !spds.parentElement) return;
-  const w = spds.parentElement.getBoundingClientRect().width;
-  const h = spds.parentElement.getBoundingClientRect().height;
-  if (w === 0 || h === 0) return;
-
-  spdsCtx.clearRect(0, 0, w, h);
-  const cx = w / 2;
-  const cy = h / 2;
-  const radius = Math.min(cx, cy) - 26;
-  const isBlocked = !!(snapshot.state?.block || snapshot.state?.blocker || snapshot.state?.hold);
-
-  // Background Web Concentric Octagons
-  for (let rStep = 1; rStep <= 4; rStep++) {
-    const r = (radius / 4) * rStep;
-    spdsCtx.strokeStyle = "#131f2f";
-    spdsCtx.lineWidth = 1;
-    spdsCtx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const angle = (i * 45) * (Math.PI / 180) - Math.PI / 2;
-      const x = cx + r * Math.cos(angle);
-      const y = cy + r * Math.sin(angle);
-      if (i === 0) spdsCtx.moveTo(x, y);
-      else spdsCtx.lineTo(x, y);
-    }
-    spdsCtx.closePath();
-    spdsCtx.stroke();
-  }
-
-  // 8 Axis Radial Spokes & Parameter Labels
-  spdsCtx.strokeStyle = "#1a2a3d";
-  spdsCtx.fillStyle = "#94a3b8";
-  spdsCtx.font = "8px JetBrains Mono, monospace";
-
-  for (let i = 0; i < 8; i++) {
-    const angle = (i * 45) * (Math.PI / 180) - Math.PI / 2;
-    const x = cx + radius * Math.cos(angle);
-    const y = cy + radius * Math.sin(angle);
-    spdsCtx.beginPath();
-    spdsCtx.moveTo(cx, cy);
-    spdsCtx.lineTo(x, y);
-    spdsCtx.stroke();
-
-    const lx = cx + (radius + 14) * Math.cos(angle);
-    const ly = cy + (radius + 14) * Math.sin(angle);
-    spdsCtx.textAlign = Math.abs(Math.cos(angle)) < 0.2 ? "center" : Math.cos(angle) > 0 ? "left" : "right";
-    spdsCtx.fillText(SPDS_PARAMETERS[i].name, lx, ly + 3);
-  }
-
-  // Draw Dynamic SPDS State Polygon
-  const polyColor = isBlocked ? "#ef4444" : "#00e5ff";
-  const polyFill = isBlocked ? "rgba(239, 68, 68, 0.25)" : "rgba(0, 229, 255, 0.2)";
-
-  spdsCtx.strokeStyle = polyColor;
-  spdsCtx.fillStyle = polyFill;
-  spdsCtx.lineWidth = 2;
-  spdsCtx.beginPath();
-
-  for (let i = 0; i < 8; i++) {
-    const angle = (i * 45) * (Math.PI / 180) - Math.PI / 2;
-    const baseVal = isBlocked ? 0.35 + (Math.sin(Date.now() * 0.003 + i) * 0.1) : 0.88 + (Math.sin(Date.now() * 0.001 + i) * 0.05);
-    const r = radius * Math.max(0.1, Math.min(1.0, baseVal));
-    const x = cx + r * Math.cos(angle);
-    const y = cy + r * Math.sin(angle);
-    if (i === 0) spdsCtx.moveTo(x, y);
-    else spdsCtx.lineTo(x, y);
-  }
-  spdsCtx.closePath();
-  spdsCtx.fill();
-  spdsCtx.stroke();
-}
-
-// -------------------------------------------------------------
-// UI Renderers for All 9 Core Features
-// -------------------------------------------------------------
-
-function renderHeader(snap) {
-  const conn = snap.connection || {};
-  const isBlocked = !!(snap.state?.block || snap.state?.blocker || snap.state?.hold);
-
-  const linkEl = $("connectionStatus");
-  if (linkEl) {
-    linkEl.textContent = conn.paused ? "STREAM PAUSED" : `${(conn.status || "DISCONNECTED").toUpperCase()} (${(conn.transport || "SSE").toUpperCase()})`;
-    linkEl.style.color = conn.paused ? "var(--rc-flux-amber)" : conn.status === "connected" ? "var(--rc-flux-green)" : "var(--rc-flux-red)";
-  }
-
-  const streamBtn = $("btnStreamToggle");
-  if (streamBtn) streamBtn.textContent = conn.paused ? "RESUME STREAM" : "PAUSE STREAM";
-
-  const tripEl = $("rpsTripStatus");
-  if (tripEl) {
-    tripEl.textContent = isBlocked ? "SCRAM / TRIPPED" : "ARMED / NORMAL";
-    tripEl.style.color = isBlocked ? "var(--rc-flux-red)" : "var(--rc-flux-green)";
-  }
-
-  const powerEl = $("thermalPower");
-  if (powerEl) powerEl.textContent = isBlocked ? "0.0% (SCRAMMED)" : "100.0% (3,400 MWth)";
-
-  const badgeEl = $("spdsStatusBadge");
-  if (badgeEl) {
-    badgeEl.textContent = isBlocked ? "RPS TRIP ALARM" : "CLASS 1E NORMAL";
-    badgeEl.className = `rc-badge ${isBlocked ? "danger" : "success"}`;
-  }
-}
-
-function renderWorkflow(snap) {
-  const phase = snap.state?.phase || "idle";
-  const isBlocked = !!(snap.state?.block || snap.state?.blocker || snap.state?.hold);
-  const currentRunId = snap.selectedRunId || snap.state?.currentRunId || "NONE";
-
-  const phaseEl = $("rcPhase");
-  if (phaseEl) {
-    phaseEl.textContent = phase.toUpperCase();
-    phaseEl.style.color = isBlocked ? "var(--rc-flux-red)" : "var(--rc-flux-green)";
-  }
-
-  const runEl = $("rcActiveRun");
-  if (runEl) runEl.textContent = `RUN: ${currentRunId}`;
-
-  const track = $("workflowPhases");
-  if (track) {
-    const currentIndex = WORKFLOW_PHASES.indexOf(phase);
-    track.innerHTML = WORKFLOW_PHASES.map((p, idx) => {
-      const cls = idx < currentIndex ? "past" : idx === currentIndex ? "current" : "";
-      return `<span class="rc-phase-step ${cls}" role="listitem">${p}</span>`;
-    }).join("");
-  }
-
-  const banner = $("rcBlockerBanner");
-  if (banner) {
-    if (isBlocked) {
-      banner.hidden = false;
-      const bInfo = snap.state?.block || snap.state?.blocker || snap.state?.hold || {};
-      $("rcBlockerText").textContent = bInfo.reason || bInfo.message || "RPS SAFETY TRIP INTERLOCK TRIPPED: Reactor core deblock required.";
-    } else {
-      banner.hidden = true;
-    }
-  }
-}
-
-function renderRunsAndAgents(snap) {
-  const runs = snap.runs || [];
-  const runSelect = $("runSelect");
-  if (runSelect) {
-    const selected = snap.selectedRunId || snap.state?.currentRunId || "";
-    runSelect.innerHTML = `<option value="">No run loaded</option>` + runs.map(r => `
-      <option value="${esc(r.id)}" ${r.id === selected ? "selected" : ""}>
-        ${esc(r.id)} [${esc(r.status || "idle")}] - ${esc(r.selectedProject || r.project || "default")}
-      </option>
-    `).join("");
-  }
-  if ($("runCount")) $("runCount").textContent = runs.length;
-
-  const currentRun = snap.selectedRun?.run || runs.find(r => r.id === snap.selectedRunId) || {};
-  if ($("runCardId")) $("runCardId").textContent = currentRun.id || "None";
-  if ($("runCardProject")) $("runCardProject").textContent = currentRun.selectedProject || currentRun.project || "None";
-  if ($("runCardStatus")) $("runCardStatus").textContent = currentRun.status || "Idle";
-  if ($("runCardTask")) $("runCardTask").textContent = currentRun.task || currentRun.objective || "No task reported";
-
-  const rawAgents = snap.state?.agents || {};
-  const agents = Array.isArray(rawAgents) ? rawAgents : Object.values(rawAgents);
-  const agentList = $("agentList");
-  if (agentList) {
-    if (!agents.length) {
-      agentList.innerHTML = `<div class="rc-dim" style="padding:0.5rem;text-align:center;">No swarm control rods active.</div>`;
-    } else {
-      agentList.innerHTML = agents.map(ag => `
-        <div class="rc-agent-card">
-          <div class="rc-agent-head">
-            <span class="rc-agent-name">${esc(ag.label || ag.id || "Rod Servo")}</span>
-            <span class="rc-agent-role">${esc(ag.role || "Operator")}</span>
-          </div>
-          <div class="rc-agent-task">${esc(ag.currentTask || ag.task || ag.lastMessage || "Awaiting reactor step")}</div>
-        </div>
-      `).join("");
-    }
-  }
-  if ($("agentCount")) $("agentCount").textContent = agents.length;
-}
-
-function renderTelemetry(snap) {
-  const events = snap.events || [];
-  const list = $("telemetryList");
-  const query = ($("telemetrySearch")?.value || "").toLowerCase().trim();
-
-  const filtered = events.filter(e => {
-    const isTool = String(e.type).startsWith("tool-call") || e.data?.toolName || e.data?.toolCallId;
-    const isErr = e.level === "error" || String(e.type).includes("error");
-    if (telemetryFilter === "tools" && !isTool) return false;
-    if (telemetryFilter === "errors" && !isErr) return false;
-    if (telemetryFilter === "system" && isTool) return false;
-    if (query && !JSON.stringify(e).toLowerCase().includes(query)) return false;
-    return true;
-  }).slice(-120).reverse();
-
-  if (list) {
-    if (!filtered.length) {
-      list.innerHTML = `<div class="rc-dim" style="padding:1rem;text-align:center;">No telemetry matching current filter.</div>`;
-    } else {
-      list.innerHTML = filtered.map(e => {
-        const isTool = String(e.type).startsWith("tool-call") || e.data?.toolName;
-        const isErr = e.level === "error" || String(e.type).includes("error");
-        return `
-          <div class="rc-event-row ${isTool ? "tool" : ""} ${isErr ? "error" : ""}" data-event-id="${esc(e.id)}">
-            <div class="rc-event-head">
-              <span class="rc-event-src">${esc(e.source || e.agentId || "RPS")}</span>
-              <span class="rc-event-type">${esc(e.data?.toolName || e.type)}</span>
-              <span class="rc-event-time">${new Date(e.ts).toLocaleTimeString()}</span>
-            </div>
-            <div class="rc-event-msg">${esc(e.message || e.data?.action || JSON.stringify(e.data || {}))}</div>
-          </div>
-        `;
-      }).join("");
-    }
-    if ($("chkAutoScroll")?.checked) {
-      list.scrollTop = 0;
-    }
-  }
-  if ($("telemetryCount")) $("telemetryCount").textContent = `${events.length} EVENTS`;
-}
-
-function renderQuickGates(snap) {
-  const gates = snap.gates?.gates || [];
-  const list = $("gatesQuickList");
-  if (list) {
-    if (!gates.length) {
-      list.innerHTML = `<div class="rc-dim" style="padding:0.4rem;font-size:0.75rem;">No acceptance gates configured.</div>`;
-    } else {
-      list.innerHTML = gates.slice(0, 4).map(g => `
-        <div class="rc-gate-card">
-          <span><b>${esc(g.id)}</b>: ${esc(g.description || g.title || "Gate")}</span>
-          <span class="rc-badge ${g.status === 'passed' ? 'success' : g.status === 'failed' ? 'danger' : ''}">${esc(g.status || 'pending')}</span>
-        </div>
-      `).join("");
-    }
-  }
-}
-
-// -------------------------------------------------------------
-// Modals & Station Tabs Renderers
-// -------------------------------------------------------------
-
-function renderCommandStation() {
-  const container = $("cmdTabContent");
-  if (!container) return;
-  const control = snapshot.control || {};
-  const targetGen = control.autoIteration?.targetGenerations || 10;
-
-  if (activeCmdTab === "runctrl") {
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">CLASS 1E REACTOR RUN AUTHORITY</h3>
-        <p style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:1rem;">Issue supervisory commands to the Hermes Swarm runner orchestrator.</p>
-        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-          <button id="cmdBtnPause" class="rc-btn">PAUSE RUNNER</button>
-          <button id="cmdBtnResume" class="rc-btn">RESUME RUNNER</button>
-          <button id="cmdBtnRunNow" class="rc-btn primary">RUN NOW</button>
-          <button id="cmdBtnHold" class="rc-btn">HOLD RUNS</button>
-          <button id="cmdBtnUnhold" class="rc-btn">UNHOLD</button>
-          <button id="cmdBtnStop" class="rc-btn danger">ALL-STOP / TRIP</button>
-        </div>
-      </div>
-    `;
-  } else if (activeCmdTab === "showcase") {
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">10-GENERATION SHOWCASE LOOP</h3>
-        <p style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:1rem;">Automated genetic iteration loop across architectural variants.</p>
-        <div class="rc-form-group" style="max-width:24rem;margin-bottom:1rem;">
-          <label>TARGET GENERATIONS (1 - 10): <b id="lblSliderVal" style="color:var(--rc-flux-green);">${targetGen}</b></label>
-          <input id="showcaseSlider" type="range" min="1" max="10" value="${targetGen}" style="width:100%;">
-        </div>
-        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-          <button id="cmdBtnStartShowcase" class="rc-btn primary">START SHOWCASE LOOP</button>
-          <button id="cmdBtnPauseShowcase" class="rc-btn">PAUSE LOOP</button>
-          <button id="cmdBtnResumeShowcase" class="rc-btn">RESUME LOOP</button>
-          <button id="cmdBtnStopShowcase" class="rc-btn danger">STOP LOOP</button>
-          <button id="cmdBtnNextGen" class="rc-btn">NEXT GENERATION</button>
-        </div>
-      </div>
-    `;
-  } else if (activeCmdTab === "deblock") {
-    const bInfo = snapshot.state?.block || snapshot.state?.blocker || snapshot.state?.hold;
-    const adviceList = (control.deblockAdvice || []).filter(a => a.status === "pending");
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-amber);margin-bottom:0.4rem;">DEBLOCK &amp; HAZARD RECOVERY</h3>
-        <p style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:0.8rem;">Active Blocker: <b>${esc(bInfo ? bInfo.reason || bInfo.message || json(bInfo) : "None (Core Normal)")}</b></p>
-        <div class="rc-form-group" style="margin-bottom:0.8rem;">
-          <label>CUSTOM RECOVERY DIRECTIVE:</label>
-          <textarea id="txtDeblockPrompt" placeholder="Enter custom steering prompt to deblock reactivity interlocks or code build errors..."></textarea>
-        </div>
-        <div style="display:flex;gap:0.6rem;margin-bottom:1.2rem;">
-          <button id="cmdBtnSendDeblock" class="rc-btn primary">TRANSMIT DEBLOCK</button>
-          <button id="cmdBtnQueryAdvice" class="rc-btn">QUERY HERMES COPILOT ADVICE</button>
-        </div>
-        <h4 style="color:var(--rc-flux-cyan);font-size:0.8rem;margin-bottom:0.4rem;">PENDING DEBLOCK ADVICE (${adviceList.length})</h4>
-        ${adviceList.length ? adviceList.map(a => `
-          <div class="rc-section" style="margin-bottom:0.5rem;">
-            <div style="font-size:0.75rem;color:var(--rc-text-dim);margin-bottom:0.4rem;">${esc(a.answer || a.prompt)}</div>
-            <div style="display:flex;gap:0.4rem;">
-              <button class="rc-btn small primary" data-approve-advice="${esc(a.id)}">APPROVE ADVICE</button>
-              <button class="rc-btn small danger" data-deny-advice="${esc(a.id)}">DENY ADVICE</button>
-            </div>
-          </div>
-        `).join("") : `<div class="rc-dim" style="font-size:0.75rem;">No pending advice requests.</div>`}
-      </div>
-    `;
-  } else if (activeCmdTab === "steering") {
-    const steeringList = control.activeSteering || [];
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">REACTIVITY STEERING &amp; OBJECTIVE</h3>
-        <div class="rc-form-group" style="margin-bottom:1rem;">
-          <label>CURRENT GLOBAL OBJECTIVE:</label>
-          <textarea id="txtCurrentObjective" placeholder="Set global runner objective...">${esc(control.currentObjective?.text || snapshot.state?.task || "")}</textarea>
-          <button id="cmdBtnSetObjective" class="rc-btn small primary" style="align-self:flex-start;margin-top:0.4rem;">PUBLISH OBJECTIVE</button>
-        </div>
-        <div class="rc-form-grid" style="margin-bottom:1rem;">
-          <div class="rc-form-group">
-            <label>NEW DIRECTIVE TEXT:</label>
-            <input id="txtSteeringText" class="rc-input" placeholder="e.g. Ensure strict Class 1E fail-safe checks">
-          </div>
-          <div class="rc-form-group">
-            <label>SCOPE:</label>
-            <select id="selSteeringScope" class="rc-select">
-              <option value="next_run">Next Run</option>
-              <option value="current_run">Current Run</option>
-              <option value="queue">Queue</option>
-            </select>
-          </div>
-          <div class="rc-form-group">
-            <label>PRIORITY:</label>
-            <select id="selSteeringPriority" class="rc-select">
-              <option value="required">Required</option>
-              <option value="advisory">Advisory</option>
-            </select>
-          </div>
-        </div>
-        <button id="cmdBtnAddSteering" class="rc-btn small primary" style="margin-bottom:1rem;">ADD STEERING DIRECTIVE</button>
-        <h4 style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:0.4rem;">ACTIVE STEERING DIRECTIVES (${steeringList.length})</h4>
-        ${steeringList.length ? steeringList.map(s => `
-          <div class="rc-gate-card" style="margin-bottom:0.4rem;">
-            <span>[${esc(s.priority || 'required')}] ${esc(s.text)}</span>
-            <button class="rc-btn tiny danger" data-remove-steering="${esc(s.id)}">REMOVE</button>
-          </div>
-        `).join("") : `<div class="rc-dim" style="font-size:0.75rem;">No active steering directives.</div>`}
-      </div>
-    `;
-  } else if (activeCmdTab === "queue") {
-    const items = snapshot.queue?.items || [];
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">TASK QUEUE BRIEFS</h3>
-        <div class="rc-form-grid" style="margin-bottom:0.8rem;">
-          <div class="rc-form-group"><label>TITLE:</label><input id="txtQueueTitle" class="rc-input" placeholder="Brief Title"></div>
-          <div class="rc-form-group"><label>PRIORITY (1-100):</label><input id="txtQueuePriority" type="number" class="rc-input" value="50"></div>
-          <div class="rc-form-group full"><label>OBJECTIVE:</label><textarea id="txtQueueObjective" placeholder="Measurable objective for queued run"></textarea></div>
-          <div class="rc-form-group full"><label>CONTEXT &amp; CONSTRAINTS:</label><textarea id="txtQueueContext" placeholder="Context details..."></textarea></div>
-        </div>
-        <div style="display:flex;gap:0.6rem;margin-bottom:1rem;">
-          <button id="cmdBtnAddQueue" class="rc-btn small primary">ADD TO QUEUE</button>
-          <button id="cmdBtnClearQueue" class="rc-btn small danger">CLEAR QUEUE</button>
-        </div>
-        <h4 style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:0.4rem;">QUEUED BRIEFS (${items.length})</h4>
-        ${items.length ? items.map(q => `
-          <div class="rc-section" style="margin-bottom:0.4rem;">
-            <div style="display:flex;justify-content:space-between;">
-              <b>${esc(q.title || q.id)}</b>
-              <span class="rc-badge">${esc(q.status || 'queued')}</span>
-            </div>
-            <div style="font-size:0.72rem;color:var(--rc-text-dim);margin:0.2rem 0;">${esc(q.objective)}</div>
-            <div style="display:flex;gap:0.4rem;">
-              <button class="rc-btn tiny" data-pin-queue="${esc(q.id)}">PIN</button>
-              <button class="rc-btn tiny primary" data-use-queue="${esc(q.id)}">START GENERATION</button>
-              <button class="rc-btn tiny danger" data-archive-queue="${esc(q.id)}">ARCHIVE</button>
-            </div>
-          </div>
-        `).join("") : `<div class="rc-dim" style="font-size:0.75rem;">Queue is empty.</div>`}
-      </div>
-    `;
-  } else if (activeCmdTab === "gates") {
-    const gates = snapshot.gates?.gates || [];
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">ACCEPTANCE GATES REGISTER</h3>
-        <div class="rc-form-grid" style="margin-bottom:0.8rem;">
-          <div class="rc-form-group"><label>GATE ID:</label><input id="txtGateId" class="rc-input" placeholder="e.g. gate-flux-symmetry"></div>
-          <div class="rc-form-group"><label>SEVERITY:</label><select id="selGateSev" class="rc-select"><option value="must">Must</option><option value="should">Should</option></select></div>
-          <div class="rc-form-group full"><label>DESCRIPTION:</label><input id="txtGateDesc" class="rc-input" placeholder="Acceptance condition description"></div>
-          <div class="rc-form-group full"><label>REQUIRED EVIDENCE (one per line):</label><textarea id="txtGateEvidence" placeholder="SPEC.md&#10;test-results.json"></textarea></div>
-        </div>
-        <button id="cmdBtnAddGate" class="rc-btn small primary" style="margin-bottom:1rem;">REGISTER ACCEPTANCE GATE</button>
-        <h4 style="color:var(--rc-text-dim);font-size:0.8rem;margin-bottom:0.4rem;">ACTIVE GATES (${gates.length})</h4>
-        ${gates.length ? gates.map(g => `
-          <div class="rc-section" style="margin-bottom:0.5rem;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <b>${esc(g.id)} [${esc(g.severity || 'must')}]</b>
-              <span class="rc-badge ${g.status === 'passed' ? 'success' : g.status === 'failed' ? 'danger' : ''}">${esc(g.status || 'pending')}</span>
-            </div>
-            <div style="font-size:0.75rem;color:var(--rc-text);margin:0.3rem 0;">${esc(g.description || g.title)}</div>
-            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-              <button class="rc-btn tiny primary" data-gate-action="passed" data-gate-id="${esc(g.id)}">PASS</button>
-              <button class="rc-btn tiny" data-gate-action="needs-evidence" data-gate-id="${esc(g.id)}">NEEDS EVIDENCE</button>
-              <button class="rc-btn tiny" data-gate-action="attach-evidence" data-gate-id="${esc(g.id)}">ATTACH EVIDENCE</button>
-              <button class="rc-btn tiny danger" data-gate-action="failed" data-gate-id="${esc(g.id)}">FAIL</button>
-            </div>
-          </div>
-        `).join("") : `<div class="rc-dim" style="font-size:0.75rem;">No acceptance gates registered.</div>`}
-      </div>
-    `;
-  }
-}
-
-// Project Planning Workstation
-function renderPlannerWorkstation() {
-  const container = $("plannerTabContent");
-  if (!container) return;
-  const plans = snapshot.plans || [];
-
-  if (activePlanTab === "list") {
-    container.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
-        <h3 style="color:var(--rc-flux-cyan);">CORE FUEL LOAD PLANS (PROJECT PLANS)</h3>
-        <div style="display:flex;gap:0.5rem;">
-          <button id="btnNewClassicPlan" class="rc-btn small primary">+ NEW CLASSIC PLAN</button>
-          <button id="btnNewManagedPlan" class="rc-btn small primary">+ NEW MANAGED PLAN</button>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(22rem, 1fr));gap:0.8rem;">
-        ${plans.length ? plans.map(p => `
-          <div class="rc-section" style="cursor:pointer;" data-select-plan="${esc(p.planId)}">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <b style="color:var(--rc-flux-cyan);">${esc(p.title || p.planId)}</b>
-              <span class="rc-badge ${p.state === 'approved' ? 'success' : ''}">${esc(p.state || 'draft')}</span>
-            </div>
-            <div style="font-size:0.75rem;color:var(--rc-text-dim);margin:0.4rem 0;">${esc(p.problem || "No problem statement")}</div>
-            <div style="font-size:0.68rem;color:var(--rc-text-muted);display:flex;justify-content:space-between;">
-              <span>${esc(p.pipelineType || 'classic')} • v${p.currentRevision || p.version || 1}</span>
-              <span>${fmtDate(p.updatedAt)}</span>
-            </div>
-          </div>
-        `).join("") : `<div class="rc-dim">No fuel load plans found. Create a new plan to get started.</div>`}
-      </div>
-    `;
-  } else if (activePlanTab === "editor") {
-    const rev = selectedPlanDetail?.revision?.content || {
-      pipelineType: "classic", title: "", problem: "", intendedUsers: "", objective: "",
-      boundedScope: "", requirements: [], nonGoals: [], constraints: [], risks: [],
-      repository: { path: "/home/mojo/projects/hermesswarmbuilder/hermesswarmbuilder", baseRef: "HEAD" }
-    };
-    container.innerHTML = `
-      <form id="planEditForm" class="rc-form-grid">
-        <div class="rc-form-group"><label>PLAN TITLE:</label><input name="title" class="rc-input" value="${esc(rev.title || '')}" required></div>
-        <div class="rc-form-group"><label>PIPELINE TYPE:</label><select name="pipelineType" class="rc-select"><option value="classic" ${rev.pipelineType === 'classic' ? 'selected' : ''}>Classic</option><option value="managed" ${rev.pipelineType === 'managed' ? 'selected' : ''}>Managed</option></select></div>
-        <div class="rc-form-group full"><label>PROBLEM STATEMENT:</label><textarea name="problem" required>${esc(rev.problem || '')}</textarea></div>
-        <div class="rc-form-group"><label>INTENDED USERS:</label><input name="intendedUsers" class="rc-input" value="${esc(rev.intendedUsers || '')}"></div>
-        <div class="rc-form-group"><label>MEASURABLE OBJECTIVE:</label><input name="objective" class="rc-input" value="${esc(rev.objective || '')}"></div>
-        <div class="rc-form-group full"><label>BOUNDED SCOPE:</label><textarea name="boundedScope">${esc(rev.boundedScope || '')}</textarea></div>
-        <div class="rc-form-group"><label>REQUIREMENTS (one per line):</label><textarea name="requirements">${esc((rev.requirements || []).join('\n'))}</textarea></div>
-        <div class="rc-form-group"><label>NON-GOALS (one per line):</label><textarea name="nonGoals">${esc((rev.nonGoals || []).join('\n'))}</textarea></div>
-        <div class="rc-form-group"><label>CONSTRAINTS (one per line):</label><textarea name="constraints">${esc((rev.constraints || []).join('\n'))}</textarea></div>
-        <div class="rc-form-group"><label>RISKS (one per line):</label><textarea name="risks">${esc((rev.risks || []).join('\n'))}</textarea></div>
-        <div class="rc-form-group"><label>REPOSITORY PATH:</label><input name="repoPath" class="rc-input" value="${esc(rev.repository?.path || '')}"></div>
-        <div class="rc-form-group"><label>BASE REF:</label><input name="baseRef" class="rc-input" value="${esc(rev.repository?.baseRef || 'HEAD')}"></div>
-        <div class="rc-form-group full" style="display:flex;gap:0.6rem;margin-top:0.6rem;">
-          <button type="submit" class="rc-btn primary">SAVE REVISION DRAFT</button>
-          <button type="button" id="btnSubmitPlanReview" class="rc-btn">SUBMIT FOR REVIEW</button>
-        </div>
-      </form>
-    `;
-  } else if (activePlanTab === "review") {
-    const ledger = selectedPlanDetail?.ledger || {};
-    const revision = selectedPlanDetail?.revision || {};
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);">PLAN REVIEW &amp; RUNNER LAUNCH</h3>
-        <div style="display:flex;gap:1rem;margin:0.6rem 0;font-size:0.78rem;">
-          <span>PLAN ID: <b>${esc(ledger.planId || 'None')}</b></span>
-          <span>STATE: <b>${esc(ledger.state || 'None')}</b></span>
-          <span>CURRENT REVISION: <b>${esc(revision.revision || 1)}</b></span>
-        </div>
-        <pre class="rc-code-block" style="max-height:16rem;margin-bottom:1rem;">${esc(json(revision.content || {}))}</pre>
-        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
-          <button id="btnPlanApprove" class="rc-btn primary" ${ledger.state !== 'ready-for-review' ? 'disabled' : ''}>APPROVE EXACT REVISION</button>
-          <button id="btnPlanReject" class="rc-btn danger" ${!['ready-for-review', 'approved'].includes(ledger.state) ? 'disabled' : ''}>REJECT</button>
-          <button id="btnPlanLaunch" class="rc-btn primary" ${ledger.state !== 'approved' ? 'disabled' : ''}>LAUNCH INTO RUNNER</button>
-          <button id="btnPlanClone" class="rc-btn">CLONE PLAN</button>
-          <button id="btnPlanFork" class="rc-btn">FORK PLAN</button>
-          <button id="btnPlanArchive" class="rc-btn danger">ARCHIVE</button>
-        </div>
-      </div>
-    `;
-  } else if (activePlanTab === "copilot") {
-    container.innerHTML = `
-      <div class="rc-section">
-        <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.4rem;">PLANNING ASSISTANCE COPILOT</h3>
-        <div style="display:flex;gap:0.6rem;margin-bottom:0.8rem;">
-          <button id="btnNewAssistClassic" class="rc-btn small">NEW CLASSIC SESSION</button>
-          <button id="btnNewAssistManaged" class="rc-btn small">NEW MANAGED SESSION</button>
-        </div>
-        <div id="assistChatLog" class="rc-code-block" style="height:14rem;margin-bottom:0.8rem;">
-          ${(assistanceDetail?.messages || []).map(m => `<b>[${esc(m.role || 'SYS')}]:</b> ${esc(m.content)}\n\n`).join("") || "Start or select a planning assistance session."}
-        </div>
-        <div class="rc-form-group full" style="margin-bottom:0.8rem;">
-          <textarea id="txtAssistMsg" placeholder="Ask planning copilot to structure objectives, requirements, risks..."></textarea>
-        </div>
-        <div style="display:flex;gap:0.6rem;">
-          <button id="btnSendAssist" class="rc-btn primary">SEND MESSAGE</button>
-          ${assistanceDetail?.proposedContent ? `<button id="btnApplyProposal" class="rc-btn success">APPLY PROPOSAL TO PLAN</button>` : ""}
-        </div>
-      </div>
-    `;
-  }
-}
-
-// Evidence & Artifacts Vault
-async function renderEvidenceVault() {
-  const container = $("evidenceTabContent");
-  if (!container) return;
-  const runId = snapshot.selectedRunId || snapshot.state?.currentRunId;
-
-  if (!runId) {
-    container.innerHTML = `<div class="rc-dim" style="padding:1rem;text-align:center;">No active or historical run selected. Select a run in the left deck.</div>`;
-    return;
-  }
-
-  if (activeEvidenceTab === "spec" || activeEvidenceTab === "devplan") {
-    container.innerHTML = `<div class="rc-dim">Loading ${activeEvidenceTab.toUpperCase()}.MD document...</div>`;
-    try {
-      const doc = await client.loadDocument(activeEvidenceTab, runId);
-      container.innerHTML = `<pre class="rc-code-block" style="max-height:30rem;">${esc(doc.text || "Document empty")}</pre>`;
-    } catch (e) {
-      container.innerHTML = `<div class="rc-dim" style="color:var(--rc-flux-amber);">${activeEvidenceTab.toUpperCase()}.MD not found in selected run: ${esc(e.message)}</div>`;
-    }
-  } else if (activeEvidenceTab === "run") {
-    const r = snapshot.selectedRun?.run || {};
-    container.innerHTML = `<pre class="rc-code-block" style="max-height:30rem;">${esc(json(r))}</pre>`;
-  } else if (activeEvidenceTab === "artifacts") {
-    const artifacts = snapshot.selectedRun?.artifacts || [];
-    container.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(18rem, 1fr));gap:0.6rem;">
-        ${artifacts.length ? artifacts.map(a => `
-          <div class="rc-section" style="cursor:pointer;" data-view-artifact="${esc(a.name)}">
-            <b style="color:var(--rc-flux-cyan);">${esc(a.name)}</b>
-            <small style="color:var(--rc-text-muted);">${a.size ? `${a.size} bytes` : 'Artifact file'}</small>
-          </div>
-        `).join("") : `<div class="rc-dim">No stored artifacts found for this run.</div>`}
-      </div>
-    `;
-  } else if (activeEvidenceTab === "logs") {
-    const logs = snapshot.selectedRun?.logs || [];
-    container.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(18rem, 1fr));gap:0.6rem;">
-        ${logs.length ? logs.map(l => `
-          <div class="rc-section" style="cursor:pointer;" data-view-log="${esc(l.name)}">
-            <b style="color:var(--rc-flux-green);">${esc(l.name)}</b>
-            <small style="color:var(--rc-text-muted);">Tail 400 lines</small>
-          </div>
-        `).join("") : `<div class="rc-dim">No log files found for this run.</div>`}
-      </div>
-    `;
-  } else if (activeEvidenceTab === "iterations") {
-    const iterations = snapshot.iterations || [];
-    container.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:0.8rem;">
-        ${iterations.length ? iterations.map(it => `
-          <div class="rc-section">
-            <div style="display:flex;justify-content:space-between;">
-              <b>Generation ${esc(it.generation || 1)} [${esc(it.id)}]</b>
-              <span class="rc-badge ${it.status === 'completed' ? 'success' : ''}">${esc(it.status || 'unknown')}</span>
-            </div>
-            <div style="font-size:0.75rem;color:var(--rc-text);margin:0.3rem 0;">${esc(it.objective || "No iteration objective")}</div>
-            <div style="display:flex;gap:0.4rem;">
-              <button class="rc-btn tiny" data-it-action="continue" data-it-id="${esc(it.id)}">CONTINUE FROM ITERATION</button>
-              <button class="rc-btn tiny" data-it-action="fork" data-it-id="${esc(it.id)}">FORK FROM ITERATION</button>
-              <button class="rc-btn tiny primary" data-it-action="use-direction" data-it-id="${esc(it.id)}">USE AS NEXT DIRECTION</button>
-            </div>
-          </div>
-        `).join("") : `<div class="rc-dim">No iterative showcase generations recorded.</div>`}
-      </div>
-    `;
-  } else if (activeEvidenceTab === "audit") {
-    const audit = snapshot.audit || [];
-    container.innerHTML = `
-      <pre class="rc-code-block" style="max-height:30rem;">${esc(json(audit))}</pre>
-    `;
-  }
-}
-
-// Help & Operator Manual
-function renderHelpManual() {
-  const container = $("helpModalContent");
-  if (!container) return;
-  container.innerHTML = `
-    <div class="rc-section" style="line-height:1.6;font-size:0.85rem;">
-      <h3 style="color:var(--rc-flux-cyan);margin-bottom:0.6rem;">☢️ WESTINGHOUSE AP1000 NUCLEAR CORE SAFETY CONSOLE METAPHOR</h3>
-      <p>This workstation models the Hermes SwarmBuilder operational loop as a nuclear power plant main control room (Westinghouse AP1000 MCR) enforcing Class 1E safety interlocks, 61-element hexagonal core thermal neutron flux diagnostics, and a NUREG-0700 Safety Parameter Display System (SPDS).</p>
-
-      <h4 style="color:var(--rc-flux-green);margin:1rem 0 0.4rem 0;">1. READING THE INSTRUMENT DISPLAYS</h4>
-      <ul style="padding-left:1.4rem;">
-        <li><b>61-Element Hexagonal Core Lattice:</b> The left SVG core displays 61 fuel assemblies arranged in concentric rings (Center FA-01 + Rings 1 to 4). Color coding indicates thermal neutron flux: <i>Cyan</i> (>0.80 full power), <i>Green</i> (0.50-0.80 nominal), <i>Amber</i> (<0.50 low flux), <i>Red</i> (SCRAM tripped). Click any assembly to inspect local linear power and DNBR margin.</li>
-        <li><b>Control Rod Drive Mechanism (CRDM) Servos:</b> 8 vertical bar tracks indicate insertion percentage for Regulating Banks A–D and Shutdown Banks S1–S4.</li>
-        <li><b>NUREG-0700 SPDS Radar Polygon:</b> 8-axis safety radar displaying Reactivity, Core Cooling, RCS Pressure, Containment Integrity, Secondary Sink, Radiation, Swarm Health, and Gate Compliance at a glance.</li>
-        <li><b>Emergency SCRAM Switchgear:</b> Direct Class 1E trip button gravity-dropping all control rods to instantly abort runner execution upon critical safety excursion.</li>
-      </ul>
-
-      <h4 style="color:var(--rc-flux-green);margin:1rem 0 0.4rem 0;">2. OPERATOR WORKFLOW</h4>
-      <ol style="padding-left:1.4rem;">
-        <li><b>Core Fuel Reload Plans:</b> Open the Project Planning Workstation (<kbd>P</kbd>) to draft, edit, review, and launch recipes.</li>
-        <li><b>Criticality &amp; Power Ascension:</b> Initiate runner execution from Command Station (<kbd>C</kbd>) or trigger a 10-generation genetic showcase loop.</li>
-        <li><b>Telemetry &amp; Flux Monitoring:</b> Monitor live tool dispatches in the right rail or click any event to inspect full JSON dispatches.</li>
-        <li><b>RPS Deblock &amp; Boron Trim:</b> If interrupted, issue recovery directives via the Deblock tab or query Hermes Copilot advice.</li>
-        <li><b>Safety Audit &amp; Evidence:</b> Open the Evidence Vault (<kbd>E</kbd>) to verify SPEC.md, DEVPLAN.md, artifact outputs, and logs.</li>
-      </ol>
-
-      <h4 style="color:var(--rc-flux-green);margin:1rem 0 0.4rem 0;">3. KEYBOARD SHORTCUTS</h4>
-      <table style="width:100%;border-collapse:collapse;margin-top:0.6rem;font-size:0.8rem;">
-        <tr style="border-bottom:1px solid var(--rc-border);text-align:left;"><th style="padding:4px;">KEY</th><th style="padding:4px;">ACTION</th></tr>
-        <tr><td style="padding:4px;"><kbd>Space</kbd></td><td>Pause / Resume Live Telemetry Stream</td></tr>
-        <tr><td style="padding:4px;"><kbd>R</kbd></td><td>Resynchronize Reactor Protection System</td></tr>
-        <tr><td style="padding:4px;"><kbd>C</kbd></td><td>Open Operator Command Station</td></tr>
-        <tr><td style="padding:4px;"><kbd>P</kbd></td><td>Open Project Planning Workstation</td></tr>
-        <tr><td style="padding:4px;"><kbd>E</kbd></td><td>Open Evidence &amp; Artifacts Vault</td></tr>
-        <tr><td style="padding:4px;"><kbd>H</kbd></td><td>Open Help &amp; Operator Manual</td></tr>
-        <tr><td style="padding:4px;"><kbd>Esc</kbd></td><td>Close Active Modal</td></tr>
-      </table>
-    </div>
-  `;
-}
-
-// -------------------------------------------------------------
-// Event Listeners & Interactive Handlers
-// -------------------------------------------------------------
-
-function setupEventListeners() {
-  // Masthead Actions
-  $("btnStreamToggle")?.addEventListener("click", () => {
-    if (snapshot.connection?.paused) {
-      client.resume();
-      toast("RPS telemetry stream resumed", "info");
-    } else {
-      client.pause();
-      toast("RPS telemetry stream paused", "warn");
-    }
-  });
-
-  $("btnResyncCore")?.addEventListener("click", () => {
-    client.refresh();
-    toast("Reactor Protection System (RPS) resynchronized", "info");
-  });
-
-  $("btnManualScram")?.addEventListener("click", async () => {
-    if (confirm("EMERGENCY REACTOR SCRAM: Trip all breakers and gravity-drop all control rod banks?")) {
-      try {
-        await client.command("stop");
-        toast("EMERGENCY REACTOR SCRAM INITIATED: All banks dropped", "error");
-      } catch (e) { toast(e.message, "error"); }
-    }
-  });
-
-  // Modal Openers
-  $("btnOpenCommand")?.addEventListener("click", () => {
-    renderCommandStation();
-    $("commandModal")?.showModal();
-  });
-  $("btnCloseCommand")?.addEventListener("click", () => $("commandModal")?.close());
-
-  $("btnOpenPlanner")?.addEventListener("click", () => {
-    renderPlannerWorkstation();
-    $("plannerModal")?.showModal();
-  });
-  $("btnClosePlanner")?.addEventListener("click", () => $("plannerModal")?.close());
-
-  $("btnOpenEvidence")?.addEventListener("click", () => {
-    renderEvidenceVault();
-    $("evidenceModal")?.showModal();
-  });
-  $("btnCloseEvidence")?.addEventListener("click", () => $("evidenceModal")?.close());
-
-  $("btnOpenHelp")?.addEventListener("click", () => {
-    renderHelpManual();
-    $("helpModal")?.showModal();
-  });
-  $("btnCloseHelp")?.addEventListener("click", () => $("helpModal")?.close());
-
-  $("btnQuickDeblock")?.addEventListener("click", () => {
-    activeCmdTab = "deblock";
-    renderCommandStation();
-    $("commandModal")?.showModal();
-  });
-
-  $("btnOpenCommandGates")?.addEventListener("click", () => {
-    activeCmdTab = "gates";
-    renderCommandStation();
-    $("commandModal")?.showModal();
-  });
-
-  // Tab Navigations
-  document.querySelectorAll("[data-cmd-tab]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-cmd-tab]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      activeCmdTab = btn.dataset.cmdTab;
-      renderCommandStation();
-    });
-  });
-
-  document.querySelectorAll("[data-plan-tab]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-plan-tab]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      activePlanTab = btn.dataset.planTab;
-      renderPlannerWorkstation();
-    });
-  });
-
-  document.querySelectorAll("[data-evidence-tab]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-evidence-tab]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      activeEvidenceTab = btn.dataset.evidenceTab;
-      renderEvidenceVault();
-    });
-  });
-
-  // Telemetry Filters
-  document.querySelectorAll(".rc-filter-chips [data-filter]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".rc-filter-chips [data-filter]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      telemetryFilter = btn.dataset.filter;
-      renderTelemetry(snapshot);
-    });
-  });
-
-  $("telemetrySearch")?.addEventListener("input", () => renderTelemetry(snapshot));
-
-  // Run Selection
-  $("runSelect")?.addEventListener("change", (e) => {
-    const val = e.target.value;
-    client.selectRun(val || null);
-  });
-  $("btnRefreshRuns")?.addEventListener("click", () => client.refreshRuns());
-
-  // Chemical & Volume Control System (CVCS) Boron Trim
-  $("btnTrimBoration")?.addEventListener("click", async () => {
-    try {
-      await client.command("steer", { directive: "Adjust CVCS boron concentration for steady-state criticality", scope: "current_run" });
-      toast("CVCS chemical boron trim injected into primary loop", "info");
-    } catch (e) { toast(e.message, "error"); }
-  });
-
-  // Global Dynamic Delegation for Core Selection, Commands, Plans, & Artifacts
-  document.addEventListener("click", async (e) => {
-    const target = e.target.closest("button, [data-fa-id], [data-event-id], [data-select-plan], [data-view-artifact], [data-view-log]");
-    if (!target) return;
-
-    // Fuel Assembly Selection
-    if (target.dataset.faId) {
-      selectedFuelAssemblyId = target.dataset.faId;
-      if ($("lblSelectedFa")) $("lblSelectedFa").textContent = `${target.dataset.faId} (RING ${target.dataset.faRing})`;
-      if ($("faIdDisplay")) $("faIdDisplay").textContent = target.dataset.faId;
-      if ($("lblFaRing")) $("lblFaRing").textContent = `RING ${target.dataset.faRing}`;
-      if ($("lblFaPower")) $("lblFaPower").textContent = `${target.dataset.faPower} kW/m`;
-      if ($("lblFaBurnup")) $("lblFaBurnup").textContent = `${Number(target.dataset.faBurnup).toLocaleString()} MWd/MTU`;
-      if ($("lblFaTemp")) $("lblFaTemp").textContent = `${target.dataset.faTemp} °C (SAFE)`;
-      renderHexCore();
-      toast(`Interrogated Fuel Assembly ${target.dataset.faId} neutron flux telemetry`, "info");
-      return;
-    }
-
-    // Telemetry Event Click -> Tool Inspector
-    if (target.dataset.eventId) {
-      const ev = snapshot.events.find(x => x.id === target.dataset.eventId);
-      if (ev) {
-        selectedToolEvent = ev;
-        $("toolModalContent").innerHTML = `
-          <div class="rc-section" style="margin-bottom:0.6rem;">
-            <div><b>EVENT ID:</b> ${esc(ev.id)}</div>
-            <div><b>SOURCE / AGENT:</b> ${esc(ev.source || ev.agentId || 'RPS')}</div>
-            <div><b>TYPE / TOOL:</b> ${esc(ev.data?.toolName || ev.type)}</div>
-            <div><b>TIMESTAMP:</b> ${new Date(ev.ts).toISOString()}</div>
-          </div>
-          <pre class="rc-code-block">${esc(json(ev.raw || ev))}</pre>
-        `;
-        $("toolModal")?.showModal();
-      }
-      return;
-    }
-
-    // Command Station Actions
-    if (target.id === "cmdBtnPause") { await client.command("pause"); toast("Runner paused", "warn"); }
-    if (target.id === "cmdBtnResume") { await client.command("resume"); toast("Runner resumed", "info"); }
-    if (target.id === "cmdBtnRunNow") { await client.command("run-now"); toast("Run Now dispatched", "info"); }
-    if (target.id === "cmdBtnHold") { await client.command("hold"); toast("New runs on hold", "warn"); }
-    if (target.id === "cmdBtnUnhold") { await client.command("unhold"); toast("Hold released", "info"); }
-    if (target.id === "cmdBtnStop") { await client.command("stop"); toast("Runner stopped / tripped", "error"); }
-
-    // Showcase Actions
-    if (target.id === "cmdBtnStartShowcase") {
-      const sliderVal = Number($("showcaseSlider")?.value || 10);
-      await client.command("start-showcase-loop", { targetGenerations: sliderVal });
-      toast(`Started ${sliderVal}-Generation Showcase Loop`, "info");
-    }
-    if (target.id === "cmdBtnPauseShowcase") { await client.command("pause-showcase-loop"); toast("Showcase loop paused", "warn"); }
-    if (target.id === "cmdBtnResumeShowcase") { await client.command("resume-showcase-loop"); toast("Showcase loop resumed", "info"); }
-    if (target.id === "cmdBtnStopShowcase") { await client.command("stop-showcase-loop"); toast("Showcase loop stopped", "error"); }
-    if (target.id === "cmdBtnNextGen") { await client.command("start-next-iteration"); toast("Starting next generation", "info"); }
-
-    // Deblock Actions
-    if (target.id === "cmdBtnSendDeblock") {
-      const prompt = $("txtDeblockPrompt")?.value.trim();
-      if (!prompt) return toast("Please enter deblock instruction", "warn");
-      await client.command("deblock", { prompt });
-      toast("Deblock instruction transmitted", "info");
-      renderCommandStation();
-    }
-    if (target.id === "cmdBtnQueryAdvice") {
-      await client.command("deblock-advice", { prompt: "Analyze core reactivity trip fault" });
-      toast("Deblock advice requested from Copilot", "info");
-      renderCommandStation();
-    }
-    if (target.dataset.approveAdvice) {
-      await client.command("approve-deblock-advice", { adviceId: target.dataset.approveAdvice });
-      toast("Advice approved", "info");
-      renderCommandStation();
-    }
-    if (target.dataset.denyAdvice) {
-      await client.command("deny-deblock-advice", { adviceId: target.dataset.denyAdvice });
-      toast("Advice denied", "warn");
-      renderCommandStation();
-    }
-
-    // Steering Actions
-    if (target.id === "cmdBtnSetObjective") {
-      const text = $("txtCurrentObjective")?.value.trim();
-      if (text) {
-        await client.command("set-current-objective", { text });
-        toast("Global objective published", "info");
-      }
-    }
-    if (target.id === "cmdBtnAddSteering") {
-      const text = $("txtSteeringText")?.value.trim();
-      const scope = $("selSteeringScope")?.value;
-      const priority = $("selSteeringPriority")?.value;
-      if (text) {
-        await client.command("steer", { text, scope, priority });
-        toast("Steering directive added", "info");
-        renderCommandStation();
-      }
-    }
-    if (target.dataset.removeSteering) {
-      await client.command("remove-steering", { id: target.dataset.removeSteering });
-      toast("Steering directive removed", "info");
-      renderCommandStation();
-    }
-
-    // Queue Actions
-    if (target.id === "cmdBtnAddQueue") {
-      const title = $("txtQueueTitle")?.value.trim();
-      const priority = Number($("txtQueuePriority")?.value || 50);
-      const objective = $("txtQueueObjective")?.value.trim();
-      const context = $("txtQueueContext")?.value.trim();
-      if (title && objective) {
-        await client.command("add-queue-item", { title, priority, objective, context });
-        toast("Queue brief added", "info");
-        renderCommandStation();
-      }
-    }
-    if (target.id === "cmdBtnClearQueue") {
-      await client.command("clear-queue");
-      toast("Queue cleared", "warn");
-      renderCommandStation();
-    }
-    if (target.dataset.pinQueue) {
-      await client.command("pin-queue-item", { id: target.dataset.pinQueue });
-      toast("Queue brief pinned", "info");
-      renderCommandStation();
-    }
-    if (target.dataset.useQueue) {
-      await client.command("use-as-next-direction", { id: target.dataset.useQueue });
-      toast("Queue brief launched into next generation", "info");
-      renderCommandStation();
-    }
-    if (target.dataset.archiveQueue) {
-      await client.command("archive-queue-item", { id: target.dataset.archiveQueue });
-      toast("Queue brief archived", "info");
-      renderCommandStation();
-    }
-
-    // Gate Actions
-    if (target.id === "cmdBtnAddGate") {
-      const id = $("txtGateId")?.value.trim();
-      const severity = $("selGateSev")?.value;
-      const description = $("txtGateDesc")?.value.trim();
-      const requiredEvidence = lines($("txtGateEvidence")?.value);
-      if (id && description) {
-        await client.command("add-gate", { id, severity, description, requiredEvidence, phase: "final-audit" });
-        toast("Acceptance gate added", "info");
-        renderCommandStation();
-      }
-    }
-    if (target.dataset.gateAction) {
-      const gateId = target.dataset.gateId;
-      const action = target.dataset.gateAction;
-      if (action === "attach-evidence") {
-        await client.command("attach-gate-evidence", { gateId, artifacts: ["SPEC.md"] });
-        toast("Run evidence attached to gate", "info");
-      } else {
-        await client.command("gate-decision", { gateId, decision: action });
-        toast(`Gate decision recorded: ${action}`, "info");
-      }
-      renderCommandStation();
-    }
-
-    // Plan Actions
-    if (target.id === "btnNewClassicPlan" || target.id === "btnNewManagedPlan") {
-      const type = target.id === "btnNewClassicPlan" ? "classic" : "managed";
-      const title = window.prompt(`New ${type.toUpperCase()} Fuel Load Plan Title:`);
-      if (title) {
-        await client.createProjectPlan({
-          pipelineType: type,
-          title,
-          problem: "Nuclear core reload pattern verification",
-          intendedUsers: "reactor-operators",
-          objective: "Ensure 61-element flux symmetry and SCRAM safety margins",
-          boundedScope: "Reactor pressure vessel",
-          repoPath: "/home/mojo/projects/hermesswarmbuilder/hermesswarmbuilder",
-          baseRef: "HEAD"
-        });
-        toast("Plan created", "info");
-        await client.refreshPlans();
-        renderPlannerWorkstation();
-      }
-    }
-    if (target.dataset.selectPlan) {
-      selectedPlanId = target.dataset.selectPlan;
-      selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      activePlanTab = "editor";
-      document.querySelectorAll("[data-plan-tab]").forEach(b => b.classList.remove("active"));
-      document.querySelector('[data-plan-tab="editor"]')?.classList.add("active");
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnSubmitPlanReview" && selectedPlanId) {
-      await client.submitProjectPlanForReview(selectedPlanId, selectedPlanDetail?.ledger?.version || 1);
-      toast("Plan submitted for review", "info");
-      selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      activePlanTab = "review";
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanApprove" && selectedPlanId) {
-      await client.approveProjectPlan(selectedPlanId, selectedPlanDetail?.ledger?.version || 1);
-      toast("Plan revision approved", "info");
-      selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanReject" && selectedPlanId) {
-      await client.rejectProjectPlan(selectedPlanId, selectedPlanDetail?.ledger?.version || 1);
-      toast("Plan rejected", "warn");
-      selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanLaunch" && selectedPlanId) {
-      await client.launchProjectPlan(selectedPlanId, selectedPlanDetail?.ledger?.version || 1);
-      toast("Approved plan launched into runner", "info");
-      selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanClone" && selectedPlanId) {
-      await client.cloneProjectPlan(selectedPlanId);
-      toast("Plan cloned to draft", "info");
-      await client.refreshPlans();
-      activePlanTab = "list";
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanFork" && selectedPlanId) {
-      await client.forkProjectPlan(selectedPlanId, selectedPlanDetail?.ledger?.version || 1);
-      toast("Plan forked to draft", "info");
-      await client.refreshPlans();
-      activePlanTab = "list";
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnPlanArchive" && selectedPlanId) {
-      await client.archiveProjectPlan(selectedPlanId);
-      toast("Plan archived", "warn");
-      await client.refreshPlans();
-      activePlanTab = "list";
-      renderPlannerWorkstation();
-    }
-
-    // Copilot Actions
-    if (target.id === "btnNewAssistClassic" || target.id === "btnNewAssistManaged") {
-      const type = target.id === "btnNewAssistClassic" ? "classic" : "managed";
-      assistanceDetail = await client.createPlanAssistance(type);
-      selectedAssistanceId = assistanceDetail.id;
-      renderPlannerWorkstation();
-    }
-    if (target.id === "btnSendAssist" && selectedAssistanceId) {
-      const msg = $("txtAssistMsg")?.value.trim();
-      if (msg) {
-        assistanceDetail = await client.messagePlanAssistance(selectedAssistanceId, assistanceDetail.version, msg);
-        renderPlannerWorkstation();
-      }
-    }
-    if (target.id === "btnApplyProposal" && assistanceDetail?.proposedContent) {
-      const p = assistanceDetail.proposedContent;
-      await client.createProjectPlan(p);
-      toast("Proposal applied to new Project Plan", "info");
-      await client.refreshPlans();
-      activePlanTab = "list";
-      renderPlannerWorkstation();
-    }
-
-    // View Artifact / Log inline modal
-    if (target.dataset.viewArtifact) {
-      const name = target.dataset.viewArtifact;
-      const runId = snapshot.selectedRunId || snapshot.state?.currentRunId;
-      try {
-        const art = await client.loadArtifact(name, runId);
-        $("fileViewerTitle").textContent = `ARTIFACT: ${name}`;
-        $("fileViewerContent").textContent = art.text;
-        $("fileViewerModal")?.showModal();
-      } catch (e) { toast(e.message, "error"); }
-    }
-    if (target.dataset.viewLog) {
-      const name = target.dataset.viewLog;
-      const runId = snapshot.selectedRunId || snapshot.state?.currentRunId;
-      try {
-        const lg = await client.loadLog(name, runId, { tail: 400 });
-        $("fileViewerTitle").textContent = `LOG TAIL: ${name}`;
-        $("fileViewerContent").textContent = lg.text;
-        $("fileViewerModal")?.showModal();
-      } catch (e) { toast(e.message, "error"); }
-    }
-    if (target.dataset.itAction) {
-      const itId = target.dataset.itId;
-      const action = target.dataset.itAction;
-      if (action === "continue") await client.command("continue-from-iteration", { iterationId: itId });
-      if (action === "fork") await client.command("fork-from-iteration", { iterationId: itId });
-      if (action === "use-direction") await client.command("use-as-next-direction", { id: itId });
-      toast(`Iteration action dispatched: ${action}`, "info");
-    }
-  });
-
-  // Plan Edit Form Submission
-  document.addEventListener("submit", async (e) => {
-    if (e.target.id === "planEditForm") {
-      e.preventDefault();
-      const form = e.target;
-      const data = new FormData(form);
-      const planPayload = {
-        title: String(data.get("title") || ""),
-        pipelineType: String(data.get("pipelineType") || "classic"),
-        problem: String(data.get("problem") || ""),
-        intendedUsers: String(data.get("intendedUsers") || ""),
-        objective: String(data.get("objective") || ""),
-        boundedScope: String(data.get("boundedScope") || ""),
-        requirements: lines(data.get("requirements")),
-        nonGoals: lines(data.get("nonGoals")),
-        constraints: lines(data.get("constraints")),
-        risks: lines(data.get("risks")),
-        repository: { path: String(data.get("repoPath") || ""), baseRef: String(data.get("baseRef") || "HEAD") }
-      };
-      if (selectedPlanId) {
-        await client.updateProjectPlan(selectedPlanId, planPayload);
-        toast("Draft revision saved", "info");
-        selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-      } else {
-        const created = await client.createProjectPlan(planPayload);
-        selectedPlanId = created.planId;
-        selectedPlanDetail = await client.getProjectPlan(selectedPlanId);
-        toast("New plan created and saved", "info");
-      }
-      await client.refreshPlans();
-      renderPlannerWorkstation();
-    }
-  });
-
-  // Showcase slider live label
-  document.addEventListener("input", (e) => {
-    if (e.target.id === "showcaseSlider" && $("lblSliderVal")) {
-      $("lblSliderVal").textContent = e.target.value;
-    }
-  });
-
-  // Close modals buttons
-  $("btnCloseTool")?.addEventListener("click", () => $("toolModal")?.close());
-  $("btnCloseFileViewer")?.addEventListener("click", () => $("fileViewerModal")?.close());
-
-  // Global Keyboard Shortcuts
-  window.addEventListener("keydown", (e) => {
-    if (e.target.matches("input, textarea, select")) return;
-    if (e.code === "Space") {
-      e.preventDefault();
-      $("btnStreamToggle")?.click();
-    } else if (e.key.toLowerCase() === "r") {
-      $("btnResyncCore")?.click();
-    } else if (e.key.toLowerCase() === "c") {
-      $("btnOpenCommand")?.click();
-    } else if (e.key.toLowerCase() === "p") {
-      $("btnOpenPlanner")?.click();
-    } else if (e.key.toLowerCase() === "e") {
-      $("btnOpenEvidence")?.click();
-    } else if (e.key.toLowerCase() === "h") {
-      $("btnOpenHelp")?.click();
-    }
-  });
-}
-
-// -------------------------------------------------------------
-// Client Subscription & Main Loop
-// -------------------------------------------------------------
-
-client.subscribe((snap) => {
-  snapshot = snap;
-  renderHeader(snap);
-  renderWorkflow(snap);
-  renderRunsAndAgents(snap);
-  renderTelemetry(snap);
-  renderQuickGates(snap);
-  renderHexCore();
+let lastCommand = null;
+let renderQueued = false;
+let evidenceRequestRevision = 0;
+let resourceRequestRevision = 0;
+let lastAnnouncedConnection = "";
+let lastAnnouncedEventId = "";
+const pendingCommands = new Set();
+const commandViewStates = new Map();
+const plannerViewStates = new Map();
+
+export const actions = Object.freeze({
+  selectRun: (id) => client.selectRun(id), selectIteration: (id) => client.selectIteration(id),
+  loadArtifact: (name, runId) => client.loadArtifact(name, runId), loadLog: (name, runId, options) => client.loadLog(name, runId, options),
+  loadDocument: (kind, runId) => client.loadDocument(kind, runId), command: (type, payload, options) => client.command(type, payload, options),
+  getProjectPlan: (id) => client.getProjectPlan(id), listPlanAssistance: () => client.listPlanAssistance()
 });
 
-// Initialize
-setupEventListeners();
-client.connect();
-client.refresh();
-client.listPlanAssistance().catch(() => {});
-renderHexCore();
-resizeSpds();
-
-// Continuous Animation Loop for SPDS Radar & CRDM Servos
-function animLoop() {
-  drawSpds();
-  requestAnimationFrame(animLoop);
+function date(value) {
+  if (!value) return "not reported";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? String(value) : parsed.toLocaleString();
 }
-requestAnimationFrame(animLoop);
+
+function age(value) {
+  const elapsed = Date.now() - new Date(value || 0).valueOf();
+  if (!Number.isFinite(elapsed) || !value) return "no reading";
+  if (elapsed < 60_000) return `${Math.max(0, Math.round(elapsed / 1000))}s ago`;
+  if (elapsed < 3_600_000) return `${Math.round(elapsed / 60_000)}m ago`;
+  return `${Math.round(elapsed / 3_600_000)}h ago`;
+}
+
+function toast(message, type = "info") {
+  const node = $("rcToast");
+  node.textContent = message?.message || String(message);
+  node.hidden = false;
+  node.className = `rc-toast ${type}`;
+  clearTimeout(node._timer);
+  node._timer = setTimeout(() => { node.hidden = true; }, 6000);
+}
+
+function controlKey(control) {
+  const form = control.closest("form");
+  const owner = first(form?.dataset.draftOwner, form?.id, form?.dataset.commandForm, form?.dataset.special, form?.dataset.gateForm, "view");
+  const commandIdentity = control.dataset.command ? `${control.dataset.command}|${control.dataset.payload || ""}` : "";
+  const identity = first(control.id, control.name, commandIdentity, control.dataset.queueStart, control.dataset.gateAction, control.dataset.objectId, control.dataset.planAction, control.dataset.assistanceId, control.dataset.planId, control.dataset.newPlan, control.dataset.newAssistance, control.textContent?.trim());
+  return `${owner}|${identity}`;
+}
+
+function captureControls(root, view, previous = null) {
+  if (!root || !view || root.dataset.renderView !== view) return previous;
+  const active = document.activeElement;
+  const focusedControl = root.contains(active) && active.matches?.("input, textarea, select, button") ? active : null;
+  const focusKey = focusedControl ? controlKey(focusedControl) : previous?.focusKey || "";
+  const values = $$('input, textarea, select', root).map((control) => [
+    controlKey(control), control.type === "checkbox" ? control.checked : control.value
+  ]);
+  const scroll = [["__root", root.scrollTop, root.scrollLeft], ...$$('textarea', root).map((node) => [controlKey(node), node.scrollTop, node.scrollLeft])];
+  const selection = focusedControl && typeof focusedControl.selectionStart === "number" ? { key: focusKey, start: focusedControl.selectionStart, end: focusedControl.selectionEnd, direction: focusedControl.selectionDirection } : previous?.selection || null;
+  return { focusKey, values, scroll, selection };
+}
+
+function restoreControls(root, view, saved) {
+  root.dataset.renderView = view;
+  if (!saved) return;
+  const values = new Map(saved.values);
+  $$('input, textarea, select', root).forEach((control) => {
+    const key = controlKey(control);
+    if (!values.has(key)) return;
+    if (control.type === "checkbox") control.checked = values.get(key);
+    else control.value = values.get(key);
+  });
+  const scroll = new Map(saved.scroll?.map(([key, top, left]) => [key, { top, left }]) || []);
+  const rootScroll = scroll.get("__root");
+  if (rootScroll) { root.scrollTop = rootScroll.top; root.scrollLeft = rootScroll.left; }
+  $$('textarea', root).forEach((node) => {
+    const position = scroll.get(controlKey(node));
+    if (position) { node.scrollTop = position.top; node.scrollLeft = position.left; }
+  });
+  if (saved.focusKey) {
+    const target = $$("input, textarea, select, button", root).find((control) => controlKey(control) === saved.focusKey);
+    if (target && !target.disabled) {
+      target.focus({ preventScroll: true });
+      if (saved.selection?.key === saved.focusKey && typeof target.setSelectionRange === "function") target.setSelectionRange(saved.selection.start, saved.selection.end, saved.selection.direction || "none");
+    }
+  }
+}
+
+function preserveRenderedView(root, states) {
+  const view = root?.dataset.renderView;
+  if (view) states.set(view, captureControls(root, view, states.get(view)));
+}
+
+function plannerViewKey() {
+  return activePlanTab === "copilot" ? `copilot:${assistanceDetail?.id || "list"}` : activePlanTab;
+}
+
+function announceLiveChanges(next) {
+  const announcements = [];
+  const connection = next.connection?.status || "disconnected";
+  if (lastAnnouncedConnection && connection !== lastAnnouncedConnection) announcements.push(`Connection ${connection}`);
+  lastAnnouncedConnection = connection;
+  const event = arr(next.events).at(-1);
+  if (event?.id && lastAnnouncedEventId && event.id !== lastAnnouncedEventId) announcements.push(`${first(event.data?.toolName, event.type, "Event")}: ${first(event.message, event.data?.action, event.level, "updated")}`);
+  if (event?.id) lastAnnouncedEventId = event.id;
+  if (announcements.length) $("rcLiveStatus").textContent = announcements.join(". ").slice(0, 240);
+}
+
+function currentObjective() {
+  const pinned = arr(snapshot.queue?.items).find((item) => item.id === snapshot.control?.pinnedQueueItemId);
+  return first(snapshot.control?.currentObjective?.text, pinned?.objective, snapshot.state?.objective, snapshot.state?.task, "");
+}
+
+function stateBlockers() {
+  const state = snapshot.state || {};
+  const values = [...arr(state.blockers), state.block, state.blocker, blocked(state.status) ? state.hold || state.lastAction : null].filter(Boolean);
+  return values.map((value, index) => {
+    const data = typeof value === "object" ? value : { reason: String(value) };
+    return { ...data, id: String(first(data.id, `blocker-${index}`)), reason: first(data.reason, data.message, data.error, state.lastAction, "Reason not reported"), runId: first(data.runId, state.currentRunId), status: first(data.status, state.status, "blocked") };
+  });
+}
+
+function normalizedEvents() {
+  return arr(snapshot.events).map((event) => ({
+    type: event.data?.toolName || lower(event.type).includes("tool") ? "tool" : "event",
+    id: event.id, label: first(event.data?.toolName, event.message, event.type, "event"),
+    status: first(event.data?.status, event.level, "info"), data: event
+  }));
+}
+
+function operationalObjects() {
+  const objects = [];
+  stateBlockers().forEach((item) => objects.push({ type: "blocker", id: item.id, label: item.reason, status: item.status, data: item }));
+  const rawAgents = Array.isArray(snapshot.state?.agents) ? snapshot.state.agents : Object.values(snapshot.state?.agents || {});
+  rawAgents.forEach((item, index) => objects.push({ type: "agent", id: String(first(item.id, item.name, `agent-${index}`)), label: first(item.label, item.name, item.role, item.id, `Agent ${index + 1}`), status: first(item.status, "observed"), data: item }));
+  arr(snapshot.runs).forEach((item) => objects.push({ type: "run", id: item.id, label: first(item.selectedProject, item.id), status: first(item.status, "unknown"), data: item }));
+  arr(snapshot.iterations).forEach((item) => objects.push({ type: "iteration", id: item.id, label: first(item.objective, item.id), status: first(item.status, "unknown"), data: item }));
+  arr(snapshot.queue?.items).forEach((item) => objects.push({ type: "queue", id: item.id, label: first(item.title, item.id), status: first(item.status, "queued"), data: item }));
+  arr(snapshot.gates?.gates).forEach((item) => objects.push({ type: "gate", id: item.id, label: first(item.description, item.title, item.id), status: first(item.status, "pending"), data: item }));
+  arr(snapshot.plans).forEach((item) => objects.push({ type: "plan", id: item.planId, label: first(item.title, item.planId), status: first(item.state, "draft"), data: item }));
+  normalizedEvents().slice(-30).reverse().forEach((item) => objects.push(item));
+  return objects;
+}
+
+function runIdFor(item = selected) {
+  return first(item.type === "run" ? item.id : "", item.data?.runId, item.data?.sourceRunId, item.data?.data?.runId, item.type === "agent" ? snapshot.state?.currentRunId : "");
+}
+
+function correlatedEvents(item = selected) {
+  const runId = runIdFor(item);
+  return arr(snapshot.events).filter((event) => {
+    if (["event", "tool"].includes(item.type)) return event.id === item.id;
+    if (item.type === "agent") return first(event.agentId, event.data?.agentId, event.source) === item.id && (!runId || event.runId === runId);
+    if (item.type === "run") return event.runId === item.id;
+    if (item.type === "gate") return event.data?.gateId === item.id || lower(json(event)).includes(lower(item.id));
+    if (item.type === "queue") return event.data?.queueItemId === item.id || lower(json(event)).includes(lower(item.id));
+    if (item.type === "iteration") return event.data?.iterationId === item.id || (runId && event.runId === runId);
+    if (item.type === "blocker") return (item.data.toolCallId && event.data?.toolCallId === item.data.toolCallId) || (runId && event.runId === runId);
+    return false;
+  }).slice(-25).reverse();
+}
+
+function blockerFor(item = selected) {
+  const runId = runIdFor(item);
+  return stateBlockers().find((blocker) => item.type === "blocker" && blocker.id === item.id || runId && blocker.runId === runId || item.type === "agent" && first(blocker.agentId, blocker.ownerAgentId) === item.id) || null;
+}
+
+function objectOwner(item) {
+  const data = item.data || {};
+  if (item.type === "agent") return first(data.label, data.name, data.id, item.id);
+  if (["event", "tool"].includes(item.type)) return first(data.agentId, data.data?.agentId, data.source, "system");
+  return first(data.owner, data.ownerAgentId, data.agentId, data.createdBy, data.updatedBy, data.requestedBy, data.decidedBy, data.ledger?.createdBy, data.ledger?.updatedBy, "not reported");
+}
+
+function objectWork(item) {
+  const data = item.data || {};
+  return first(data.currentTask, data.task, data.objective, data.description, data.title, data.revision?.content?.objective, data.revision?.content?.problem, data.message, data.data?.action, data.reason, "not reported");
+}
+
+function recoveryFor(item, blocker) {
+  if (blocker) return first(blocker.suggestedAction, blocker.safeRecoveryAction, blocker.recoveryAction, "Inspect evidence, then prepare deblock guidance for the current run or a continuation/fork for historical work.");
+  if (item.type === "gate") return "Attach existing run artifact paths, then record a gate decision; a decision does not create evidence.";
+  if (item.type === "iteration") return "Load iteration evidence, then continue, fork, or use its direction with a complete bounded request.";
+  if (item.type === "queue") return "Pin the brief or start a bounded iteration using its objective, repository target, constraints, and gates.";
+  if (item.type === "plan") return "Edit a new immutable revision, submit it for review, approve the exact digest, then launch.";
+  if (["event", "tool"].includes(item.type) && blocked(item.status)) return "Inspect sanitized input/output and the owning run resources before steering, deblocking, continuing, or forking.";
+  return "No recovery is indicated by current server state. Continue monitoring correlated telemetry.";
+}
+
+function selectObject(type, id, open = true, channel = null) {
+  const object = operationalObjects().find((item) => item.type === type && item.id === id);
+  if (object) selected = { ...object, ...(channel ? { channel } : {}) };
+  else if (type === "channel") selected = { type, id, label: id, status: "empty", data: {}, channel: Number(id.replace(/\D/g, "")) };
+  const runId = runIdFor(selected);
+  let detailRequest = null;
+  if (selected.type === "run") detailRequest = client.selectRun(selected.id).then(() => client.getSnapshot().selectedRun?.run);
+  else if (selected.type === "iteration") detailRequest = client.selectIteration(selected.id).then(() => client.getSnapshot().iterationDetail);
+  else if (selected.type === "plan") detailRequest = client.getProjectPlan(selected.id);
+  else if (runId && snapshot.selectedRunId !== runId) client.selectRun(runId).catch((error) => toast(error, "error"));
+  renderSelectionSummary();
+  renderHexCore();
+  if (open) openDossier();
+  if (detailRequest) detailRequest.then((detail) => {
+    if (!detail || selected.type !== type || selected.id !== id) return;
+    selected = { ...selected, data: detail, status: first(detail.ledger?.state, detail.status, detail.state, selected.status), label: first(detail.revision?.content?.title, detail.objective, detail.id, selected.label) };
+    renderSelectionSummary();
+    if (open && $("dossierModal").open) openDossier();
+  }).catch((error) => toast(error, "error"));
+}
+
+function renderSelectionSummary() {
+  const events = correlatedEvents();
+  const blocker = blockerFor();
+  $("lblSelectedFa").textContent = `${selected.channel ? `CH-${String(selected.channel).padStart(2, "0")} / ` : ""}${selected.type.toUpperCase()} ${selected.id}`;
+  $("faIdDisplay").textContent = selected.id;
+  $("lblFaRing").textContent = selected.type === "channel" ? "UNASSIGNED CHANNEL" : selected.type.toUpperCase();
+  $("lblFaPower").textContent = objectOwner(selected);
+  $("lblFaBurnup").textContent = objectWork(selected);
+  $("lblFaTemp").textContent = selected.status;
+  $("lblFaDnbr").textContent = String(events.length);
+  $("lblFaQptr").textContent = blocker ? "ACTION AVAILABLE" : "MONITOR";
+}
+
+function evidenceNames(item) {
+  const data = item.data || {};
+  return [...new Set([
+    ...arr(data.requiredEvidence), ...arr(data.evidenceArtifacts), ...arr(data.artifacts).map((entry) => entry.name || entry.path || entry),
+    data.artifact, data.artifactPath, data.log, data.logPath
+  ].filter(Boolean))];
+}
+
+function openDossier() {
+  const item = selected;
+  const events = correlatedEvents(item);
+  const blocker = blockerFor(item);
+  const runId = runIdFor(item);
+  const resources = runId === snapshot.selectedRunId ? snapshot.selectedRun : {};
+  const evidence = [...evidenceNames(item), ...arr(resources.artifacts).map((entry) => entry.name), ...arr(resources.logs).map((entry) => entry.name)];
+  $("dossierModalTitle").textContent = `${item.type.toUpperCase()} DOSSIER // ${item.id}`;
+  $("dossierModalContent").innerHTML = `
+    <section class="rc-dossier-grid" aria-label="Authoritative selection summary">
+      ${[["Identifier", item.id], ["Channel / rod", item.channel ? `CH-${String(item.channel).padStart(2, "0")}` : first(item.rod, "not applicable")], ["Type", item.type], ["Observed status", item.status], ["Owner", objectOwner(item)], ["Current work", objectWork(item)], ["Owning run", runId || "not reported"], ["Updated", date(first(item.data?.updatedAt, item.data?.ts, item.data?.modifiedAt))], ["Correlated telemetry", events.length]].map(([term, value]) => `<div><span>${esc(term)}</span><strong>${esc(value)}</strong></div>`).join("")}
+    </section>
+    <section class="rc-section ${blocker ? "anomaly" : ""}"><h3>BLOCKER LOCATION &amp; SUPPORTED RECOVERY</h3><p>${esc(blocker ? first(blocker.reason, blocker.message) : "No correlated blocker is reported.")}</p><dl class="rc-inline-dl"><dt>Location</dt><dd>${esc(first(blocker?.artifact, blocker?.log, blocker?.phase, runId, "not reported"))}</dd><dt>Recovery</dt><dd>${esc(recoveryFor(item, blocker))}</dd></dl><div class="rc-action-row">${blocker && (!blocker.runId || blocker.runId === snapshot.state?.currentRunId) ? '<button class="rc-btn primary" data-dossier-action="deblock">PREPARE DEBLOCK</button>' : ""}${["run", "iteration", "blocker"].includes(item.type) && runId ? `<button class="rc-btn" data-dossier-action="evidence" data-owning-run="${esc(runId)}">OPEN RUN EVIDENCE</button>` : ""}${item.type === "plan" ? '<button class="rc-btn" data-dossier-action="plan">OPEN PLAN</button>' : ""}</div></section>
+    <section class="rc-section"><h3>EVIDENCE &amp; RESOURCES (${evidence.length})</h3>${evidence.length ? `<ul class="rc-resource-list">${evidence.slice(0, 80).map((name) => `<li>${esc(name)}</li>`).join("")}</ul>` : '<p class="rc-dim">No resource reference is reported for this object.</p>'}</section>
+    <section class="rc-section"><h3>CORRELATED TELEMETRY (${events.length})</h3>${events.length ? `<ol class="rc-event-track">${events.map((event) => `<li><button data-object-type="${event.data?.toolName || lower(event.type).includes("tool") ? "tool" : "event"}" data-object-id="${esc(event.id)}"><b>${esc(first(event.data?.toolName, event.type))}</b><span>${esc(first(event.source, event.agentId, "system"))} / ${esc(date(event.ts))}</span></button></li>`).join("")}</ol>` : '<p class="rc-dim">No retained telemetry correlates to this selection.</p>'}</section>
+    <details class="rc-section"><summary>Complete sanitized record</summary><pre class="rc-code-block">${esc(json(item.data))}</pre></details>`;
+  const dialog = $("dossierModal");
+  if (!dialog.open) dialog.showModal();
+  $("dossierModalTitle").focus();
+}
+
+function renderHexCore() {
+  const svg = $("hexCoreSvg");
+  const objects = operationalObjects().slice(0, 61);
+  $("lblAvgFlux").textContent = `${objects.length} / 61`;
+  const cells = [];
+  let number = 1;
+  const add = (ring, angle, distance) => {
+    const object = objects[number - 1];
+    const x = 300 + distance * Math.cos(angle), y = 270 + distance * Math.sin(angle);
+    cells.push({ number, ring, x, y, object }); number += 1;
+  };
+  add(0, 0, 0);
+  for (let ring = 1; ring <= 4; ring += 1) for (let index = 0; index < ring * 6; index += 1) add(ring, index * Math.PI * 2 / (ring * 6), ring * 43);
+  svg.innerHTML = `<defs><polygon id="hexShape" points="0,-22 19,-11 19,11 0,22 -19,11 -19,-11"/></defs><circle cx="300" cy="270" r="225" class="core-boundary"/>${cells.map((cell) => {
+    const object = cell.object;
+    const id = object?.id || `CH-${String(cell.number).padStart(2, "0")}`;
+    const active = selected.id === id && (object ? selected.type === object.type : selected.type === "channel");
+    const state = blocked(object?.status) ? "blocked" : object ? "occupied" : "empty";
+    return `<g transform="translate(${cell.x} ${cell.y})" class="rc-hex ${state} ${active ? "selected" : ""}" tabindex="${active || cell.number === 1 ? "0" : "-1"}" role="button" aria-label="Channel ${cell.number}: ${esc(object ? `${object.type} ${object.label}, status ${object.status}` : "unassigned")}" data-channel="${cell.number}" data-object-type="${esc(object?.type || "channel")}" data-object-id="${esc(id)}"><use href="#hexShape"/><text text-anchor="middle" dy="-1">${String(cell.number).padStart(2, "0")}</text><text class="kind" text-anchor="middle" dy="10">${esc(object?.type?.slice(0, 4).toUpperCase() || "OPEN")}</text></g>`;
+  }).join("")}`;
+}
+
+function deriveAgents() {
+  const raw = Array.isArray(snapshot.state?.agents) ? snapshot.state.agents : Object.values(snapshot.state?.agents || {});
+  return raw.map((item, index) => ({ ...item, id: String(first(item.id, item.name, `agent-${index}`)), label: first(item.label, item.name, item.role, item.id, `Agent ${index + 1}`) }));
+}
+
+function renderRods() {
+  const agents = deriveAgents();
+  const rods = agents.length ? agents : Array.from({ length: 8 }, (_, index) => ({ id: `rod-${index + 1}`, label: `UNASSIGNED ${index + 1}`, status: "idle", placeholder: true }));
+  $("rodDeck").innerHTML = rods.slice(0, 12).map((agent) => {
+    const eventCount = agent.placeholder ? 0 : correlatedEvents({ type: "agent", id: agent.id, data: agent }).length;
+    const position = Math.min(100, agent.status === "running" ? 85 : blocked(agent.status) ? 100 : eventCount * 8);
+    return `<button class="rc-rod-unit" type="button" ${agent.placeholder ? "disabled" : `data-rod="${esc(agent.label)}" data-object-type="agent" data-object-id="${esc(agent.id)}"`} aria-label="${esc(agent.label)}, ${esc(agent.status)}"><span class="rc-rod-track"><span class="rc-rod-bar" style="--rod-pos:${position}%"></span></span><span class="rc-rod-label">${esc(agent.label)} / ${esc(agent.status)}</span></button>`;
+  }).join("");
+}
+
+function renderHeader() {
+  const connection = snapshot.connection || {};
+  $("connectionStatus").textContent = `${connection.status || "disconnected"} / ${connection.transport || "none"}`.toUpperCase();
+  $("connectionStatus").className = `rc-stat-val ${connection.status}`;
+  renderFreshness();
+  $("thermalPower").textContent = first(snapshot.state?.phase, snapshot.state?.status, "idle").toUpperCase();
+  const control = snapshot.control || {};
+  $("rpsTripStatus").textContent = control.stop?.requested ? "STOP REQUESTED" : control.pause?.requested ? "PAUSE REQUESTED" : control.requestedRunNow ? "RUN-NOW REQUESTED" : "NONE";
+  $("btnStreamToggle").textContent = connection.paused ? "RESUME / CATCH UP" : "FREEZE VIEW";
+  $("btnConnectionToggle").textContent = connection.status === "disconnected" ? "RECONNECT" : "DISCONNECT";
+  const blocker = stateBlockers()[0];
+  $("spdsStatusBadge").textContent = blocker ? "BLOCKER REPORTED" : "NO BLOCKER";
+  $("spdsStatusBadge").className = `rc-badge ${blocker ? "danger" : "success"}`;
+}
+
+function renderFreshness() {
+  const connection = snapshot.connection || {};
+  const value = `${connection.paused ? "FROZEN / " : ""}${age(first(connection.lastMessageAt, connection.lastRefreshAt))}`.toUpperCase();
+  $("coreDeltaT").textContent = value;
+  $$('[data-freshness-output]').forEach((node) => { node.textContent = value; });
+}
+
+function renderWorkflow() {
+  const phase = first(snapshot.state?.phase, snapshot.state?.status, "idle");
+  const index = WORKFLOW_PHASES.indexOf(phase);
+  $("rcPhase").textContent = phase.toUpperCase();
+  $("rcActiveRun").textContent = `RUN: ${first(snapshot.state?.currentRunId, "NONE")}`;
+  $("workflowPhases").innerHTML = WORKFLOW_PHASES.map((item, position) => `<span class="rc-phase-step ${position < index ? "past" : position === index ? "current" : ""}" role="listitem">${esc(item)}</span>`).join("");
+  const blocker = stateBlockers()[0];
+  $("rcBlockerBanner").hidden = !blocker;
+  if (blocker) $("rcBlockerText").textContent = `${blocker.reason} / ${first(blocker.runId, "current workflow")}`;
+}
+
+function renderRunsAndAgents() {
+  const selectedRun = first(snapshot.selectedRunId, snapshot.state?.currentRunId);
+  $("runSelect").innerHTML = '<option value="">No run loaded</option>' + arr(snapshot.runs).map((run) => `<option value="${esc(run.id)}" ${run.id === selectedRun ? "selected" : ""}>${esc(run.id)} / ${esc(run.status || "unknown")} / ${esc(first(run.selectedProject, "unassigned"))}</option>`).join("");
+  $("runCount").textContent = arr(snapshot.runs).length;
+  const run = snapshot.selectedRun?.run || arr(snapshot.runs).find((item) => item.id === selectedRun) || {};
+  $("runCardId").textContent = first(run.id, "None"); $("runCardProject").textContent = first(run.selectedProject?.name, run.selectedProject, run.currentProject, "None");
+  $("runCardStatus").textContent = first(run.status, run.state, "Idle"); $("runCardTask").textContent = first(run.task, run.objective, "No task reported");
+  const agents = deriveAgents(); $("agentCount").textContent = agents.length;
+  $("agentList").innerHTML = agents.length ? agents.map((agent) => `<button class="rc-agent-card" type="button" data-object-type="agent" data-object-id="${esc(agent.id)}"><span class="rc-agent-head"><span class="rc-agent-name">${esc(agent.label)}</span><span class="rc-agent-role">${esc(first(agent.role, agent.status, "agent"))}</span></span><span class="rc-agent-task">${esc(first(agent.currentTask, agent.task, agent.lastMessage, "Awaiting work"))}</span></button>`).join("") : '<p class="rc-dim">No agents reported by server state.</p>';
+  renderRods();
+}
+
+function renderTelemetry() {
+  const query = lower($("telemetrySearch").value.trim());
+  const filtered = arr(snapshot.events).filter((event) => {
+    const tool = Boolean(event.data?.toolName || lower(event.type).includes("tool"));
+    const error = event.level === "error" || blocked(event.data?.status) || lower(event.type).includes("error");
+    return !(telemetryFilter === "tools" && !tool || telemetryFilter === "errors" && !error || telemetryFilter === "system" && tool || query && !lower(json(event)).includes(query));
+  }).slice(-150).reverse();
+  $("telemetryCount").textContent = `${arr(snapshot.events).length} EVENTS`;
+  $("telemetryList").innerHTML = filtered.length ? filtered.map((event) => {
+    const type = event.data?.toolName || lower(event.type).includes("tool") ? "tool" : "event";
+    return `<button class="rc-event-row ${type} ${event.level === "error" ? "error" : ""}" data-object-type="${type}" data-object-id="${esc(event.id)}"><span class="rc-event-head"><span class="rc-event-src">${esc(first(event.source, event.agentId, "system"))}</span><span class="rc-event-type">${esc(first(event.data?.toolName, event.type))}</span><time class="rc-event-time">${esc(date(event.ts))}</time></span><span class="rc-event-msg">${esc(first(event.message, event.data?.action, json(event.data)))}</span></button>`;
+  }).join("") : '<p class="rc-dim">No telemetry matches the filter.</p>';
+}
+
+function renderQuickGates() {
+  $("gatesQuickList").innerHTML = arr(snapshot.gates?.gates).slice(0, 6).map((gate) => `<button class="rc-gate-card" data-object-type="gate" data-object-id="${esc(gate.id)}"><span><b>${esc(gate.id)}</b>: ${esc(first(gate.description, gate.title, "Gate"))}</span><span class="rc-badge ${gate.status === "passed" ? "success" : gate.status === "failed" ? "danger" : ""}">${esc(first(gate.status, "pending"))}</span></button>`).join("") || '<p class="rc-dim">No gates configured.</p>';
+}
+
+function drawOverview() {
+  const canvas = $("spdsCanvas"), parent = canvas.parentElement, rect = parent.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, rect.width * dpr); canvas.height = Math.max(1, rect.height * dpr);
+  const context = canvas.getContext("2d"); context.scale(dpr, dpr); context.clearRect(0, 0, rect.width, rect.height);
+  const values = [deriveAgents().length, arr(snapshot.runs).length, arr(snapshot.iterations).length, arr(snapshot.queue?.items).length, arr(snapshot.gates?.gates).length, arr(snapshot.plans).length, stateBlockers().length, Math.min(arr(snapshot.events).length, 100)];
+  const labels = ["Agents", "Runs", "Iterations", "Queue", "Gates", "Plans", "Blockers", "Events"];
+  const maxima = [12, 20, 20, 20, 20, 20, 5, 100], cx = rect.width / 2, cy = rect.height / 2, radius = Math.max(20, Math.min(cx, cy) - 28);
+  context.font = "9px ui-monospace"; context.strokeStyle = "#294260"; context.fillStyle = "#94a3b8";
+  labels.forEach((label, index) => { const angle = index * Math.PI / 4 - Math.PI / 2, x = cx + radius * Math.cos(angle), y = cy + radius * Math.sin(angle); context.beginPath(); context.moveTo(cx, cy); context.lineTo(x, y); context.stroke(); context.textAlign = Math.cos(angle) > .2 ? "left" : Math.cos(angle) < -.2 ? "right" : "center"; context.fillText(`${label} ${values[index]}`, cx + (radius + 10) * Math.cos(angle), cy + (radius + 10) * Math.sin(angle)); });
+  context.beginPath(); values.forEach((value, index) => { const angle = index * Math.PI / 4 - Math.PI / 2, r = radius * Math.min(1, value / maxima[index]), x = cx + r * Math.cos(angle), y = cy + r * Math.sin(angle); index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.closePath(); context.fillStyle = stateBlockers().length ? "rgba(239,68,68,.22)" : "rgba(0,229,255,.18)"; context.strokeStyle = stateBlockers().length ? "#ef4444" : "#00e5ff"; context.fill(); context.stroke();
+  const summary = labels.map((label, index) => `${label}: ${values[index]} of display scale ${maxima[index]}`).join("; ");
+  canvas.setAttribute("aria-label", `SwarmBuilder operations summary. ${summary}`);
+  $("spdsSemantic").innerHTML = labels.map((label, index) => `<div><dt>${esc(label)}</dt><dd>${values[index]} <span>display scale ${maxima[index]}</span></dd></div>`).join("");
+}
+
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; renderMain(); });
+}
+
+function renderMain() {
+  const active = document.activeElement;
+  const focus = active?.id ? `#${CSS.escape(active.id)}` : active?.dataset?.objectType && active?.dataset?.objectId ? `[data-object-type="${CSS.escape(active.dataset.objectType)}"][data-object-id="${CSS.escape(active.dataset.objectId)}"]` : null;
+  renderHeader(); renderWorkflow(); renderRunsAndAgents(); renderTelemetry(); renderQuickGates(); renderHexCore(); renderSelectionSummary(); drawOverview();
+  if (focus) document.querySelector(focus)?.focus({ preventScroll: true });
+}
+
+function controlStateHtml() {
+  const control = snapshot.control || {}, auto = control.autoIteration || {};
+  return `<div class="rc-dossier-grid">${[
+    ["Observed workflow", first(snapshot.state?.phase, snapshot.state?.status, "idle")], ["Observed run", first(snapshot.state?.currentRunId, "none")],
+    ["Run admission", first(control.runAdmission, "enabled")], ["Pause intent", control.pause?.requested ? `${control.pause.mode || "checkpoint"} / ${control.pause.reason || "no reason"}` : "none"],
+    ["Stop intent", control.stop?.requested ? `${control.stop.mode || "graceful"} / ${control.stop.reason || "no reason"}` : "none"], ["Run-now intent", control.requestedRunNow ? "pending runner tick" : "none"],
+    ["Next request", control.nextRunRequest ? `${control.nextRunRequest.status || "pending"} / ${control.nextRunRequest.id}` : "none"], ["Showcase", auto.enabled ? `generation ${auto.currentGeneration || 1} / ${auto.targetGenerations || auto.maxIterations || 1}` : "disabled"],
+    ["Last command", lastCommand ? `${lastCommand.type} / ${lastCommand.status} / ${lastCommand.commandId || "no receipt"}` : "none this session"]
+  ].map(([term, value]) => `<div><span>${esc(term)}</span><strong>${esc(value)}</strong></div>`).join("")}<div><span>Freshness</span><strong data-freshness-output>${esc(`${snapshot.connection?.paused ? "FROZEN / " : ""}${age(first(snapshot.connection?.lastMessageAt, snapshot.connection?.lastRefreshAt))}`.toUpperCase())}</strong></div></div><p class="rc-safety-note">Accepted means persisted intent, not completed work. Pause and stop are observed at runner checkpoints. Confirm the observed state above.</p>`;
+}
+
+function limitNumber(value, fallback, minimum = 1) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= minimum ? number : fallback;
+}
+
+function planLimits(source = {}) {
+  return {
+    maxIterations: limitNumber(source.maxIterations, 1), maxVariantsPerIteration: limitNumber(source.maxVariantsPerIteration, 3),
+    maxParallelVariants: limitNumber(source.maxParallelVariants, 3), maxAcceptedFeatures: limitNumber(source.maxAcceptedFeatures, 4),
+    maxVisualMotifChanges: limitNumber(source.maxVisualMotifChanges, 1, 0), maxNewSections: limitNumber(source.maxNewSections, 1, 0),
+    stopAfterNoImprovement: limitNumber(source.stopAfterNoImprovement, 1)
+  };
+}
+
+function iterationLimits(maxIterations = 1, source = {}) {
+  const iterations = limitNumber(maxIterations, 1);
+  return { ...planLimits({ ...source, maxIterations: iterations }), targetGenerations: limitNumber(source.targetGenerations, iterations), minImprovementScore: limitNumber(source.minImprovementScore, .05, 0) };
+}
+
+function iterationDefaults(iteration = {}) {
+  const detail = snapshot.iterationDetail && [snapshot.iterationDetail.id, snapshot.iterationDetail.runId].includes(iteration.id) ? snapshot.iterationDetail : {};
+  return {
+    sourceRunId: first(iteration.runId, iteration.sourceRunId, snapshot.selectedRunId, snapshot.state?.currentRunId), sourceIterationId: first(iteration.id, snapshot.selectedIterationId),
+    repoPath: first(iteration.repoPath, detail.iterationState?.repoPath, snapshot.control?.autoIteration?.repoPath, snapshot.state?.repoPath), baseRef: first(iteration.commit, iteration.baseRef, detail.iterationState?.baseRef, "HEAD"),
+    objective: first(iteration.objective, currentObjective()), changeText: first(iteration.nextRecommendedDirection, iteration.steeringText, "Complete one bounded objective-linked generation without unrelated feature or stack churn."),
+    acceptanceGateIds: arr(first(detail.iterationState?.acceptanceGateIds, iteration.acceptanceGateIds)), snapshottedAcceptanceGates: arr(detail.iterationState?.acceptanceGates), limits: first(detail.iterationState?.limits, iteration.limits, iterationLimits())
+  };
+}
+
+const COMMAND_CONFIRMATIONS = Object.freeze({
+  deblock: (payload) => `Queue direct deblock guidance for current run ${payload.runId || "unknown"}?`,
+  "deny-deblock-advice": (payload) => `Deny recovery advice ${payload.adviceId || "unknown"}?`,
+  stop: (payload) => `Request a ${payload.mode || "graceful"} stop for run ${payload.runId || snapshot.state?.currentRunId || "current"} at its next checkpoint?`,
+  "stop-showcase-loop": () => "Stop the showcase loop and clear its pending iteration request?",
+  "clear-queue": () => `Clear ${arr(snapshot.queue?.items).length} queue items and queue-linked steering?`,
+  "archive-queue-item": (payload) => `Archive queue item ${payload.id || payload.itemId || "unknown"}?`,
+  "approve-deblock-advice": (payload) => `Approve advice ${payload.adviceId || "unknown"} and queue its recovery continuation?`,
+  "start-showcase-loop": (payload) => `Start a ${payload.targetGenerations || payload.limits?.targetGenerations || "bounded"}-generation showcase for ${payload.repoPath || "the submitted repository"}?`,
+  "start-next-iteration": (payload) => `Queue a bounded iteration for ${payload.repoPath || "the submitted repository"}?`,
+  "continue-from-iteration": (payload) => `Continue exact iteration ${payload.sourceIterationId || "unknown"} from run ${payload.sourceRunId || "unknown"}?`,
+  "fork-from-iteration": (payload) => `Fork exact iteration ${payload.sourceIterationId || "unknown"} from run ${payload.sourceRunId || "unknown"}?`,
+  "use-as-next-direction": (payload) => `Use exact iteration ${payload.sourceIterationId || "unknown"} as the next direction?`,
+  "gate-decision": (payload) => `Record ${payload.status || payload.decision || "a decision"} for gate ${payload.gateId || payload.id || "unknown"}${payload.runId ? ` on run ${payload.runId}` : ""}?`
+});
+
+function commandConfirmation(type, payload) {
+  return COMMAND_CONFIRMATIONS[type]?.(payload) || "";
+}
+
+async function revalidateRecovery(type, payload) {
+  if (!["deblock", "deblock-advice"].includes(type)) return;
+  const submittedRunId = String(payload.runId || "").trim();
+  if (!submittedRunId) throw Object.assign(new Error("Recovery requires the current run ID; refresh the blocker dossier and resubmit."), { status: 409 });
+  await client.refreshState();
+  const current = client.getSnapshot();
+  const currentRunId = current.state?.currentRunId;
+  const state = current.state || {};
+  const activeBlocker = first(state.block, state.blocker, arr(state.blockers)[0], blocked(first(state.status, state.phase)) ? state.hold || state.lastAction : "");
+  if (!currentRunId || submittedRunId !== currentRunId) throw Object.assign(new Error("The current run changed while validating recovery. Inspect the current blocker before submitting guidance."), { status: 409 });
+  if (!activeBlocker) throw Object.assign(new Error("The current run no longer reports an active blocker. Recovery was not dispatched."), { status: 409 });
+}
+
+async function exactLineagePayload(raw, type) {
+  const sourceIterationId = String(raw.sourceIterationId || "").trim();
+  if (!sourceIterationId) {
+    if (type !== "start-next-iteration") throw new Error(`${type} requires an exact sourceIterationId`);
+    return { ...raw, acceptanceGateIds: lines(raw.acceptanceGateIds), snapshottedAcceptanceGates: [], limits: iterationLimits() };
+  }
+  await client.selectIteration(sourceIterationId);
+  const current = client.getSnapshot();
+  const detail = current.iterationDetail;
+  const source = arr(current.iterations).find((item) => item.id === sourceIterationId);
+  if (!detail || detail.id !== sourceIterationId || !source) throw Object.assign(new Error(`Exact source iteration ${sourceIterationId} could not be resolved`), { status: 409 });
+  if (raw.sourceRunId && raw.sourceRunId !== detail.runId) throw Object.assign(new Error(`Source run ${raw.sourceRunId} does not own iteration ${sourceIterationId}`), { status: 409 });
+  const sourceState = detail.iterationState || {};
+  const sourceLimits = first(sourceState.limits, detail.limits, source.limits);
+  if (!sourceLimits || typeof sourceLimits !== "object" || Array.isArray(sourceLimits)) throw Object.assign(new Error(`Source iteration ${sourceIterationId} has no persisted limits; lineage request was not dispatched`), { status: 409 });
+  const missingLimitKeys = Object.keys(planLimits()).filter((key) => !Object.hasOwn(sourceLimits, key));
+  if (missingLimitKeys.length) throw Object.assign(new Error(`Source iteration ${sourceIterationId} has incomplete persisted limits: ${missingLimitKeys.join(", ")}`), { status: 409 });
+  const acceptanceGateIds = arr(first(sourceState.acceptanceGateIds, detail.acceptanceGateIds, source.acceptanceGateIds));
+  const snapshottedAcceptanceGates = arr(sourceState.acceptanceGates);
+  if (acceptanceGateIds.length) {
+    if (!snapshottedAcceptanceGates.length) throw Object.assign(new Error(`Source iteration ${sourceIterationId} requires gate snapshots, but none are persisted`), { status: 409 });
+    const snapshotIds = new Set(snapshottedAcceptanceGates.map((gate) => gate?.id).filter(Boolean));
+    const missingGateIds = acceptanceGateIds.filter((id) => !snapshotIds.has(id));
+    if (missingGateIds.length) throw Object.assign(new Error(`Source iteration ${sourceIterationId} is missing required gate snapshots: ${missingGateIds.join(", ")}`), { status: 409 });
+  }
+  return {
+    ...raw, sourceIterationId: detail.id, sourceRunId: detail.runId,
+    repoPath: first(raw.repoPath, sourceState.repoPath, detail.repoPath, source.repoPath),
+    baseRef: first(raw.baseRef, sourceState.baseRef, detail.commit, detail.baseRef, source.commit, source.baseRef, "HEAD"),
+    objective: first(raw.objective, sourceState.objective, detail.objective, source.objective),
+    acceptanceGateIds,
+    snapshottedAcceptanceGates,
+    limits: iterationLimits(Number(sourceLimits?.maxIterations || 1), sourceLimits || {})
+  };
+}
+
+async function issueCommand(type, payload = {}) {
+  if (!OPERATION_COMMANDS.includes(type)) throw new Error(`Unsupported command: ${type}`);
+  if (pendingCommands.has(type)) return null;
+  pendingCommands.add(type); lastCommand = { type, status: "validating", at: new Date().toISOString() }; renderCommandStation();
+  try {
+    const confirmation = commandConfirmation(type, payload);
+    if (confirmation && !confirm(confirmation)) return null;
+    const stale = Date.now() - new Date(first(snapshot.connection.lastMessageAt, snapshot.connection.lastRefreshAt, 0)).valueOf();
+    if (Number.isFinite(stale) && stale > 30_000) await client.refresh();
+    await revalidateRecovery(type, payload);
+    const correlationId = crypto.randomUUID?.() || `reactor-${Date.now()}`;
+    lastCommand = { ...lastCommand, status: "sending", target: first(payload.gateId, payload.id, payload.sourceIterationId, payload.sourceRunId, snapshot.state?.currentRunId, "control") };
+    const result = await client.command(type, payload, { actor: "reactor-core-operator", correlationId, idempotencyKey: `${type}-${correlationId}`, refresh: true });
+    lastCommand = { ...lastCommand, status: "accepted", commandId: result.commandId, result, at: new Date().toISOString() };
+    toast(`${type} accepted${result.commandId ? ` / ${result.commandId}` : ""}; verify observed state`, "info");
+    return result;
+  } catch (error) {
+    lastCommand = { ...lastCommand, status: error.status == null ? "outcome unknown" : "rejected", error: error.message, at: new Date().toISOString() };
+    toast(`${type}: ${error.message}${error.details?.length ? ` / ${error.details.join("; ")}` : ""}`, "error");
+    throw error;
+  } finally { pendingCommands.delete(type); renderCommandStation(); }
+}
+
+function renderCommandStation() {
+  const root = $("cmdTabContent"); if (!root) return;
+  preserveRenderedView(root, commandViewStates);
+  const saved = commandViewStates.get(activeCmdTab) || null;
+  const control = snapshot.control || {};
+  if (activeCmdTab === "runctrl") root.innerHTML = `${controlStateHtml()}<section class="rc-section"><h3>RUN LIFECYCLE INTENT</h3><div class="rc-action-row">${[["pause", "PAUSE"], ["hold", "HOLD ADMISSION"], ["resume", "RESUME"], ["unhold", "UNHOLD"], ["run-now", "RUN NOW"], ["stop", "ALL-STOP"]].map(([type, label]) => `<button class="rc-btn ${type === "stop" ? "danger" : type === "run-now" ? "primary" : ""}" data-command="${type}">${label}</button>`).join("")}</div></section>`;
+  if (activeCmdTab === "showcase") root.innerHTML = `${controlStateHtml()}<form class="rc-form-grid" data-special="showcase"><label class="rc-form-group">REPOSITORY PATH<input class="rc-input" name="repoPath" value="${esc(first(control.autoIteration?.repoPath, ""))}" required></label><label class="rc-form-group">BASE REF<input class="rc-input" name="baseRef" value="HEAD" required></label><label class="rc-form-group full">OBJECTIVE<textarea name="objective" required>${esc(currentObjective())}</textarea></label><label class="rc-form-group">TARGET GENERATIONS<input class="rc-input" name="targetGenerations" type="number" min="1" max="10" value="${Number(control.autoIteration?.targetGenerations || 10)}"></label><label class="rc-form-group full">BOUNDED FIRST CHANGE<textarea name="changeText" required>Start a bounded same-site showcase catalogue generation.</textarea></label><div class="rc-action-row full"><button class="rc-btn primary">START LOOP</button><button type="button" class="rc-btn" data-command="set-showcase-target">SET TARGET ONLY</button><button type="button" class="rc-btn" data-command="pause-showcase-loop">PAUSE</button><button type="button" class="rc-btn" data-command="resume-showcase-loop">RESUME</button><button type="button" class="rc-btn danger" data-command="stop-showcase-loop">STOP</button></div></form>`;
+  if (activeCmdTab === "deblock") root.innerHTML = `${controlStateHtml()}<section class="rc-section"><h3>BLOCKER &amp; RECOVERY</h3><p>${esc(stateBlockers()[0]?.reason || "No active blocker reported")}</p><form data-command-form="deblock" class="rc-form-group"><input type="hidden" name="runId" value="${esc(snapshot.state?.currentRunId || "")}"><label>RECOVERY INSTRUCTION<textarea name="prompt" required></textarea></label><button class="rc-btn primary">QUEUE DEBLOCK STEERING</button></form><form data-command-form="deblock-advice" class="rc-form-group"><input type="hidden" name="runId" value="${esc(snapshot.state?.currentRunId || "")}"><label>ADVISER QUESTION<textarea name="prompt" required>Recommend the smallest non-destructive recovery using available evidence.</textarea></label><button class="rc-btn">REQUEST ADVICE</button></form></section>${arr(control.deblockAdvice).map((advice) => `<section class="rc-section"><h4>ADVICE / ${esc(advice.status)}</h4><p>${esc(first(advice.answer, advice.prompt))}</p>${advice.status === "pending" ? `<div class="rc-action-row"><button class="rc-btn primary" data-command="approve-deblock-advice" data-payload='${esc(json({ adviceId: advice.id }))}'>APPROVE</button><button class="rc-btn danger" data-command="deny-deblock-advice" data-payload='${esc(json({ adviceId: advice.id }))}'>DENY</button></div>` : ""}</section>`).join("")}`;
+  if (activeCmdTab === "steering") root.innerHTML = `<form data-command-form="set-current-objective" class="rc-form-group"><label>CURRENT OBJECTIVE<textarea name="text" required>${esc(currentObjective())}</textarea></label><button class="rc-btn primary">SET OBJECTIVE</button></form><form data-command-form="steer" class="rc-form-grid"><label class="rc-form-group full">DIRECTIVE<textarea name="text" required></textarea></label><label class="rc-form-group">SCOPE<select class="rc-select" name="scope"><option>next_run</option><option>current_run</option><option>queue</option></select></label><label class="rc-form-group">PRIORITY<select class="rc-select" name="priority"><option>required</option><option>advisory</option></select></label><button class="rc-btn primary">ADD DIRECTIVE</button></form>${arr(control.activeSteering).map((item) => `<section class="rc-gate-card"><span>${esc(item.scope)} / ${esc(item.text)}</span><button class="rc-btn tiny danger" data-command="remove-steering" data-payload='${esc(json({ id: item.id }))}'>REMOVE</button></section>`).join("")}`;
+  if (activeCmdTab === "queue") root.innerHTML = `<form data-command-form="add-queue-item" class="rc-form-grid"><label class="rc-form-group">TITLE<input class="rc-input" name="title" required></label><label class="rc-form-group">PRIORITY<input class="rc-input" type="number" name="priority" min="1" max="100" value="50"></label><label class="rc-form-group full">OBJECTIVE<textarea name="objective" required></textarea></label><label class="rc-form-group full">CONTEXT / BOUNDED CHANGE<textarea name="context"></textarea></label><label class="rc-form-group">PREFERRED REPOSITORY<input class="rc-input" name="preferredRepo"></label><label class="rc-form-group">GATE IDS, ONE PER LINE<textarea name="acceptanceGateIds"></textarea></label><button class="rc-btn primary">ADD BRIEF</button><button type="button" class="rc-btn danger" data-command="clear-queue">CLEAR QUEUE</button></form>${arr(snapshot.queue?.items).map((item) => `<section class="rc-section"><button class="rc-object-title" data-object-type="queue" data-object-id="${esc(item.id)}">${esc(first(item.title, item.id))} / ${esc(item.status)}</button><p>${esc(item.objective)}</p><div class="rc-action-row"><button class="rc-btn" data-command="pin-queue-item" data-payload='${esc(json({ id: item.id }))}'>PIN</button><button class="rc-btn primary" data-queue-start="${esc(item.id)}">START BOUNDED ITERATION</button><button class="rc-btn danger" data-command="archive-queue-item" data-payload='${esc(json({ id: item.id }))}'>ARCHIVE</button></div></section>`).join("")}`;
+  if (activeCmdTab === "gates") root.innerHTML = `<form data-command-form="add-gate" class="rc-form-grid"><label class="rc-form-group">ID<input class="rc-input" name="id" required pattern="[A-Za-z0-9._-]+"></label><label class="rc-form-group">SEVERITY<select class="rc-select" name="severity"><option>must</option><option>should</option></select></label><label class="rc-form-group full">DESCRIPTION<textarea name="description" required></textarea></label><label class="rc-form-group full">REQUIRED EVIDENCE, ONE PATH PER LINE<textarea name="requiredEvidence"></textarea></label><input type="hidden" name="phase" value="final-audit"><button class="rc-btn primary">ADD GATE</button></form>${arr(snapshot.gates?.gates).map((gate) => `<form class="rc-section" data-gate-form="${esc(gate.id)}"><button type="button" class="rc-object-title" data-object-type="gate" data-object-id="${esc(gate.id)}">${esc(gate.id)} / ${esc(gate.status || "pending")}</button><label>DESCRIPTION<input class="rc-input" name="description" value="${esc(first(gate.description, gate.title))}"></label><label>DECISION<select class="rc-select" name="status"><option value="">Choose</option><option>passed</option><option>needs-evidence</option><option>failed</option></select></label><label>EVIDENCE PATHS<textarea name="artifacts"></textarea></label><label>NOTES<textarea name="notes"></textarea></label><div class="rc-action-row"><button data-gate-action="decision" class="rc-btn primary">RECORD DECISION</button><button data-gate-action="evidence" class="rc-btn">ATTACH EVIDENCE</button><button data-gate-action="update" class="rc-btn">UPDATE DEFINITION</button></div></form>`).join("")}`;
+  if (activeCmdTab === "lineage") { const defaults = iterationDefaults(snapshot.iterations.find((item) => item.id === snapshot.selectedIterationId) || {}); root.innerHTML = `<form data-special="lineage" class="rc-form-grid"><label class="rc-form-group">MODE<select class="rc-select" name="mode"><option>start-next-iteration</option><option>continue-from-iteration</option><option>fork-from-iteration</option><option>use-as-next-direction</option></select></label><label class="rc-form-group">SOURCE ITERATION<input class="rc-input" name="sourceIterationId" value="${esc(defaults.sourceIterationId)}"></label><label class="rc-form-group">SOURCE RUN<input class="rc-input" name="sourceRunId" value="${esc(defaults.sourceRunId)}"></label><label class="rc-form-group">REPOSITORY PATH<input class="rc-input" name="repoPath" value="${esc(defaults.repoPath)}" required></label><label class="rc-form-group">BASE REF<input class="rc-input" name="baseRef" value="${esc(defaults.baseRef)}" required></label><label class="rc-form-group full">OBJECTIVE<textarea name="objective" required>${esc(defaults.objective)}</textarea></label><label class="rc-form-group full">BOUNDED CHANGE<textarea name="changeText" required>${esc(defaults.changeText)}</textarea></label><label class="rc-form-group">GATE IDS, ONE PER LINE<textarea name="acceptanceGateIds">${esc(defaults.acceptanceGateIds.join("\n"))}</textarea></label><button class="rc-btn primary">QUEUE COMPLETE REQUEST</button></form>${arr(snapshot.iterations).map((item) => `<button class="rc-agent-card" data-object-type="iteration" data-object-id="${esc(item.id)}"><b>${esc(first(item.objective, item.id))}</b><span>${esc(item.status)} / ${esc(item.runId || "no run")}</span></button>`).join("")}`; }
+  if (activeCmdTab === "protocol") root.innerHTML = `${controlStateHtml()}<form data-special="protocol" class="rc-form-grid"><label class="rc-form-group">SUPPORTED OPERATION<select class="rc-select" name="type">${OPERATION_COMMANDS.map((type) => `<option>${type}</option>`).join("")}</select></label><label class="rc-form-group full">PAYLOAD JSON<textarea name="payload" spellcheck="false">{}</textarea></label><button class="rc-btn primary">VALIDATE &amp; DISPATCH</button></form><p class="rc-safety-note">All ${OPERATION_COMMANDS.length} server-supported operation commands are exposed. Prefer the guided controls because iteration, gate, and recovery operations require contextual payloads.</p>`;
+  $$('[data-command]', root).forEach((button) => { button.disabled = pendingCommands.has(button.dataset.command); });
+  restoreControls(root, activeCmdTab, saved);
+}
+
+function defaultPlanContent(pipelineType) {
+  return { pipelineType, title: "", problem: "", intendedUsers: "", objective: "", boundedScope: "", requirements: [], nonGoals: [], constraints: [], risks: [], repository: { path: pipelineType === "managed" ? "" : null, baseRef: pipelineType === "managed" ? "HEAD" : null, baseCommit: null }, acceptanceGates: [], validationPolicy: { id: "apb.runner-selected.v1", expectations: [], clientCommandsAllowed: false }, milestones: [], limits: planLimits(), lineage: { mode: "new", sourcePlanId: null, sourceRevision: null, sourceRunId: null, sourceIterationId: null } };
+}
+
+function renderPlannerWorkstation() {
+  const root = $("plannerTabContent"); if (!root) return;
+  preserveRenderedView(root, plannerViewStates);
+  const view = plannerViewKey();
+  const saved = plannerViewStates.get(view) || null;
+  if (activePlanTab === "list") root.innerHTML = `<div class="rc-action-row"><button class="rc-btn primary" data-new-plan="classic">NEW CLASSIC</button><button class="rc-btn primary" data-new-plan="managed">NEW MANAGED</button></div>${arr(snapshot.plans).map((plan) => `<button class="rc-section rc-plan-row" data-plan-id="${esc(plan.planId)}"><b>${esc(first(plan.title, plan.planId))}</b><span>${esc(plan.state)} / ${esc(plan.pipelineType)} / revision ${esc(plan.currentRevision)}</span></button>`).join("") || '<p class="rc-dim">No plans saved.</p>'}`;
+  if (activePlanTab === "editor") {
+    const content = selectedPlanDetail?.revision?.content || defaultPlanContent("classic");
+    root.innerHTML = `<form id="planEditForm" class="rc-form-grid"><label class="rc-form-group">TITLE<input class="rc-input" name="title" value="${esc(content.title)}" required></label><label class="rc-form-group">PIPELINE<select class="rc-select" name="pipelineType"><option ${content.pipelineType === "classic" ? "selected" : ""}>classic</option><option ${content.pipelineType === "managed" ? "selected" : ""}>managed</option></select></label>${[["problem", "PROBLEM", content.problem], ["intendedUsers", "INTENDED USERS", content.intendedUsers], ["objective", "OBJECTIVE", content.objective], ["boundedScope", "BOUNDED SCOPE", content.boundedScope], ["requirements", "REQUIREMENTS", arr(content.requirements).join("\n")], ["nonGoals", "NON-GOALS", arr(content.nonGoals).join("\n")], ["constraints", "CONSTRAINTS", arr(content.constraints).join("\n")], ["risks", "RISKS", arr(content.risks).join("\n")], ["acceptanceGates", "GATES: id|severity|description|evidence,evidence", arr(content.acceptanceGates).map((gate) => `${gate.id}|${gate.severity}|${gate.description}|${arr(gate.requiredEvidence).join(",")}`).join("\n")], ["validationExpectations", "VALIDATION EXPECTATIONS", arr(content.validationPolicy?.expectations).join("\n")], ["milestones", "MILESTONES", arr(content.milestones).join("\n")]].map(([name, label, value]) => `<label class="rc-form-group ${["problem", "objective", "boundedScope"].includes(name) ? "full" : ""}">${label}<textarea name="${name}">${esc(value)}</textarea></label>`).join("")}<label class="rc-form-group">REPOSITORY PATH<input class="rc-input" name="repoPath" value="${esc(content.repository?.path || "")}"></label><label class="rc-form-group">BASE REF<input class="rc-input" name="baseRef" value="${esc(content.repository?.baseRef || "HEAD")}"></label><button class="rc-btn primary">SAVE NEW REVISION</button></form>`;
+  }
+  if (activePlanTab === "review") {
+    const detail = selectedPlanDetail, ledger = detail?.ledger || {}, revision = detail?.revision || {};
+    root.innerHTML = detail ? `<section class="rc-section"><div class="rc-dossier-grid">${[["Plan", ledger.planId], ["State", ledger.state], ["Version", ledger.version], ["Revision", revision.revision], ["Digest", revision.contentDigest]].map(([a,b]) => `<div><span>${a}</span><strong>${esc(b)}</strong></div>`).join("")}</div><label>DECISION NOTES<textarea id="planNotes"></textarea></label><div class="rc-action-row">${["ready", "approve", "reject", "launch", "clone", "fork", "archive"].map((action) => `<button class="rc-btn ${action === "reject" || action === "archive" ? "danger" : action === "approve" || action === "launch" ? "primary" : ""}" data-plan-action="${action}">${action.toUpperCase()}</button>`).join("")}</div><details><summary>Revision and lifecycle evidence</summary><pre class="rc-code-block">${esc(json(detail))}</pre></details></section>` : '<p class="rc-dim">Select a plan first.</p>';
+  }
+  if (activePlanTab === "copilot") {
+    root.innerHTML = `<p class="rc-safety-note">Planning assistance is discussion only. It does not save, approve, launch, or execute. Messages may reach the configured inference provider.</p><div class="rc-action-row"><button class="rc-btn" data-new-assistance="classic">NEW CLASSIC CONVERSATION</button><button class="rc-btn" data-new-assistance="managed">NEW MANAGED CONVERSATION</button><button class="rc-btn" data-assistance-list>REFRESH THREADS</button></div><div class="rc-assist-grid"><aside>${arr(snapshot.assistance).map((item) => `<button class="rc-agent-card" data-assistance-id="${esc(item.id)}">${esc(item.pipelineType)} / ${Number(item.messageCount || 0)} messages${item.hasProposal ? " / proposal" : ""}</button>`).join("")}</aside><section>${assistanceDetail ? `<div id="assistLog" class="rc-code-block rc-assist-log"></div><form id="assistForm" data-draft-owner="assistance:${esc(assistanceDetail.id)}"><textarea name="message" maxlength="16000" required></textarea><button class="rc-btn primary">SEND MESSAGE</button></form>${assistanceDetail.proposedContent ? '<button class="rc-btn primary" data-create-proposal>CREATE EDITABLE DRAFT FROM PROPOSAL</button>' : ""}` : '<p class="rc-dim">Select or start a conversation.</p>'}</section></div>`;
+    const log = $("assistLog");
+    if (log) arr(assistanceDetail.messages).forEach((message) => {
+      const article = document.createElement("article"), role = document.createElement("b"), content = document.createElement("p");
+      role.textContent = String(message.role || "unknown"); content.textContent = String(message.content || "");
+      article.append(role, content); log.append(article);
+    });
+  }
+  restoreControls(root, view, saved);
+}
+
+function parsePlan(form, old) {
+  const data = new FormData(form), list = (name) => lines(data.get(name));
+  const gates = list("acceptanceGates").map((line) => { const [id, severity = "must", description = "", evidence = ""] = line.split("|"); return { id, severity: severity === "should" ? "should" : "must", description, required: Boolean(evidence), requiredEvidence: evidence.split(",").map((item) => item.trim()).filter(Boolean) }; });
+  const pipelineType = String(data.get("pipelineType"));
+  return { ...old, pipelineType, title: String(data.get("title")), problem: String(data.get("problem")), intendedUsers: String(data.get("intendedUsers")), objective: String(data.get("objective")), boundedScope: String(data.get("boundedScope")), requirements: list("requirements"), nonGoals: list("nonGoals"), constraints: list("constraints"), risks: list("risks"), acceptanceGates: gates, validationPolicy: { id: "apb.runner-selected.v1", expectations: list("validationExpectations"), clientCommandsAllowed: false }, milestones: list("milestones"), limits: planLimits(old.limits), repository: pipelineType === "managed" ? { path: String(data.get("repoPath")) || null, baseRef: String(data.get("baseRef")) || null, baseCommit: null } : { path: null, baseRef: null, baseCommit: null } };
+}
+
+const PLAN_CONFIRMATIONS = Object.freeze({
+  ready: (ledger) => `Submit plan ${ledger.planId} revision ${ledger.currentRevision} for review?`,
+  approve: (ledger) => `Approve exact plan ${ledger.planId} revision ${ledger.currentRevision} at version ${ledger.version}?`,
+  reject: (ledger) => `Reject plan ${ledger.planId} revision ${ledger.currentRevision}?`,
+  launch: (ledger) => `Launch exact approved plan ${ledger.planId} revision ${ledger.currentRevision} under runner-selected validation?`,
+  clone: (ledger) => `Clone plan ${ledger.planId} into a new editable draft?`,
+  fork: (ledger) => `Fork plan ${ledger.planId} revision ${ledger.currentRevision} into a new editable draft?`,
+  archive: (ledger) => `Archive project plan ${ledger.planId}?`
+});
+
+async function planAction(action) {
+  if (!selectedPlanDetail) return;
+  const ledger = selectedPlanDetail.ledger, revision = selectedPlanDetail.revision, notes = $("planNotes")?.value || "";
+  const subject = { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest };
+  const options = { expectedVersion: ledger.version };
+  try {
+    const confirmation = PLAN_CONFIRMATIONS[action]?.(ledger);
+    if (confirmation && !confirm(confirmation)) return;
+    if (action === "ready") await client.submitProjectPlanForReview(subject, options);
+    if (action === "approve") await client.approveProjectPlan({ ...subject, notes }, options);
+    if (action === "reject") { if (!notes.trim()) throw new Error("Rejection notes are required"); await client.rejectProjectPlan({ ...subject, notes }, options); }
+    if (action === "launch") await client.launchProjectPlan(subject, options);
+    if (["clone", "fork"].includes(action)) { const payload = { ...subject, sourceRunId: selected.type === "run" ? selected.id : null, sourceIterationId: selected.type === "iteration" ? selected.id : null, baseRef: revision.content.pipelineType === "managed" ? first(revision.content.repository?.baseRef, "HEAD") : null }; const result = action === "clone" ? await client.cloneProjectPlan(payload, options) : await client.forkProjectPlan(payload, options); selectedPlanDetail = await client.getProjectPlan(result.planId); }
+    if (action === "archive") await client.archiveProjectPlan({ planId: ledger.planId }, options);
+    await client.refreshPlans(); if (action !== "archive") selectedPlanDetail = await client.getProjectPlan(selectedPlanDetail.ledger.planId); renderPlannerWorkstation();
+  } catch (error) { toast(error, "error"); }
+}
+
+async function renderEvidenceVault() {
+  const root = $("evidenceTabContent"), runId = first(snapshot.selectedRunId, snapshot.state?.currentRunId), tab = activeEvidenceTab;
+  const requestOwner = ++evidenceRequestRevision;
+  const ownsRequest = () => requestOwner === evidenceRequestRevision && tab === activeEvidenceTab && runId === first(snapshot.selectedRunId, snapshot.state?.currentRunId);
+  if (!runId) { root.innerHTML = '<p class="rc-dim">Select a run to inspect evidence.</p>'; return; }
+  if (["spec", "devplan"].includes(tab)) {
+    root.innerHTML = `<p class="rc-dim">Loading ${tab}...</p>`;
+    try {
+      const document = await client.loadDocument(tab, runId);
+      if (ownsRequest()) root.innerHTML = `<pre class="rc-code-block">${esc(document.text)}</pre>`;
+    } catch (error) { if (ownsRequest()) root.innerHTML = `<p class="rc-dim">${esc(error.message)}</p>`; }
+    return;
+  }
+  if (!ownsRequest()) return;
+  if (tab === "run") root.innerHTML = `<pre class="rc-code-block">${esc(json(snapshot.selectedRun?.run || {}))}</pre>`;
+  if (tab === "artifacts") root.innerHTML = arr(snapshot.selectedRun?.artifacts).map((item) => `<button class="rc-agent-card" data-resource="artifact" data-name="${esc(item.name)}">${esc(item.name)} / ${item.size || 0} bytes</button>`).join("") || '<p class="rc-dim">No artifacts.</p>';
+  if (tab === "logs") root.innerHTML = arr(snapshot.selectedRun?.logs).map((item) => `<button class="rc-agent-card" data-resource="log" data-name="${esc(item.name)}">${esc(item.name)}</button>`).join("") || '<p class="rc-dim">No logs.</p>';
+  if (tab === "iterations") root.innerHTML = arr(snapshot.iterations).map((item) => `<button class="rc-agent-card" data-object-type="iteration" data-object-id="${esc(item.id)}"><b>${esc(first(item.objective, item.id))}</b><span>${esc(item.status)} / ${esc(item.runId || "no run")}</span></button>`).join("") || '<p class="rc-dim">No iterations.</p>';
+  if (tab === "audit") root.innerHTML = `<pre class="rc-code-block">${esc(json(snapshot.audit))}</pre>`;
+}
+
+function renderHelpManual() {
+  $("helpModalContent").innerHTML = `<section class="rc-section rc-help"><h3>ABOUT THIS CONSOLE</h3><p>Reactor Core is a software operations metaphor for Hermes SwarmBuilder. It is not a nuclear control system, physical process display, or safety system. Every status and count shown here is derived from the dashboard server; requested controls are intent until runner state confirms them.</p><h3>READING THE DISPLAY</h3><ul><li>The 61 hex channels map reported blockers, agents, runs, iterations, queue items, gates, plans, events, and tools. Empty channels do not invent values.</li><li>Agent rods show server-reported agents and retained correlated event activity.</li><li>The overview polygon is a count summary, not a safety limit display.</li><li>Select any channel, rod, agent, run, gate, queue item, iteration, plan, blocker, event, or tool to open its dossier.</li></ul><h3>CONTROL LIFECYCLE</h3><ol><li>Review connection freshness and observed state.</li><li>Open Command Station. Guided controls generate complete payloads; All Commands exposes every supported operation.</li><li>An accepted receipt means intent was persisted. Verify observed workflow, run, pause/stop request, next request, and later telemetry.</li><li>For a blocker, inspect location and evidence. Deblock only the current run; continue or fork historical/terminal work.</li></ol><h3>PLANS &amp; EVIDENCE</h3><p>Plans follow create, edit revision, ready-for-review, exact-revision approval or rejection, launch, clone/fork, and archive. Planning assistance only proposes content. Gate decisions reference evidence but do not create files.</p><h3>STREAM &amp; ACCESSIBILITY</h3><p>Freeze View pauses presentation and labels readings stale; Resume catches up and refreshes. Disconnect closes browser SSE/polling without stopping workflow. Native dialogs contain keyboard focus and return it on close. Motion is disabled under reduced-motion preferences.</p><h3>KEYS</h3><p><kbd>Space</kbd> freeze/resume, <kbd>R</kbd> refresh, <kbd>C</kbd> commands, <kbd>P</kbd> plans, <kbd>E</kbd> evidence, <kbd>H</kbd> help, <kbd>Escape</kbd> close dialog. Arrow keys navigate the hex matrix.</p></section>`;
+}
+
+function formPayload(form) {
+  const data = {};
+  for (const [key, value] of new FormData(form)) data[key] = value;
+  return data;
+}
+
+function activateModalTab(kind, value, focus = true) {
+  const attribute = `data-${kind}-tab`;
+  const tab = document.querySelector(`[${attribute}="${CSS.escape(value)}"]`);
+  if (!tab) return null;
+  const tabs = $$(`[role="tab"][${attribute}]`, tab.closest('[role="tablist"]'));
+  tabs.forEach((item) => {
+    const active = item === tab;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", String(active));
+    item.tabIndex = active ? 0 : -1;
+  });
+  const panel = $(tab.getAttribute("aria-controls"));
+  panel?.setAttribute("aria-labelledby", tab.id);
+  let result = null;
+  if (kind === "cmd") { activeCmdTab = value; result = renderCommandStation(); }
+  if (kind === "plan") { activePlanTab = value; result = renderPlannerWorkstation(); }
+  if (kind === "evidence") { activeEvidenceTab = value; result = renderEvidenceVault(); }
+  if (focus) tab.focus({ preventScroll: true });
+  return result;
+}
+
+function setupModalTabs() {
+  $$('.rc-modal-tabs[role="tablist"]').forEach((tablist) => {
+    tablist.addEventListener("click", (event) => {
+      const tab = event.target.closest('[role="tab"]');
+      if (!tab) return;
+      const kind = tab.dataset.cmdTab ? "cmd" : tab.dataset.planTab ? "plan" : "evidence";
+      activateModalTab(kind, tab.dataset[`${kind}Tab`], false);
+    });
+    tablist.addEventListener("keydown", (event) => {
+      const tab = event.target.closest('[role="tab"]');
+      if (!tab) return;
+      const tabs = $$('[role="tab"]', tablist), index = tabs.indexOf(tab);
+      let next = null;
+      if (["ArrowRight", "ArrowDown"].includes(event.key)) next = tabs[(index + 1) % tabs.length];
+      if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = tabs[(index - 1 + tabs.length) % tabs.length];
+      if (event.key === "Home") next = tabs[0];
+      if (event.key === "End") next = tabs.at(-1);
+      if (!next) return;
+      event.preventDefault();
+      const kind = next.dataset.cmdTab ? "cmd" : next.dataset.planTab ? "plan" : "evidence";
+      activateModalTab(kind, next.dataset[`${kind}Tab`]);
+    });
+  });
+}
+
+function setupEvents() {
+  $("btnStreamToggle").addEventListener("click", () => snapshot.connection.paused ? client.resume().catch((error) => toast(error, "error")) : client.pause());
+  $("btnConnectionToggle").addEventListener("click", () => snapshot.connection.status === "disconnected" ? client.connect().catch((error) => toast(error, "error")) : client.disconnect());
+  $("btnResyncCore").addEventListener("click", () => client.refresh().catch((error) => toast(error, "error")));
+  $("btnManualScram").addEventListener("click", () => issueCommand("stop", { mode: "graceful", runId: snapshot.state?.currentRunId, reason: "Reactor Core operator all-stop" }).catch(() => {}));
+  const openers = [["btnOpenCommand", "commandModal", renderCommandStation], ["btnOpenPlanner", "plannerModal", renderPlannerWorkstation], ["btnOpenEvidence", "evidenceModal", renderEvidenceVault], ["btnOpenHelp", "helpModal", renderHelpManual]];
+  openers.forEach(([button, dialog, render]) => $(button).addEventListener("click", () => { render(); $(dialog).showModal(); }));
+  [["btnCloseCommand", "commandModal"], ["btnClosePlanner", "plannerModal"], ["btnCloseEvidence", "evidenceModal"], ["btnCloseHelp", "helpModal"], ["btnCloseDossier", "dossierModal"], ["btnCloseTool", "toolModal"], ["btnCloseFileViewer", "fileViewerModal"]].forEach(([button, dialog]) => $(button)?.addEventListener("click", () => $(dialog).close()));
+  $("btnInspectSelection").addEventListener("click", openDossier);
+  $("btnQuickDeblock").addEventListener("click", () => { activateModalTab("cmd", "deblock", false); $("commandModal").showModal(); });
+  $("btnOpenCommandGates").addEventListener("click", () => { activateModalTab("cmd", "gates", false); $("commandModal").showModal(); });
+  $("btnRefreshRuns").addEventListener("click", () => client.refreshRuns().catch((error) => toast(error, "error")));
+  $("runSelect").addEventListener("change", (event) => event.target.value ? selectObject("run", event.target.value, false) : client.selectRun(null));
+  $("telemetrySearch").addEventListener("input", renderTelemetry);
+  $$(".rc-filter-chips [data-filter]").forEach((button) => button.addEventListener("click", () => { $$(".rc-filter-chips [data-filter]").forEach((item) => item.classList.toggle("active", item === button)); telemetryFilter = button.dataset.filter; renderTelemetry(); }));
+  setupModalTabs();
+
+  document.addEventListener("click", async (event) => {
+    const object = event.target.closest("[data-object-type][data-object-id]"); if (object) { selectObject(object.dataset.objectType, object.dataset.objectId, !object.dataset.rod, Number(object.dataset.channel) || null); if (object.dataset.rod) { selected.rod = object.dataset.rod; openDossier(); } return; }
+    const command = event.target.closest("[data-command]"); if (command) { let payload = command.dataset.payload ? JSON.parse(command.dataset.payload) : { reason: "Reactor Core operator request" }; if (command.dataset.command === "set-showcase-target") payload = { targetGenerations: Number(command.closest("form")?.elements.targetGenerations?.value || 10) }; issueCommand(command.dataset.command, payload).catch(() => {}); return; }
+    const queueStart = event.target.closest("[data-queue-start]"); if (queueStart) { const item = arr(snapshot.queue?.items).find((entry) => entry.id === queueStart.dataset.queueStart); const payload = { ...iterationDefaults(), queueItemId: item.id, repoPath: first(item.target?.preferredRepo, item.preferredRepo, snapshot.control?.autoIteration?.repoPath, snapshot.state?.repoPath), objective: item.objective, changeText: first(item.context, item.title), acceptanceGateIds: arr(item.acceptanceGateIds) }; issueCommand("start-next-iteration", payload).catch(() => {}); return; }
+    const plan = event.target.closest("[data-plan-id]"); if (plan) { try { selectedPlanDetail = await client.getProjectPlan(plan.dataset.planId); selected = { type: "plan", id: plan.dataset.planId, label: selectedPlanDetail.revision.content.title, status: selectedPlanDetail.ledger.state, data: selectedPlanDetail }; activateModalTab("plan", "editor", false); } catch (error) { toast(error, "error"); } return; }
+    const newPlan = event.target.closest("[data-new-plan]"); if (newPlan) { try { const result = await client.createProjectPlan({ content: defaultPlanContent(newPlan.dataset.newPlan) }); await client.refreshPlans(); selectedPlanDetail = await client.getProjectPlan(result.planId); activateModalTab("plan", "editor", false); } catch (error) { toast(error, "error"); } return; }
+    const planButton = event.target.closest("[data-plan-action]"); if (planButton) { await planAction(planButton.dataset.planAction); return; }
+    const assistance = event.target.closest("[data-assistance-id]"); if (assistance) { try { assistanceDetail = await client.getPlanAssistance(assistance.dataset.assistanceId); renderPlannerWorkstation(); } catch (error) { toast(error, "error"); } return; }
+    const newAssistance = event.target.closest("[data-new-assistance]"); if (newAssistance) { try { assistanceDetail = await client.createPlanAssistance(newAssistance.dataset.newAssistance); await client.listPlanAssistance(); renderPlannerWorkstation(); } catch (error) { toast(error, "error"); } return; }
+    if (event.target.closest("[data-assistance-list]")) { await client.listPlanAssistance().catch((error) => toast(error, "error")); renderPlannerWorkstation(); return; }
+    if (event.target.closest("[data-create-proposal]") && assistanceDetail?.proposedContent) { try { const result = await client.createProjectPlan({ content: assistanceDetail.proposedContent }); await client.refreshPlans(); selectedPlanDetail = await client.getProjectPlan(result.planId); activateModalTab("plan", "editor", false); } catch (error) { toast(error, "error"); } return; }
+    const resource = event.target.closest("[data-resource]"); if (resource) { const requestOwner = ++resourceRequestRevision, runId = snapshot.selectedRunId, kind = resource.dataset.resource, name = resource.dataset.name; try { const result = kind === "log" ? await client.loadLog(name, runId, { tail: 400 }) : await client.loadArtifact(name, runId); if (requestOwner !== resourceRequestRevision || runId !== snapshot.selectedRunId) return; $("fileViewerTitle").textContent = `${kind.toUpperCase()}: ${name}`; $("fileViewerContent").textContent = result.text; $("fileViewerModal").showModal(); } catch (error) { if (requestOwner === resourceRequestRevision && runId === snapshot.selectedRunId) toast(error, "error"); } return; }
+    const dossierAction = event.target.closest("[data-dossier-action]"); if (dossierAction) { $("dossierModal").close(); if (dossierAction.dataset.dossierAction === "deblock") { activateModalTab("cmd", "deblock", false); $("commandModal").showModal(); } if (dossierAction.dataset.dossierAction === "evidence") { const owningRun = dossierAction.dataset.owningRun; if (!owningRun) { toast("Dossier evidence action has no owning run", "error"); return; } try { await client.selectRun(owningRun); const current = client.getSnapshot(); if (current.selectedRunId !== owningRun || current.selectedRun?.run?.id !== owningRun) throw new Error(`Could not load exact owning run ${owningRun}`); $("evidenceModal").showModal(); await activateModalTab("evidence", "run", false); } catch (error) { toast(error, "error"); } } if (dossierAction.dataset.dossierAction === "plan") { selectedPlanDetail = await client.getProjectPlan(selected.id); activateModalTab("plan", "review", false); $("plannerModal").showModal(); } }
+  });
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target; if (!(form instanceof HTMLFormElement)) return; event.preventDefault();
+    try {
+      if (form.dataset.commandForm) { const payload = formPayload(form); if (form.dataset.commandForm === "add-queue-item") { payload.acceptanceGateIds = lines(payload.acceptanceGateIds); payload.target = payload.preferredRepo ? { preferredRepo: payload.preferredRepo } : {}; delete payload.preferredRepo; } await issueCommand(form.dataset.commandForm, payload); return; }
+      if (form.dataset.special === "showcase") { const payload = formPayload(form), target = Number(payload.targetGenerations); payload.sourceRunId = first(snapshot.state?.currentRunId, snapshot.selectedRunId); payload.sourceIterationId = snapshot.selectedIterationId; payload.acceptanceGateIds = arr(snapshot.gates?.gates).map((gate) => gate.id); payload.limits = iterationLimits(target); await issueCommand("start-showcase-loop", payload); return; }
+      if (form.dataset.special === "lineage") { const data = formPayload(form), type = data.mode; delete data.mode; const payload = await exactLineagePayload(data, type); await issueCommand(type, payload); return; }
+      if (form.dataset.special === "protocol") { const data = formPayload(form), payload = JSON.parse(data.payload); await issueCommand(data.type, payload); return; }
+      if (form.dataset.gateForm) { const data = formPayload(form), action = event.submitter?.dataset.gateAction, base = { gateId: form.dataset.gateForm, runId: first(snapshot.selectedRunId, snapshot.state?.currentRunId), notes: data.notes }; if (action === "decision") { if (!data.status) throw new Error("Choose a gate decision"); await issueCommand("gate-decision", { ...base, status: data.status, decision: data.status, evidenceArtifacts: lines(data.artifacts) }); } if (action === "evidence") { const artifacts = lines(data.artifacts); if (!artifacts.length) throw new Error("Enter at least one existing artifact path"); await issueCommand("attach-gate-evidence", { ...base, artifacts }); } if (action === "update") await issueCommand("update-gate", { gateId: form.dataset.gateForm, description: data.description }); return; }
+      if (form.id === "planEditForm" && selectedPlanDetail) { const content = parsePlan(form, selectedPlanDetail.revision.content); await client.updateProjectPlan({ planId: selectedPlanDetail.ledger.planId, content }, { expectedVersion: selectedPlanDetail.ledger.version }); await client.refreshPlans(); selectedPlanDetail = await client.getProjectPlan(selectedPlanDetail.ledger.planId); renderPlannerWorkstation(); return; }
+      if (form.id === "assistForm" && assistanceDetail) { assistanceDetail = await client.messagePlanAssistance(assistanceDetail.id, assistanceDetail.version, new FormData(form).get("message")); form.reset(); await client.listPlanAssistance(); renderPlannerWorkstation(); }
+    } catch (error) { toast(error, "error"); }
+  });
+
+  $("hexCoreSvg").addEventListener("keydown", (event) => { const current = event.target.closest(".rc-hex"); if (!current) return; const nodes = $$(".rc-hex", event.currentTarget), index = nodes.indexOf(current); let next; if (["ArrowRight", "ArrowDown"].includes(event.key)) next = nodes[(index + 1) % nodes.length]; if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = nodes[(index - 1 + nodes.length) % nodes.length]; if (event.key === "Home") next = nodes[0]; if (event.key === "End") next = nodes.at(-1); if (["Enter", " "].includes(event.key)) { event.preventDefault(); selectObject(current.dataset.objectType, current.dataset.objectId, true, Number(current.dataset.channel)); } else if (next) { event.preventDefault(); nodes.forEach((node) => node.tabIndex = -1); next.tabIndex = 0; next.focus(); } });
+  window.addEventListener("keydown", (event) => { if (event.target.matches("input, textarea, select") || event.ctrlKey || event.metaKey || event.altKey) return; const key = event.key.toLowerCase(); if (event.code === "Space") { event.preventDefault(); $("btnStreamToggle").click(); } if (key === "r") $("btnResyncCore").click(); if (key === "c") $("btnOpenCommand").click(); if (key === "p") $("btnOpenPlanner").click(); if (key === "e") $("btnOpenEvidence").click(); if (key === "h") $("btnOpenHelp").click(); });
+  window.addEventListener("resize", drawOverview);
+}
+
+client.subscribe((next) => { snapshot = next; announceLiveChanges(next); if (snapshot.planDetail && selectedPlanDetail?.ledger?.planId === snapshot.planDetail.ledger?.planId) selectedPlanDetail = snapshot.planDetail; if (snapshot.assistanceDetail) assistanceDetail = snapshot.assistanceDetail; scheduleRender(); });
+setupEvents();
+renderMain();
+setInterval(renderFreshness, 1000);
+client.connect().catch((error) => toast(error, "error"));
+client.listPlanAssistance().catch(() => {});

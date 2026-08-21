@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Swarm Nebula | Hermes Command Space</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#semanticView">Skip 3D command space</a>
+  <header class="masthead">
+    <div class="identity"><span class="sigil" aria-hidden="true"></span><div><p>HERMES / CONTROL PLANE</p><h1>Swarm Nebula</h1></div></div>
+    <div class="signal-strip" aria-label="Live connection and workflow status">
+      <span><i id="signalLamp"></i><b id="connectionState">DISCONNECTED</b><small id="transportState">NO TRANSPORT</small></span>
+      <span><b id="freshness">NO SIGNAL</b><small>TELEMETRY AGE</small></span>
+      <span><b id="currentRun">NO ACTIVE RUN</b><small>CURRENT RUN</small></span>
+      <span><b id="phaseState">IDLE</b><small>OBSERVED PHASE</small></span>
+    </div>
+    <nav class="header-actions" aria-label="Display and transport controls">
+      <button type="button" id="refreshButton">Sync</button>
+      <button type="button" id="freezeButton" aria-pressed="false">Freeze view</button>
+      <button type="button" id="connectionButton">Disconnect</button>
+      <button type="button" id="commandButton" class="hot">Command</button>
+      <button type="button" id="plansButton">Plans</button>
+      <button type="button" id="helpButton" aria-label="Open complete help">Help</button>
+    </nav>
+  </header>
+
+  <main class="command-space">
+    <section class="viewport" aria-labelledby="spaceTitle">
+      <h2 id="spaceTitle" class="sr-only">Interactive three-dimensional swarm command space</h2>
+      <canvas id="nebulaCanvas" tabindex="0" aria-describedby="spaceDescription"></canvas>
+      <p id="spaceDescription" class="sr-only">Runs are bright stars. Agents, events, and tool calls form spherical clouds around their run. Red expanding shells are blockers. Use the adjacent object index or semantic view for equivalent keyboard operation.</p>
+      <div class="viewport-top" aria-hidden="true"><span>AZ <b id="azimuth">000</b></span><span>EL <b id="elevation">000</b></span><span>R <b id="range">18.0</b></span><span id="renderStats">0 PTS / 0 DC</span></div>
+      <div class="legend" aria-label="Visual legend"><span class="run-dot">run star</span><span class="agent-dot">agent</span><span class="event-dot">event</span><span class="tool-dot">tool</span><span class="block-dot">blocker shockwave</span></div>
+      <div id="webglNotice" class="webgl-notice" role="status" hidden></div>
+      <div class="camera-controls" aria-label="3D camera controls">
+        <button type="button" data-camera="left" aria-label="Rotate camera left">Left</button>
+        <button type="button" data-camera="up" aria-label="Rotate camera up">Up</button>
+        <button type="button" data-camera="down" aria-label="Rotate camera down">Down</button>
+        <button type="button" data-camera="right" aria-label="Rotate camera right">Right</button>
+        <button type="button" data-camera="in" aria-label="Zoom in">+</button>
+        <button type="button" data-camera="out" aria-label="Zoom out">-</button>
+        <button type="button" data-camera="reset">Reset</button>
+      </div>
+    </section>
+
+    <aside class="operations" aria-label="Authoritative swarm operations">
+      <div class="selection-head"><p>ACTIVE VECTOR</p><h2 id="selectionTitle">Control plane</h2><span id="selectionKind">SYSTEM</span></div>
+      <div class="tabs" role="tablist" aria-label="Operations views" aria-orientation="horizontal">
+        <button type="button" role="tab" id="tab-inspect" aria-controls="inspector" aria-selected="true" tabindex="0" data-tab="inspect">Inspect</button>
+        <button type="button" role="tab" id="tab-activity" aria-controls="inspector" aria-selected="false" tabindex="-1" data-tab="activity">Activity</button>
+        <button type="button" role="tab" id="tab-resources" aria-controls="inspector" aria-selected="false" tabindex="-1" data-tab="resources">Resources</button>
+        <button type="button" role="tab" id="tab-control" aria-controls="inspector" aria-selected="false" tabindex="-1" data-tab="control">Control</button>
+      </div>
+      <div id="inspector" class="inspector" role="tabpanel" aria-labelledby="tab-inspect" tabindex="0"></div>
+      <section class="object-index" aria-labelledby="objectIndexTitle">
+        <div><h3 id="objectIndexTitle">Spatial index</h3><span id="objectCount">0 objects</span></div>
+        <input id="objectFilter" type="search" placeholder="Filter run, agent, event..." aria-label="Filter spatial objects">
+        <div id="objectList" class="object-list" role="listbox" aria-label="Nebula objects"></div>
+      </section>
+    </aside>
+  </main>
+
+  <section class="lower-deck" aria-label="Operational ledgers">
+    <section><div class="deck-title"><p>REQUESTED / OBSERVED</p><h2>Control State</h2></div><div id="controlLedger"></div></section>
+    <section><div class="deck-title"><p>RECOVERY FIELD</p><h2>Blockers</h2></div><div id="blockerLedger"></div></section>
+    <section><div class="deck-title"><p>BOUND WORK</p><h2>Queue &amp; Gates</h2></div><div id="workLedger"></div></section>
+    <section><div class="deck-title"><p>GENERATIONS</p><h2>Showcase &amp; Lineage</h2></div><div id="lineageLedger"></div></section>
+  </section>
+
+  <details id="semanticView" class="semantic-view">
+    <summary>Semantic non-WebGL command space <span id="semanticCount"></span></summary>
+    <p>The tables below are an equivalent, live representation of every selectable 3D object and observed relationship. All inspection and operational controls remain available without WebGL.</p>
+    <div class="table-wrap"><table><caption>Command-space objects</caption><thead><tr><th scope="col">Object</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Run</th><th scope="col">Activity</th><th scope="col">Action</th></tr></thead><tbody id="semanticObjects"></tbody></table></div>
+    <div class="table-wrap"><table><caption>Authoritative event and tool relationships</caption><thead><tr><th scope="col">Time</th><th scope="col">Source</th><th scope="col">Kind</th><th scope="col">Run</th><th scope="col">Message</th><th scope="col">Action</th></tr></thead><tbody id="semanticRelationships"></tbody></table></div>
+  </details>
+
+  <dialog id="commandDialog" class="modal">
+    <form method="dialog" class="modal-head"><div><p>CONTROL MUTATION</p><h2>Operation Command</h2></div><button value="close" aria-label="Close command dialog">Close</button></form>
+    <div class="command-layout"><nav id="commandCatalog" aria-label="All operation commands"></nav><section><form id="operationForm"><h3 id="operationTitle">Select a command</h3><p id="operationDescription">All accepted requests are persisted intent; observed completion may follow later.</p><div id="operationFields"></div><label>Additional payload JSON<textarea id="payloadJson" rows="5" spellcheck="false">{}</textarea></label><label id="operationConfirmation" class="confirmation" hidden><input type="checkbox"> I confirm the selected target and operational effect.</label><p id="operationError" class="form-error" role="alert"></p><button type="submit" class="hot">Send command</button></form><section><h3>Session command lifecycle</h3><ol id="commandHistory" class="history"></ol></section></section></div>
+  </dialog>
+
+  <dialog id="plansDialog" class="modal wide">
+    <form method="dialog" class="modal-head"><div><p>PERSISTED / VERSIONED</p><h2>Project Plan Flight Deck</h2></div><button value="close" aria-label="Close project plans">Close</button></form>
+    <div class="plan-layout"><section><div class="section-head"><h3>Plans</h3><button type="button" id="newPlanButton">New draft</button></div><div id="planList" class="plan-list"></div><div class="section-head"><h3>Planning assistance</h3><button type="button" id="newAssistButton">New conversation</button></div><div id="assistanceWorkspace"></div></section><section id="planWorkspace"><p>Select a plan or create a persisted draft.</p></section></div>
+  </dialog>
+
+  <dialog id="resourceDialog" class="modal compact"><form method="dialog" class="modal-head"><div><p>AUTHORITATIVE RESOURCE</p><h2 id="resourceTitle">Resource</h2></div><button value="close">Close</button></form><pre id="resourceContent"></pre></dialog>
+
+  <dialog id="helpDialog" class="modal wide help">
+    <form method="dialog" class="modal-head"><div><p>OPERATOR REFERENCE</p><h2>Swarm Nebula Manual</h2></div><button value="close">Close</button></form>
+    <div class="help-grid">
+      <section><h3>Reading the nebula</h3><p>Large stars are runs. Agent beacons and bounded event/tool point clouds orbit the run they report. Cyan means agents, violet means events, amber means tool activity, and red wire shells indicate blockers. Position is deterministic visual grouping, not physical distance or causal certainty.</p></section>
+      <section><h3>Selection and camera</h3><p>Click or tap a star, beacon, particle, or shockwave to ray-pick it. Drag the canvas to rotate and use the wheel to zoom. The camera buttons provide the same operation. The Spatial index and Semantic view provide complete keyboard selection; Arrow keys move, Home/End jump, Enter/Space select. Inspector tabs use Left/Right Arrow with wraparound, Home, and End, and activate automatically.</p></section>
+      <section><h3>Transport and freshness</h3><p>Sync performs a full refresh. Freeze view calls the client display pause: streamed state and events are buffered while the displayed snapshot remains stable. Resume applies buffered data then synchronizes. Disconnect closes SSE and polling. Reconnect refreshes and reopens SSE; the client falls back to polling and retries SSE with backoff after failure. Telemetry age remains visible so stale data is never implied live.</p></section>
+      <section><h3>Workflow controls</h3><p>Pause, hold, stop, resume, and unhold are workflow commands, not transport controls. Requested state is shown separately from observed state. Pause and graceful stop can take effect only at runner checkpoints. Command accepted means persisted, not completed. Destructive or consequential commands require explicit confirmation.</p></section>
+      <section><h3>Blockers and recovery</h3><p>Current blockers may be targeted by deblock or inert deblock advice. Advice must be explicitly approved or denied. Historical blockers are evidence only: use an iteration continuation, fork, next direction, or a reviewed project plan. Swarm Nebula intentionally offers no unsupported agent or task retry.</p></section>
+      <section><h3>Queue, gates, showcase, lineage</h3><p>Use commands to add, pin, archive, or clear queue records; add/update gates, attach artifact references, and record decisions. Showcase loop controls expose target and observed generation. Iteration commands carry source run/iteration and bounded direction into continuation or fork requests.</p></section>
+      <section><h3>Plans and assistance</h3><p>Plans are persisted, versioned records. Create/update drafts, submit for review, approve or reject immutable revisions, then launch an approved revision. Clone, fork, and archive retain lifecycle semantics. Assistance can discuss and propose content but cannot save, approve, launch, or execute; conversion to a draft is explicit.</p></section>
+      <section><h3>Resources and accessibility</h3><p>Run inspection loads authoritative run details, artifacts, logs, SPEC, and DEVPLAN through the client. The semantic tables contain the same live objects and relationships as the canvas. Native controls, visible focus, status announcements, forced-colors support, and reduced-motion behavior are provided. Reduced motion stops orbital animation and shockwave expansion.</p></section>
+      <section><h3>Performance and recovery</h3><p>The renderer caps points at 1,500, event relationships at 1,000, device pixel ratio at 1.5, and drawing buffers near 4K. Background tabs stop animation. On WebGL context loss, the semantic interface remains operational; restoration rebuilds GPU resources from the current snapshot.</p></section>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

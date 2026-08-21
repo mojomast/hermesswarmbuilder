@@ -27,6 +27,9 @@ const clients = [
   ['network-noc', 'app.js', ['id="nocTopologySvg"', 'class="noc-dwdm-strip"']],
   ['microscope-spectrometry', 'app.js', ['id="crtCanvas"', 'id="mcaCanvas"']],
   ['reactor-core', 'app.js', ['id="hexCoreSvg"', 'class="rc-rod-deck"']],
+  ['swarm-nebula', 'app.js', ['<canvas id="nebulaCanvas"', 'id="semanticView"']],
+  ['flowfield-command', 'app.js', ['<canvas id="flow-canvas"', 'id="run-table"']],
+  ['voxel-foundry', 'app.js', ['<canvas id="foundryCanvas"', 'id="semanticCell"']],
 ];
 
 const requiredMethods = [

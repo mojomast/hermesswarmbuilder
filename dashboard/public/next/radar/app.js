@@ -1,641 +1,384 @@
 import { createDashboardClient, WORKFLOW_PHASES } from "../../headless-dashboard-client.js";
 
 const $ = (id) => document.getElementById(id);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const SVG_NS = "http://www.w3.org/2000/svg";
+const client = createDashboardClient({ pollIntervalMs: 4000, eventLimit: 500, maxEvents: 1500 });
+const pendingCommands = new Set();
 const ui = {
-  target: null,
-  scopeTab: "target",
-  trayTab: "run",
-  planTab: "plans",
-  eventFilter: "all",
-  query: "",
-  resource: null,
-  selectedPlanId: null,
-  planDetail: null,
-  planRevision: null,
-  assistanceId: null,
-  assistanceDetail: null,
-  busy: false
+  selected: null, scopeTab: "dossier", trayTab: "run", planTab: "plans", filter: "", eventFilter: "all", eventQuery: "",
+  resource: null, planId: null, planDetail: null, planRevision: null, assistanceDetail: null, lastCommand: null
 };
-
-const client = createDashboardClient({ pollIntervalMs: 4000, eventLimit: 400, maxEvents: 1200 });
 let snapshot = client.getSnapshot();
+let records = [];
 let noticeTimer;
+let selectionRevision = 0;
+let resourceRevision = 0;
+let planRequestRevision = 0;
+let assistanceRequestRevision = 0;
+let iterationPayloadRevision = 0;
+let announcedConnectionState = null;
 
 function node(tag, attrs = {}, children = []) {
   const element = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
     if (key === "class") element.className = value;
-    else if (key === "text") element.textContent = value ?? "";
-    else if (key.startsWith("on") && typeof value === "function") element.addEventListener(key.slice(2), value);
-    else if (value !== undefined && value !== null && value !== false) element.setAttribute(key, value === true ? "" : String(value));
+    else if (key === "text") element.textContent = String(value);
+    else if (key === "hidden") element.hidden = Boolean(value);
+    else element.setAttribute(key, value === true ? "" : String(value));
   }
-  element.append(...(Array.isArray(children) ? children : [children]).filter(Boolean));
+  for (const child of Array.isArray(children) ? children : [children]) if (child !== undefined && child !== null) element.append(child instanceof Node ? child : document.createTextNode(String(child)));
   return element;
 }
-
-function svgNode(tag, attrs = {}, children = []) {
-  const element = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
-  element.append(...children);
-  return element;
-}
-
+function svgNode(tag, attrs = {}, children = []) { const element = document.createElementNS(SVG_NS, tag); for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value)); element.append(...children); return element; }
 function clear(element) { element.replaceChildren(); return element; }
-function text(value, fallback = "-") { return value === undefined || value === null || value === "" ? fallback : String(value); }
-function short(value, length = 34) { const source = text(value); return source.length > length ? `${source.slice(0, length - 3)}...` : source; }
-function when(value) { if (!value) return "-"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? text(value) : date.toLocaleString(); }
-function items(value, key) { return Array.isArray(value) ? value : Array.isArray(value?.[key]) ? value[key] : []; }
+function arr(value) { return Array.isArray(value) ? value : []; }
+function first(...values) { return values.find((value) => value !== undefined && value !== null && value !== "") ?? ""; }
+function text(value, fallback = "not reported") { return value === undefined || value === null || value === "" ? fallback : String(value); }
+function lower(value) { return String(value || "").toLowerCase(); }
+function short(value, length = 42) { const source = text(value, ""); return source.length > length ? `${source.slice(0, length - 3)}...` : source; }
+function when(value) { if (!value) return "not reported"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(); }
+function age(value) { const elapsed = Date.now() - new Date(value || 0).valueOf(); if (!Number.isFinite(elapsed) || !value) return "no fix"; if (elapsed < 60_000) return `${Math.max(0, Math.round(elapsed / 1000))}s ago`; if (elapsed < 3_600_000) return `${Math.round(elapsed / 60_000)}m ago`; return `${Math.round(elapsed / 3_600_000)}h ago`; }
 function hash(value) { let result = 7; for (const char of String(value)) result = (result * 31 + char.charCodeAt(0)) >>> 0; return result; }
-function phaseOf(value) { return value?.phase || value?.currentPhase || value?.status || "idle"; }
-function phaseIndex(value) { const index = WORKFLOW_PHASES.indexOf(phaseOf(value)); return index < 0 ? 0 : index; }
-function isBlocked(value) { return ["blocked", "deblocking", "on-hold"].includes(phaseOf(value)) || Boolean(value?.blocked || value?.blocker || value?.block); }
-function currentRunId() { return snapshot.state?.currentRunId || snapshot.selectedRunId || null; }
-function selectedRun() { return snapshot.runs.find((run) => run.id === snapshot.selectedRunId) || snapshot.selectedRun?.run; }
+function phaseOf(value) { return first(value?.phase, value?.currentPhase, value?.status, "idle"); }
+function isBlocked(value) { const status = lower(typeof value === "object" ? phaseOf(value) : value); return ["blocked", "deblocking", "on-hold", "failed", "error"].some((item) => status.includes(item)) || Boolean(value?.blocked || value?.blocker || value?.block); }
+function currentRunId() { return snapshot.state?.currentRunId || null; }
+function currentObjective() { const pinned = arr(snapshot.queue?.items).find((item) => item.id === snapshot.control?.pinnedQueueItemId); return first(snapshot.control?.currentObjective?.text, pinned?.objective, snapshot.state?.objective, snapshot.state?.currentTask, "No current objective reported"); }
+function finiteLimit(value, fallback, minimum = 1) { if (value === undefined || value === null || value === "") return fallback; const number = Number(value); return Number.isFinite(number) && number >= minimum ? number : fallback; }
+function iterationLimits(maxIterations = 1, source = {}) { return { maxIterations: finiteLimit(maxIterations, 1), maxVariantsPerIteration: finiteLimit(source.maxVariantsPerIteration, 3), maxParallelVariants: finiteLimit(source.maxParallelVariants, 3), maxAcceptedFeatures: finiteLimit(source.maxAcceptedFeatures, 4), maxVisualMotifChanges: finiteLimit(source.maxVisualMotifChanges, 1, 0), maxNewSections: finiteLimit(source.maxNewSections, 1, 0), stopAfterNoImprovement: finiteLimit(source.stopAfterNoImprovement, 1), minImprovementScore: finiteLimit(source.minImprovementScore, .05, 0) }; }
+function planLimits(source = {}) { return { maxIterations: finiteLimit(source.maxIterations, 1), maxVariantsPerIteration: finiteLimit(source.maxVariantsPerIteration, 1), maxParallelVariants: finiteLimit(source.maxParallelVariants, 1), maxAcceptedFeatures: finiteLimit(source.maxAcceptedFeatures, 1), maxVisualMotifChanges: finiteLimit(source.maxVisualMotifChanges, 0, 0), maxNewSections: finiteLimit(source.maxNewSections, 0, 0), stopAfterNoImprovement: finiteLimit(source.stopAfterNoImprovement, 1) }; }
+function currentGateSnapshot(ids = null) { const wanted = ids?.length ? new Set(ids) : null; const gates = arr(snapshot.gates?.gates).filter((gate) => !wanted || wanted.has(gate.id)).map((gate) => ({ ...gate, requiredEvidence: [...arr(gate.requiredEvidence)], decisions: [...arr(gate.decisions)], evidence: [...arr(gate.evidence)] })); return { acceptanceGateIds: gates.map((gate) => gate.id).filter(Boolean), snapshottedAcceptanceGates: gates }; }
+function asRecord(value, fallback = "") { return value && typeof value === "object" && !Array.isArray(value) ? value : value ? { reason: String(value) } : fallback ? { reason: fallback } : null; }
+function formField(name, label, options = {}) { const control = options.select ? node("select", { name }, options.select.map((value) => node("option", { value, text: value, selected: value === options.value }))) : options.textarea ? node("textarea", { name, required: options.required, maxlength: options.maxlength, placeholder: options.placeholder, text: options.value || "" }) : node("input", { name, type: options.type || "text", required: options.required, placeholder: options.placeholder, value: options.value, min: options.min, max: options.max }); return node("label", { class: "field" }, [node("span", { text: label }), control]); }
+function button(label, attrs = {}, children = []) { return node("button", { type: "button", text: label, ...attrs }, children); }
+function section(title, children) { return node("section", { class: "scope-section" }, [node("h3", { text: title }), ...(Array.isArray(children) ? children : [children])]); }
+function facts(entries) { const list = node("dl", { class: "facts" }); for (const [term, value] of entries) if (value !== undefined && value !== null && value !== "") list.append(node("dt", { text: term }), node("dd", { text: text(value) })); return list; }
 
-function notify(message, error = false) {
-  const box = $("notice");
-  box.textContent = text(message, "Command complete");
-  box.className = `notice show${error ? " error" : ""}`;
-  clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => { box.className = "notice"; }, 4500);
-}
-
-async function perform(label, action) {
-  if (ui.busy) return;
-  ui.busy = true;
-  try {
-    const result = await action();
-    notify(`${label} accepted`);
-    return result;
-  } catch (error) {
-    notify(`${label}: ${error.message || error}`, true);
-    return null;
-  } finally {
-    ui.busy = false;
-    renderCommandTray();
-    renderPlanning();
-  }
-}
-
-async function command(type, payload = {}) {
-  return perform(type, () => client.command(type, payload, { refresh: true }));
-}
+function notify(message, error = false) { const box = $("notice"); box.textContent = text(message, "Command complete"); box.className = `notice show${error ? " error" : ""}`; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { box.className = "notice"; }, 6500); }
+function focusKey(element = document.activeElement) { if (!(element instanceof Element) || element === document.body) return null; if (element.id) return `#${CSS.escape(element.id)}`; const region = element.closest("#radar, #trackIndex, #scope, #commandTray, #planningTray"), regionScope = region?.id ? `#${CSS.escape(region.id)} ` : ""; if (element.hasAttribute("data-record-type") && element.hasAttribute("data-record-id")) return `${regionScope}${element.tagName.toLowerCase()}[data-record-type="${CSS.escape(element.dataset.recordType)}"][data-record-id="${CSS.escape(element.dataset.recordId)}"]`; if (element.hasAttribute("data-resource-kind")) return `${regionScope}${element.tagName.toLowerCase()}[data-resource-kind="${CSS.escape(element.dataset.resourceKind)}"][data-resource-name="${CSS.escape(element.dataset.resourceName || "")}"][data-resource-run="${CSS.escape(element.dataset.resourceRun || "")}"]`; const form = element.closest("form"); const scope = form?.id ? `#${CSS.escape(form.id)} ` : form?.dataset.gateId ? `form[data-gate-id="${CSS.escape(form.dataset.gateId)}"] ` : regionScope; if (element.name) return `${scope}${element.tagName.toLowerCase()}[name="${CSS.escape(element.name)}"]`; for (const name of ["data-tab", "data-tray-tab", "data-plan-tab", "data-command"]) if (element.hasAttribute(name)) return `${regionScope}${element.tagName.toLowerCase()}[${name}="${CSS.escape(element.getAttribute(name))}"]`; return null; }
+function draftIdentity(control) { const form = control.closest("form"), planId = ui.planDetail?.ledger?.planId || ui.planId || "new", iterationId = associatedIteration()?.id || snapshot.selectedIterationId || "new", assistanceId = ui.assistanceDetail?.id || "new"; if (form?.id === "planCreateForm") return "plan:new"; if (form?.id === "planEditorForm" || control.name === "decisionNotes") return `plan:${planId}:r${ui.planDetail?.revision?.revision || "new"}`; if (["lineageForm", "nextForm", "showcaseForm"].includes(form?.id)) return `iteration:${iterationId}`; if (form?.id === "gateForm") return "gate:new"; if (form?.dataset.gateId) return `gate:${form.dataset.gateId}`; if (form?.id === "assistanceForm") return `assistance:${assistanceId}`; const selected = selectedRecord(); return selected ? `${selected.type}:${selected.id}` : "global"; }
+function draftKey(control) { const form = control.closest("form"); return `${draftIdentity(control)}|${form?.id || form?.dataset.form || "scope"}|${control.name || control.id || control.getAttribute("aria-label") || control.type}`; }
+function captureDrafts() { let result = {}; try { result = JSON.parse(sessionStorage.getItem("radar-drafts") || "{}"); } catch {} for (const control of $$("#scopeContent input, #scopeContent textarea, #scopeContent select, dialog[open] input, dialog[open] textarea, dialog[open] select")) result[draftKey(control)] = control.type === "checkbox" ? control.checked : control.value; try { sessionStorage.setItem("radar-drafts", JSON.stringify(result)); } catch {} return result; }
+function restoreDrafts(drafts = null) { if (!drafts) try { drafts = JSON.parse(sessionStorage.getItem("radar-drafts") || "{}"); } catch { drafts = {}; } for (const control of $$("#scopeContent input, #scopeContent textarea, #scopeContent select, dialog[open] input, dialog[open] textarea, dialog[open] select")) if (Object.hasOwn(drafts, draftKey(control))) { if (control.type === "checkbox") control.checked = drafts[draftKey(control)]; else control.value = drafts[draftKey(control)]; } }
 
 function deriveAgents() {
-  const raw = snapshot.state?.agents;
-  const base = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
+  const raw = Array.isArray(snapshot.state?.agents) ? snapshot.state.agents : Object.values(snapshot.state?.agents || {});
   const map = new Map();
-  for (const agent of base) {
-    const id = agent.id || agent.agentId || agent.label || agent.role;
-    if (id) map.set(String(id), { ...agent, id: String(id), label: agent.label || agent.role || id });
-  }
+  for (const source of raw) { const id = String(first(source.id, source.agentId, source.label, source.role)); if (!id) continue; map.set(id, { ...source, id, label: first(source.label, source.name, source.role, id), runId: first(source.runId, currentRunId()), stateOwned: true }); }
   for (const event of snapshot.events) {
-    const id = event.agentId || event.data?.agentId;
-    if (!id || map.has(String(id))) continue;
-    map.set(String(id), { id: String(id), label: String(id), role: "event-derived agent", status: "observed", currentTask: event.message, updatedAt: event.ts });
+    const id = first(event.agentId, event.data?.agentId, event.source);
+    if (!id || ["system", "operator", "unknown"].includes(id)) continue;
+    const old = map.get(id) || { id, label: id, role: "telemetry-derived agent", status: "observed", eventDerived: true };
+    const activity = [...arr(old.activity), event].slice(-60);
+    map.set(id, { ...old, runId: old.stateOwned ? old.runId : first(event.runId, old.runId), activity, lastEvent: event, lastSeenAt: event.ts, currentTask: first(old.currentTask, old.task, event.message, event.type), status: isBlocked(old) ? phaseOf(old) : event.level === "error" ? "error" : old.status });
   }
   return [...map.values()];
 }
-
-function targetRecords() {
-  const runs = snapshot.runs.map((run) => ({ type: "run", id: String(run.id), label: run.name || run.projectName || run.id, data: run }));
-  const agents = deriveAgents().map((agent) => ({ type: "agent", id: agent.id, label: agent.label, data: agent }));
-  return [...runs, ...agents];
+function deriveBlockers() {
+  const state = snapshot.state || {};
+  const sources = [...arr(state.blockers), asRecord(state.block), asRecord(state.blocker), asRecord(state.hold, isBlocked(state.status) ? state.lastAction : "")].filter(Boolean);
+  const seen = new Set();
+  return sources.map((source, index) => {
+    const runId = first(source.runId, state.currentRunId), agentId = first(source.agentId, source.ownerAgentId), reason = first(source.reason, source.message, source.error, source.description, state.lastAction, "Blocked without a reported reason");
+    const id = String(first(source.id, `${runId || "current"}:${agentId || source.phase || index}:${reason}`)).slice(0, 180);
+    if (seen.has(id)) return null; seen.add(id);
+    return { ...source, id, runId, agentId, reason, status: first(source.status, state.status, "blocked"), phase: first(source.phase, state.phase, "blocked"), since: first(source.since, source.startedAt, source.createdAt, state.updatedAt), owner: first(source.owner, source.agent, agentId, "not reported"), suggestedAction: first(source.suggestedAction, source.safeRecoveryAction, source.recoveryAction, "Inspect evidence before choosing a recovery action."), artifact: first(source.artifact, source.artifactPath, source.failureArtifact), log: first(source.log, source.logPath), toolCallId: first(source.toolCallId, source.callId) };
+  }).filter(Boolean);
 }
-
-function activeTarget() {
-  const records = targetRecords();
-  if (ui.target) {
-    const match = records.find((record) => record.type === ui.target.type && record.id === ui.target.id);
-    if (match) return match;
-  }
-  const runId = snapshot.selectedRunId || currentRunId();
-  return records.find((record) => record.type === "run" && record.id === runId) || records[0] || null;
+function eventRecord(event) { const tool = Boolean(event.data?.toolName || event.raw?.toolName || lower(event.type).includes("tool")); return { type: tool ? "tool" : "event", id: String(event.id), label: first(event.data?.toolName, event.message, event.type, "Event"), status: first(event.data?.status, event.level, "info"), data: event, runId: first(event.runId, event.data?.runId) }; }
+function buildRecords() {
+  const result = [];
+  for (const run of snapshot.runs) result.push({ type: "run", id: String(run.id), label: first(run.selectedProject, run.name, run.projectName, run.id), status: phaseOf(run), data: run, runId: String(run.id) });
+  for (const agent of deriveAgents()) result.push({ type: "agent", id: String(agent.id), label: agent.label, status: phaseOf(agent), data: agent, runId: agent.runId || "" });
+  for (const blocker of deriveBlockers()) result.push({ type: "blocker", id: blocker.id, label: short(blocker.reason, 58), status: blocker.status, data: blocker, runId: blocker.runId || "" });
+  for (const iteration of snapshot.iterations) result.push({ type: "iteration", id: String(iteration.id), label: first(iteration.objective, iteration.id), status: first(iteration.status, "unknown"), data: iteration, runId: first(iteration.runId, iteration.sourceRunId) });
+  for (const item of arr(snapshot.queue?.items)) result.push({ type: "queue", id: String(item.id), label: first(item.title, item.objective, item.id), status: first(item.status, "queued"), data: item, runId: snapshot.control?.nextRunRequest?.queueItemId === item.id ? first(snapshot.control.nextRunRequest.sourceRunId) : "" });
+  for (const gate of arr(snapshot.gates?.gates)) { const latest = first(arr(gate.decisions)[0], arr(gate.evidence)[0], {}); result.push({ type: "gate", id: String(gate.id), label: first(gate.description, gate.title, gate.id), status: first(gate.status, "pending"), data: gate, runId: first(latest.runId) }); }
+  for (const plan of snapshot.plans) result.push({ type: "plan", id: String(plan.planId), label: first(plan.title, plan.planId), status: first(plan.state, "draft"), data: plan, runId: first(plan.sourceRunId) });
+  for (const event of snapshot.events) result.push(eventRecord(event));
+  return result;
 }
+function selectedRecord() { return records.find((record) => record.type === ui.selected?.type && record.id === ui.selected?.id) || records.find((record) => record.type === "run" && record.id === (snapshot.selectedRunId || currentRunId())) || records[0] || null; }
+function recordRunId(record = selectedRecord()) { return first(record?.runId, record?.type === "run" ? record.id : "", record?.data?.runId, record?.data?.sourceRunId, record?.data?.lastEvent?.runId); }
+function selectedData(record = selectedRecord()) { if (!record) return {}; if (record.type === "run" && snapshot.selectedRunId === record.id && snapshot.selectedRun?.run) return snapshot.selectedRun.run; if (record.type === "iteration" && snapshot.selectedIterationId === record.id && snapshot.iterationDetail) return snapshot.iterationDetail; if (record.type === "plan" && ui.planDetail?.ledger?.planId === record.id) return ui.planDetail; return record.data || {}; }
+function associatedIteration(record = selectedRecord()) { if (record?.type === "iteration") return record.data; const runId = recordRunId(record); return snapshot.iterations.find((item) => item.runId === runId) || null; }
+function relatedEvents(record = selectedRecord()) { if (!record) return []; const runId = recordRunId(record); return snapshot.events.filter((event) => { if (["event", "tool"].includes(record.type)) return event.id === record.id; if (record.type === "agent") return (event.agentId === record.id || event.data?.agentId === record.id || event.source === record.id) && (!runId || event.runId === runId); if (record.type === "blocker") return (record.data.toolCallId && event.data?.toolCallId === record.data.toolCallId) || (runId && event.runId === runId && (!record.data.agentId || event.agentId === record.data.agentId)); return runId && event.runId === runId; }).slice(-80).reverse(); }
+function selectedBlocker(record = selectedRecord()) { if (!record) return null; if (record.type === "blocker") return record.data; const runId = recordRunId(record); return deriveBlockers().find((blocker) => (record.type === "agent" && blocker.agentId === record.id) || (runId && blocker.runId === runId)) || null; }
 
-async function selectTarget(type, id, focusScope = false) {
-  ui.target = { type, id };
-  ui.resource = null;
-  if (type === "run" && snapshot.selectedRunId !== id) {
-    await perform("Select run", () => client.selectRun(id));
-  }
-  renderRadar();
-  renderScope();
-  if (focusScope) $("scopeTitle").focus?.();
+async function selectRecord(type, id, focus = false) {
+  const record = records.find((item) => item.type === type && item.id === id); if (!record) return;
+  const revision = ++selectionRevision;
+  resourceRevision += 1;
+  ui.selected = { type, id }; ui.resource = null;
+  const runId = recordRunId(record);
+  const tasks = [];
+  if (runId && snapshot.selectedRunId !== runId) tasks.push(client.selectRun(runId));
+  if (type === "iteration" && snapshot.selectedIterationId !== id) tasks.push(client.selectIteration(id));
+  if (type === "run") { const iteration = snapshot.iterations.find((item) => item.runId === id); if (iteration && snapshot.selectedIterationId !== iteration.id) tasks.push(client.selectIteration(iteration.id)); }
+  if (type === "plan" && ui.planDetail?.ledger?.planId !== id) tasks.push(loadPlan(id, false, { revision, type, id }));
+  render();
+  if (tasks.length) await Promise.allSettled(tasks);
+  if (focus && revision === selectionRevision && ui.selected?.type === type && ui.selected?.id === id) $("scopeTitle").focus({ preventScroll: true });
 }
 
 function initGrid() {
   const grid = clear($("radarGrid"));
   grid.append(svgNode("circle", { cx: 500, cy: 500, r: 438, class: "grid-sector" }));
   for (const radius of [100, 185, 270, 355, 438]) grid.append(svgNode("circle", { cx: 500, cy: 500, r: radius, class: "grid-ring" }));
-  for (let angle = 0; angle < 360; angle += 30) {
-    const rad = angle * Math.PI / 180;
-    grid.append(svgNode("line", { x1: 500 + 100 * Math.sin(rad), y1: 500 - 100 * Math.cos(rad), x2: 500 + 438 * Math.sin(rad), y2: 500 - 438 * Math.cos(rad), class: "grid-axis" }));
-  }
+  for (let angle = 0; angle < 360; angle += 30) { const rad = angle * Math.PI / 180; grid.append(svgNode("line", { x1: 500 + 100 * Math.sin(rad), y1: 500 - 100 * Math.cos(rad), x2: 500 + 438 * Math.sin(rad), y2: 500 - 438 * Math.cos(rad), class: "grid-axis" })); }
   grid.append(svgNode("circle", { cx: 500, cy: 500, r: 7, fill: "#52e2cc" }), svgNode("circle", { cx: 500, cy: 500, r: 18, fill: "none", stroke: "#52e2cc", "stroke-width": 1 }));
 }
-
-function positionFor(record, index, total) {
-  const phase = phaseIndex(record.data);
-  const progress = phase / Math.max(1, WORKFLOW_PHASES.length - 1);
-  const radius = 105 + progress * 320;
-  const seeded = hash(`${record.type}:${record.id}`) % 360;
-  const angle = (seeded + index * (total > 1 ? 11 : 0)) * Math.PI / 180;
-  return { x: 500 + radius * Math.sin(angle), y: 500 - radius * Math.cos(angle), radius, angle };
-}
-
-function targetGraphic(record, index, records) {
-  const position = positionFor(record, index, records.length);
-  const blocked = isBlocked(record.data);
-  const selected = activeTarget()?.type === record.type && activeTarget()?.id === record.id;
-  const status = phaseOf(record.data);
-  const group = svgNode("g", {
-    class: `target ${record.type}${blocked ? " blocked" : ""}`,
-    transform: `translate(${position.x.toFixed(1)} ${position.y.toFixed(1)})`,
-    role: "button",
-    tabindex: selected ? 0 : -1,
-    "aria-label": `${record.type} ${record.label}, ${status}${blocked ? ", collision alert" : ""}`,
-    "aria-pressed": selected,
-    "data-target-type": record.type,
-    "data-target-id": record.id
-  });
-  group.append(svgNode("circle", { r: 23, class: "hit" }), svgNode("circle", { r: 19, class: "focus-ring" }), svgNode("circle", { r: 27, class: "alert-ring" }));
-  if (record.type === "run") group.append(svgNode("path", { d: "M 0 -10 L 10 0 L 0 10 L -10 0 Z", class: "run-symbol" }));
+function positionFor(record, index, total) { const phase = WORKFLOW_PHASES.indexOf(phaseOf(record.data)); const progress = Math.max(0, phase) / Math.max(1, WORKFLOW_PHASES.length - 1); const radius = record.type === "blocker" ? 160 : 105 + progress * 320; const angle = ((hash(`${record.type}:${record.id}`) % 360) + index * (total > 1 ? 9 : 0)) * Math.PI / 180; return { x: 500 + radius * Math.sin(angle), y: 500 - radius * Math.cos(angle) }; }
+function targetGraphic(record, index, visible) {
+  const position = positionFor(record, index, visible.length), blocked = record.type === "blocker" || isBlocked(record.data), selected = selectedRecord()?.type === record.type && selectedRecord()?.id === record.id;
+  const group = svgNode("g", { class: `target ${record.type}${blocked ? " blocked" : ""}`, transform: `translate(${position.x.toFixed(1)} ${position.y.toFixed(1)})`, role: "button", tabindex: selected ? 0 : -1, "aria-label": `${record.type} ${record.label}, ${record.status}${blocked ? ", alert" : ""}`, "aria-pressed": selected, "data-record-type": record.type, "data-record-id": record.id });
+  group.append(svgNode("circle", { r: 25, class: "hit" }), svgNode("circle", { r: 19, class: "focus-ring" }), svgNode("circle", { r: 28, class: "alert-ring" }));
+  if (record.type === "run") group.append(svgNode("path", { d: "M0 -10L10 0L0 10L-10 0Z", class: "run-symbol" }));
+  else if (record.type === "blocker") group.append(svgNode("path", { d: "M0 -12L12 10H-12Z", class: "blocker-symbol" }));
   else group.append(svgNode("circle", { r: 5.5, class: "agent-symbol" }), svgNode("line", { x1: 0, y1: 0, x2: 13, y2: -13, stroke: "#8ee6a8", "stroke-width": 2 }));
-  const anchor = position.x > 730 ? "end" : "start";
-  const labelX = position.x > 730 ? -17 : 17;
-  group.append(svgNode("text", { x: labelX, y: -3, class: "target-label", "text-anchor": anchor }, [document.createTextNode(short(record.label, 22))]));
-  group.append(svgNode("text", { x: labelX, y: 11, class: "target-sub", "text-anchor": anchor }, [document.createTextNode(short(status, 18))]));
+  const anchor = position.x > 730 ? "end" : "start", labelX = position.x > 730 ? -17 : 17;
+  group.append(svgNode("text", { x: labelX, y: -3, class: "target-label", "text-anchor": anchor }, [document.createTextNode(short(record.label, 22))]), svgNode("text", { x: labelX, y: 11, class: "target-sub", "text-anchor": anchor }, [document.createTextNode(short(record.status, 18))]));
   return { group, position };
 }
-
 function renderRadar() {
-  const focusedTarget = document.activeElement?.closest?.("[data-target-type]");
-  const focusedIdentity = focusedTarget ? `${focusedTarget.dataset.targetType}:${focusedTarget.dataset.targetId}` : null;
-  const records = targetRecords();
-  const selectedRun = snapshot.selectedRunId || currentRunId();
-  const priority = (record) => record.type === "run" && record.id === selectedRun ? 0 : record.type === "run" && isBlocked(record.data) ? 1 : record.type === "agent" ? 2 : 3;
-  const visualRecords = [...records].sort((a, b) => priority(a) - priority(b)).slice(0, 42);
-  const trackLayer = clear($("radarTracks"));
-  const agentLayer = clear($("radarAgents"));
-  visualRecords.forEach((record, index) => {
-    const { group, position } = targetGraphic(record, index, visualRecords);
-    if (record.type === "run") {
-      const active = record.id === currentRunId();
-      trackLayer.append(svgNode("path", { d: `M 500 500 Q ${(500 + position.x) / 2 + 45} ${(500 + position.y) / 2 - 35} ${position.x} ${position.y}`, class: `track-path${active ? " active" : ""}`, "aria-hidden": true }));
-      trackLayer.append(group);
-    } else agentLayer.append(group);
-  });
-  $("radarEmpty").hidden = records.length > 0;
-  $("runCount").textContent = snapshot.runs.length;
-  $("agentCount").textContent = deriveAgents().length;
-  $("alertCount").textContent = records.filter((record) => isBlocked(record.data)).length;
-  if (focusedIdentity) {
-    const replacement = [...$("radar").querySelectorAll("[data-target-type]")].find((item) => `${item.dataset.targetType}:${item.dataset.targetId}` === focusedIdentity);
-    replacement?.focus();
+  const focus = document.activeElement?.closest?.("[data-record-type]"); const focusId = focus ? `${focus.dataset.recordType}:${focus.dataset.recordId}` : null;
+  const visible = records.filter((record) => ["run", "agent", "blocker"].includes(record.type)).sort((a, b) => (a.type === "blocker" ? -2 : a.type === "run" && a.id === currentRunId() ? -1 : 0) - (b.type === "blocker" ? -2 : b.type === "run" && b.id === currentRunId() ? -1 : 0)).slice(0, 48);
+  const tracks = clear($("radarTracks")), agents = clear($("radarAgents")), alerts = clear($("radarAlerts"));
+  visible.forEach((record, index) => { const { group, position } = targetGraphic(record, index, visible); if (record.type === "run") { tracks.append(svgNode("path", { d: `M500 500Q${(500 + position.x) / 2 + 45} ${(500 + position.y) / 2 - 35} ${position.x} ${position.y}`, class: `track-path${record.id === currentRunId() ? " active" : ""}`, "aria-hidden": true }), group); } else if (record.type === "blocker") alerts.append(group); else agents.append(group); });
+  $("radarEmpty").hidden = visible.length > 0; $("runCount").textContent = snapshot.runs.length; $("agentCount").textContent = deriveAgents().length; $("alertCount").textContent = deriveBlockers().length; $("eventCount").textContent = snapshot.events.length;
+  if (focusId) $$('[data-record-type]', $("radar")).find((item) => `${item.dataset.recordType}:${item.dataset.recordId}` === focusId)?.focus({ preventScroll: true });
+}
+function renderIndex() {
+  const container = clear($("trackIndex")), query = lower(ui.filter.trim());
+  const order = ["blocker", "run", "agent", "iteration", "event", "tool", "gate", "queue", "plan"];
+  for (const type of order) {
+    const all = records.filter((record) => record.type === type), visible = all.filter((record) => !query || lower(`${record.label} ${record.id} ${record.status} ${record.runId}`).includes(query)).slice(type === "event" || type === "tool" ? -60 : 0).reverse();
+    const group = node("section", { class: "index-group" }, [node("h3", { text: `${type.toUpperCase()} / ${all.length}` })]);
+    for (const record of visible) group.append(button("", { class: `index-row${isBlocked(record.data) || type === "blocker" ? " blocked" : ""}`, "data-record-type": type, "data-record-id": record.id }, [node("i", { "aria-hidden": true }), node("span", { text: record.label }), node("small", { text: record.status })]));
+    if (!visible.length) group.append(node("div", { class: "empty", text: query ? "No match" : "None" }));
+    container.append(group);
   }
 }
 
-function factList(entries) {
-  const dl = node("dl", { class: "facts" });
-  for (const [label, value] of entries) dl.append(node("dt", { text: label }), node("dd", { text: text(value) }));
-  return dl;
+function stripSummary(record, data) { return node("div", { class: "dossier-strip" }, [["TYPE", record.type], ["IDENT", record.id], ["OWNING RUN", recordRunId(record) || "NOT REPORTED"], ["STATUS", first(record.status, data.status)], ["UPDATED", when(first(data.updatedAt, data.ts, data.completedAt, data.startedAt))], ["CURRENT ACTIVITY", first(data.currentTask, data.task, data.lastAction, data.message, data.objective, "not reported")]].map(([label, value]) => node("div", { class: "strip-cell" }, [node("span", { text: label }), node("strong", { text: value })]))); }
+function telemetryList(events) { const list = node("div", { class: "traffic-list", role: "log", "aria-label": "Correlated telemetry" }); for (const event of events) { const record = eventRecord(event), row = button("", { class: `traffic-row${event.level === "error" ? " error" : ""}`, "data-record-type": record.type, "data-record-id": record.id }); row.append(node("time", { text: new Date(event.ts).toLocaleTimeString() }), node("span", { text: short(first(event.message, event.type), 68) })); if (record.type === "tool") row.append(node("span", { class: "tool-badge", text: "TOOL" })); list.append(row); } if (!events.length) list.append(node("div", { class: "empty", text: "No correlated telemetry retained for this strip." })); return list; }
+function dossierActions(record, blocker) {
+  const actions = node("div", { class: "context-actions" }), runId = recordRunId(record), iteration = associatedIteration(record);
+  if (runId && record.type !== "run") actions.append(button("Inspect owning run", { "data-record-type": "run", "data-record-id": runId }));
+  if (blocker && blocker.runId === currentRunId()) actions.append(button("Prepare recovery", { "data-context-action": "recovery", class: "primary" }));
+  if (iteration) actions.append(button("Prepare continuation", { "data-context-action": "continue" }), button("Prepare fork", { "data-context-action": "fork" }));
+  if (["gate", "queue"].includes(record.type)) actions.append(button(`Manage ${record.type}`, { "data-context-action": record.type }));
+  if (record.type === "plan") actions.append(button("Open plan workspace", { "data-open-plan": record.id }));
+  return actions;
 }
-
-function section(title, children) { return node("section", { class: "scope-section" }, [node("h3", { text: title }), ...(Array.isArray(children) ? children : [children])]); }
-function button(label, attrs = {}) { return node("button", { type: "button", text: label, ...attrs }); }
-function field(label, control) { return node("label", { class: "field" }, [node("span", { text: label }), control]); }
-
-function renderTargetTab(container, target) {
-  if (!target) {
-    container.append(node("div", { class: "empty", text: "No run or agent targets are present in the latest snapshot." }));
-    return;
-  }
-  const data = target.data;
-  container.append(section("Identification", factList([
-    ["kind", target.type], ["identity", target.id], ["status", data.status], ["workflow", phaseOf(data)],
-    ["updated", when(data.updatedAt || data.endedAt || data.startedAt)], ["task", data.currentTask || data.task || data.objective]
-  ])));
-  if (isBlocked(data)) container.append(node("div", { class: "alert-box", text: `COLLISION ALERT / ${text(data.blocker?.reason || data.block?.reason || data.reason || data.lastMessage, "Workflow is blocked or held")}` }));
-  const records = targetRecords();
-  const list = node("ul", { class: "target-list", "aria-label": "All radar targets" });
-  for (const record of records) {
-    const row = button("", { class: `target-row${isBlocked(record.data) ? " blocked" : ""}`, "data-select-type": record.type, "data-select-id": record.id });
-    row.append(node("span", { "aria-hidden": true }), node("span", { text: record.label }), node("small", { text: phaseOf(record.data) }));
-    list.append(node("li", {}, row));
-  }
-  container.append(section("Target index", list));
-  if (target.type === "agent") {
-    const events = snapshot.events.filter((event) => (event.agentId || event.data?.agentId) === target.id).slice(-10).reverse();
-    container.append(section("Agent activity", trafficList(events)));
-  }
+function renderDossier(container, record) {
+  const data = selectedData(record), blocker = selectedBlocker(record);
+  container.append(stripSummary(record, data));
+  if (blocker) container.append(node("div", { class: "alert-box", text: `ALERT / ${blocker.reason}` }), section("Blocker location and ownership", [facts([["Affected run", blocker.runId || "not reported"], ["Affected agent", blocker.agentId || "not reported"], ["Workflow location", blocker.phase], ["Owner", blocker.owner], ["First seen", when(blocker.since)], ["Tool call", blocker.toolCallId], ["Artifact", blocker.artifact], ["Log", blocker.log], ["Safest reported action", blocker.suggestedAction]]), node("p", { class: "safety-note", text: blocker.runId === currentRunId() ? "Recovery commands target the current run only and are revalidated immediately before submission." : "Historical work is evidence-only. Use a bounded continuation or fork; direct deblock is intentionally unavailable." })]));
+  const specific = [];
+  if (record.type === "agent") specific.push(["Role", first(data.role, "agent")], ["Current task", first(data.currentTask, data.task)], ["Last message", first(data.lastMessage, data.lastEvent?.message)], ["Last seen", when(first(data.lastSeenAt, data.updatedAt))], ["Artifact", data.currentArtifact], ["Log", data.logPath]);
+  if (record.type === "run") specific.push(["Objective", first(data.objective, data.selectedProject, record.id === currentRunId() ? currentObjective() : "not reported")], ["Repository", first(data.repoPath, data.repository)], ["Phase", first(data.phase, record.status)], ["Last action", data.lastAction], ["Started", when(data.startedAt)], ["Completed", when(first(data.completedAt, data.endedAt))]);
+  if (record.type === "iteration") specific.push(["Mode", data.mode], ["Objective", data.objective], ["Bounded change", data.steeringText], ["Source run", data.sourceRunId], ["Parent iteration", data.parentIterationId], ["Fork origin", data.forkedFromIterationId], ["Repository", data.repoPath], ["Base ref", first(data.baseRef, data.commit)], ["Artifacts", data.artifactCount]);
+  if (["event", "tool"].includes(record.type)) specific.push(["Time", when(data.ts)], ["Source", data.source], ["Agent", data.agentId], ["Run", data.runId], ["Event type", data.type], ["Tool", first(data.data?.toolName, data.raw?.toolName)], ["Duration", data.data?.durationMs ? `${data.data.durationMs}ms` : ""], ["Error", first(data.data?.error, data.raw?.error)]);
+  if (record.type === "gate") specific.push(["Phase", data.phase], ["Severity", data.severity], ["Description", data.description], ["Required evidence", arr(data.requiredEvidence).join(", ") || "none"], ["Decisions", arr(data.decisions).length], ["Evidence attachments", arr(data.evidence).length]);
+  if (record.type === "queue") specific.push(["Priority", data.priority], ["Objective", data.objective], ["Context", data.context], ["Preferred repository", data.target?.preferredRepo], ["Acceptance gates", arr(data.acceptanceGateIds).join(", ") || "none"], ["Pinned", snapshot.control?.pinnedQueueItemId === data.id ? "yes" : "no"]);
+  if (record.type === "plan") specific.push(["Pipeline", first(data.pipelineType, data.revision?.content?.pipelineType)], ["State", first(data.state, data.ledger?.state)], ["Revision", first(data.currentRevision, data.revision?.revision)], ["Version", data.ledger?.version], ["Digest", first(data.currentDigest, data.revision?.contentDigest)], ["Active launch", data.ledger?.activeLaunchId]);
+  if (specific.length) container.append(section(`${record.type} flight data`, facts(specific)));
+  container.append(dossierActions(record, blocker), node("details", { class: "object-json" }, [node("summary", { text: "Structured source record" }), node("pre", { class: "raw", text: JSON.stringify(data, null, 2) })]));
 }
-
-function isToolEvent(event) { return Boolean(event.data?.toolName || event.raw?.toolName || String(event.type).toLowerCase().includes("tool")); }
-function filteredEvents() {
-  const query = ui.query.trim().toLowerCase();
-  return snapshot.events.filter((event) => {
-    if (ui.eventFilter === "tools" && !isToolEvent(event)) return false;
-    if (ui.eventFilter === "alerts" && event.level !== "error" && !String(event.type).includes("error")) return false;
-    if (!query) return true;
-    return [event.type, event.message, event.source, event.agentId, event.data?.toolName].some((value) => String(value || "").toLowerCase().includes(query));
-  }).slice(-80).reverse();
+function renderTelemetry(container, record) {
+  const search = node("input", { type: "search", value: ui.eventQuery, placeholder: "Search correlated traffic", "aria-label": "Search correlated telemetry" });
+  const select = node("select", { "aria-label": "Telemetry type" }, ["all", "events", "tools", "errors"].map((value) => node("option", { value, text: value, selected: value === ui.eventFilter })));
+  let events = relatedEvents(record); const query = lower(ui.eventQuery);
+  events = events.filter((event) => (ui.eventFilter !== "tools" || eventRecord(event).type === "tool") && (ui.eventFilter !== "events" || eventRecord(event).type === "event") && (ui.eventFilter !== "errors" || event.level === "error" || event.data?.error) && (!query || lower(`${event.message} ${event.type} ${event.source} ${event.agentId} ${event.data?.toolName}`).includes(query)));
+  container.append(node("div", { class: "button-line" }, [search, select]), section(`Correlated traffic / ${events.length}`, telemetryList(events)));
+  search.addEventListener("input", () => { ui.eventQuery = search.value; renderScope(); requestAnimationFrame(() => $("scopeContent").querySelector('input[type="search"]')?.focus()); }); select.addEventListener("change", () => { ui.eventFilter = select.value; renderScope(); });
 }
-
-function trafficList(events) {
-  const list = node("div", { class: "traffic-list", role: "log" });
-  for (const event of events) {
-    const row = button("", { class: `traffic-row${event.level === "error" ? " error" : ""}`, "data-event-id": event.id });
-    row.append(node("time", { text: new Date(event.ts).toLocaleTimeString() }), node("span", { text: short(event.message || event.type, 58) }));
-    if (isToolEvent(event)) row.append(node("span", { class: "tool-badge", text: "TOOL" }));
-    list.append(row);
-  }
-  if (!events.length) list.append(node("div", { class: "empty", text: "No traffic matches this scope." }));
-  return list;
-}
-
-function renderTrafficTab(container) {
-  const search = node("input", { type: "search", value: ui.query, placeholder: "Search events, agents, tools", "aria-label": "Search traffic" });
-  search.addEventListener("input", () => { ui.query = search.value; renderScope(); requestAnimationFrame(() => $("scopeContent").querySelector('input[type="search"]')?.focus()); });
-  const filter = node("select", { "aria-label": "Traffic filter" });
-  for (const value of ["all", "tools", "alerts"]) filter.append(node("option", { value, text: value, selected: value === ui.eventFilter }));
-  filter.addEventListener("change", () => { ui.eventFilter = filter.value; renderScope(); });
-  container.append(node("div", { class: "search-line" }, [search, filter]), trafficList(filteredEvents()));
-}
-
-function resourceButton(label, kind, name) { return button(label, { "data-resource-kind": kind, "data-resource-name": name || "" }); }
-function renderEvidenceTab(container) {
-  const run = selectedRun();
+function resourceButton(label, kind, name, runId) { return button(label, { "data-resource-kind": kind, "data-resource-name": name || "", "data-resource-run": runId || "" }); }
+function renderResources(container, record) {
+  const runId = recordRunId(record);
   if (ui.resource) container.append(section(ui.resource.title, node("pre", { class: "raw", text: ui.resource.text })));
-  if (!snapshot.selectedRunId) {
-    container.append(node("div", { class: "empty", text: "Select a run target to inspect evidence." }));
-    return;
-  }
-  container.append(section("Run record", [factList([["run", snapshot.selectedRunId], ["status", run?.status], ["phase", phaseOf(run)], ["started", when(run?.startedAt)], ["ended", when(run?.endedAt)]]), node("div", { class: "button-line" }, [resourceButton("Run JSON", "json"), resourceButton("SPEC", "document", "spec"), resourceButton("DEVPLAN", "document", "devplan")])]));
-  const artifacts = items(snapshot.selectedRun?.artifacts, "items");
-  const artifactList = node("div", { class: "file-list" });
-  for (const artifact of artifacts) artifactList.append(resourceButton(artifact.name || artifact.path || String(artifact), "artifact", artifact.name || artifact.path || String(artifact)));
-  container.append(section(`Artifacts / ${artifacts.length}`, artifactList.children.length ? artifactList : node("div", { class: "empty", text: "No artifacts reported." })));
-  const logs = items(snapshot.selectedRun?.logs, "items");
-  const logList = node("div", { class: "file-list" });
-  for (const log of logs) logList.append(resourceButton(log.name || String(log), "log", log.name || String(log)));
-  container.append(section(`Logs / ${logs.length}`, logList.children.length ? logList : node("div", { class: "empty", text: "No logs reported." })));
-  const iterations = snapshot.iterations.filter((iteration) => iteration.runId === snapshot.selectedRunId || iteration.id === snapshot.selectedRunId);
-  const iterationList = node("div", { class: "item-list" });
-  for (const iteration of iterations) iterationList.append(button(iteration.title || iteration.objective || iteration.id, { "data-iteration-id": iteration.id }));
-  container.append(section(`Iteration evidence / ${iterations.length}`, iterationList.children.length ? iterationList : node("div", { class: "empty", text: "No linked iterations." })));
+  if (!runId) { container.append(node("div", { class: "empty", text: "This strip has no reported owning run. Radar will not borrow evidence from the current or previously selected run." })); return; }
+  const loaded = snapshot.selectedRunId === runId, run = loaded ? snapshot.selectedRun?.run : null;
+  container.append(section("Run evidence authority", [facts([["Owning run", runId], ["Loaded", loaded ? "yes" : "loading or not selected"], ["Status", run?.status], ["Repository", run?.repoPath]]), node("div", { class: "button-line" }, [resourceButton("Run JSON", "run", "", runId), resourceButton("SPEC", "document", "spec", runId), resourceButton("DEVPLAN", "document", "devplan", runId)])]));
+  const artifacts = loaded ? arr(snapshot.selectedRun?.artifacts) : [], logs = loaded ? arr(snapshot.selectedRun?.logs) : [];
+  container.append(section(`Artifacts / ${artifacts.length}`, artifacts.length ? node("div", { class: "file-list" }, artifacts.map((item) => resourceButton(item.name || item.path, "artifact", item.name || item.path, runId))) : node("div", { class: "empty", text: "No artifacts reported." })), section(`Logs / ${logs.length}`, logs.length ? node("div", { class: "file-list" }, logs.map((item) => resourceButton(item.name || item.path, "log", item.name || item.path, runId))) : node("div", { class: "empty", text: "No logs reported." })));
+  const iterations = snapshot.iterations.filter((item) => item.runId === runId || item.sourceRunId === runId);
+  container.append(section(`Iteration evidence / ${iterations.length}`, iterations.length ? node("div", { class: "item-list" }, iterations.map((item) => button(first(item.objective, item.id), { "data-record-type": "iteration", "data-record-id": item.id }))) : node("div", { class: "empty", text: "No linked iterations." })));
 }
-
+function renderAuthority(container, record) {
+  const control = snapshot.control || {}, state = snapshot.state || {}, selectedRun = recordRunId(record), auto = control.autoIteration || {};
+  container.append(section("Target check", facts([["Inspected object", `${record.type} / ${record.id}`], ["Inspected owning run", selectedRun || "not reported"], ["Current command authority", currentRunId() || "none"], ["Same target", selectedRun && selectedRun === currentRunId() ? "yes" : "no"]])));
+  container.append(section("Requested versus observed", [facts([["Observed status", state.status], ["Observed phase", state.phase], ["Observed activity", first(state.currentTask, state.lastAction)], ["Desired mode", control.desiredMode], ["Run admission", control.runAdmission], ["Pause request", control.pause?.requested ? `${control.pause.mode || "checkpoint"} / ${control.pause.reason || "no reason"}` : "none"], ["Stop request", control.stop?.requested ? `${control.stop.mode || "graceful"} / ${control.stop.reason || "no reason"}` : "none"], ["Run-now request", control.requestedRunNow ? "pending runner tick" : "none"], ["Next run request", control.nextRunRequest ? `${control.nextRunRequest.status || "pending"} / ${control.nextRunRequest.id}` : "none"], ["Showcase", auto.enabled ? `${auto.paused ? "paused" : "enabled"} / ${auto.currentGeneration || 1} of ${auto.targetGenerations || auto.maxIterations || "?"}` : "disabled"], ["Project launch", control.projectLaunchRequest ? `${control.projectLaunchRequest.status} / ${control.projectLaunchRequest.launchId || control.projectLaunchRequest.id}` : "none"]]), node("p", { class: "safety-note", text: "Accepted intent is not observed completion. Pause and stop are normally consumed at runner checkpoints." })]));
+  container.append(section("Signal authority", facts([["Connection", snapshot.connection.status], ["Transport", snapshot.connection.transport], ["Display frozen", snapshot.connection.paused ? "yes" : "no"], ["Last message", `${when(snapshot.connection.lastMessageAt)} / ${age(snapshot.connection.lastMessageAt)}`], ["Last full refresh", `${when(snapshot.connection.lastRefreshAt)} / ${age(snapshot.connection.lastRefreshAt)}`], ["Client error", snapshot.error ? `${snapshot.error.context}: ${snapshot.error.message}` : "none"]])));
+  container.append(node("div", { class: "context-actions" }, [button("Open control position", { "data-context-action": "commands", class: "primary" }), button("Refresh authority", { "data-context-action": "refresh" })]));
+}
 function renderScope() {
-  const target = activeTarget();
-  $("scopeKicker").textContent = target ? `${target.type.toUpperCase()} TARGET` : "TARGET SCOPE";
-  $("scopeTitle").textContent = target?.label || "No target";
-  $("scopeStatus").textContent = target ? phaseOf(target.data).toUpperCase() : "STANDBY";
-  $("scopeStatus").className = `status-tag${target && isBlocked(target.data) ? " alert" : ""}`;
-  document.querySelectorAll("[data-tab]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === ui.scopeTab)));
-  const content = clear($("scopeContent"));
-  if (ui.scopeTab === "target") renderTargetTab(content, target);
-  else if (ui.scopeTab === "traffic") renderTrafficTab(content);
-  else renderEvidenceTab(content);
+  const record = selectedRecord(), container = clear($("scopeContent"));
+  $("scopeKicker").textContent = record ? `${record.type.toUpperCase()} FLIGHT STRIP` : "FLIGHT STRIP"; $("scopeTitle").textContent = record?.label || "No target"; $("scopeIdentity").textContent = record ? `${record.type.toUpperCase()} / ${record.id} / RUN ${recordRunId(record) || "NOT REPORTED"}` : "UNIDENTIFIED"; $("scopeStatus").textContent = record?.status || "STANDBY"; $("scopeStatus").className = `status-tag${record && (isBlocked(record.data) || record.type === "blocker") ? " alert" : ""}`;
+  $$('[data-tab]').forEach((tab) => { const active = tab.dataset.tab === ui.scopeTab; tab.setAttribute("aria-selected", String(active)); tab.tabIndex = active ? 0 : -1; });
+  if (!record) { container.append(node("div", { class: "empty", text: "No operational records have been acquired." })); return; }
+  if (ui.scopeTab === "dossier") renderDossier(container, record); else if (ui.scopeTab === "telemetry") renderTelemetry(container, record); else if (ui.scopeTab === "resources") renderResources(container, record); else renderAuthority(container, record);
 }
 
+function requestedSummary() { const control = snapshot.control || {}; if (control.stop?.requested) return "STOP @ CHECKPOINT"; if (control.pause?.requested) return "PAUSE @ CHECKPOINT"; if (control.nextRunRequest) return `NEXT ${control.nextRunRequest.status || "PENDING"}`; if (control.projectLaunchRequest) return `PLAN ${control.projectLaunchRequest.status || "PENDING"}`; if (control.requestedRunNow) return "RUN TICK"; return "NONE"; }
 function renderChrome() {
-  const connection = snapshot.connection;
-  const live = connection.status === "connected" || connection.status === "polling";
-  $("connectionLamp").className = `lamp ${live ? "live" : connection.status === "degraded" ? "degraded" : ""}`;
-  $("connectionText").textContent = connection.paused ? "FROZEN" : connection.status.toUpperCase();
-  $("transportText").textContent = `${text(connection.transport, "no transport")} / ${connection.lastMessageAt ? `last ${when(connection.lastMessageAt)}` : "no signal"}`;
-  $("streamToggle").textContent = connection.paused ? "Unfreeze" : "Freeze";
-  $("currentRun").textContent = currentRunId() || "NO ACTIVE RUN";
-  const currentPhase = phaseOf(snapshot.state || selectedRun());
-  const strip = clear($("phaseStrip"));
-  const current = WORKFLOW_PHASES.indexOf(currentPhase);
-  WORKFLOW_PHASES.forEach((phase, index) => strip.append(node("span", { class: `phase${index < current ? " done" : ""}${index === current ? " current" : ""}${phase === "blocked" && currentPhase === phase ? " alert" : ""}`, title: phase })));
-  const scale = clear($("workflowScale"));
-  const labels = [["Acquire", 0], ["Specify", 3], ["Review", 6], ["Plan", 8], ["Build", 10], ["Publish", 15]];
-  for (const [label, index] of labels) scale.append(node("span", { class: current >= index && current < (labels[labels.findIndex((x) => x[0] === label) + 1]?.[1] ?? 99) ? "current" : "", text: label }));
+  const connection = snapshot.connection, live = ["connected", "polling"].includes(connection.status), signal = first(connection.lastMessageAt, connection.lastRefreshAt);
+  $("connectionLamp").className = `lamp ${live ? "live" : connection.status === "degraded" ? "degraded" : ""}`; $("connectionText").textContent = connection.paused ? "DISPLAY FROZEN" : connection.status.toUpperCase(); $("transportText").textContent = text(connection.transport, "no transport"); $("freshnessText").textContent = age(signal).toUpperCase(); $("streamToggle").textContent = connection.paused ? "Unfreeze + sync" : "Freeze display";
+  const connectionState = `${connection.status}|${connection.transport || "none"}|${connection.paused ? "frozen" : "live"}`;
+  if (announcedConnectionState === null) announcedConnectionState = connectionState;
+  else if (announcedConnectionState !== connectionState) { announcedConnectionState = connectionState; $("connectionAnnouncement").textContent = `Telemetry ${connection.paused ? "display frozen" : connection.status}, transport ${connection.transport || "none"}.`; }
+  $("currentRun").textContent = currentRunId() || "NO ACTIVE RUN"; $("observedState").textContent = `observed ${phaseOf(snapshot.state)}`; $("requestedState").textContent = requestedSummary();
+  const current = WORKFLOW_PHASES.indexOf(phaseOf(snapshot.state)); clear($("phaseStrip")).append(...WORKFLOW_PHASES.map((phase, index) => node("span", { class: `phase${index < current ? " done" : ""}${index === current ? " current" : ""}${phase === "blocked" && current === index ? " alert" : ""}`, title: phase })));
+  const scale = clear($("workflowScale")); for (const [label, start, end] of [["Acquire", 0, 3], ["Specify", 3, 7], ["Review", 6, 9], ["Plan", 7, 10], ["Build", 10, 14], ["Publish", 14, 99]]) scale.append(node("span", { class: current >= start && current < end ? "current" : "", text: label }));
 }
+function renderFreshness() { const signal = first(snapshot.connection.lastMessageAt, snapshot.connection.lastRefreshAt); $("freshnessText").textContent = age(signal).toUpperCase(); }
 
-function render() {
-  renderChrome();
-  renderRadar();
-  renderScope();
-  if ($("commandTray").open) renderCommandTray();
-  if ($("planningTray").open) renderPlanning();
-}
-
-function formInput(name, label, options = {}) {
-  const control = options.textarea ? node("textarea", { name, required: options.required, placeholder: options.placeholder, maxlength: options.maxlength }) : node("input", { name, type: options.type || "text", required: options.required, placeholder: options.placeholder, value: options.value, min: options.min, max: options.max });
-  return field(label, control);
-}
-
-function operationalButtons() {
-  return node("div", { class: "button-line" }, ["pause", "resume", "hold", "unhold", "stop", "run-now"].map((type) => button(type, { "data-op-command": type, class: type === "stop" ? "danger" : "" })));
-}
-
+function controlStateBlock() { const control = snapshot.control || {}; return node("div", { class: "command-block command-state" }, [node("h3", { text: "Control-plane clearance state" }), facts([["Current run", currentRunId() || "none"], ["Observed", phaseOf(snapshot.state)], ["Requested", requestedSummary()], ["Admission", control.runAdmission], ["Next request", control.nextRunRequest ? `${control.nextRunRequest.id} / ${control.nextRunRequest.status}` : "none"], ["Last command", ui.lastCommand ? `${ui.lastCommand.type} / ${ui.lastCommand.status} / ${ui.lastCommand.target}` : "none this session"]]), node("p", { class: "safety-note", text: "Commands below target live control authority, not the historical object remaining in the flight strip." })]); }
+function operationalButtons() { return node("div", { class: "button-line" }, ["pause", "resume", "hold", "unhold", "stop", "run-now"].map((type) => button(type, { "data-command": type, class: type === "stop" ? "danger" : "", disabled: pendingCommands.has(type) }))); }
 function runCommands(container) {
-  const auto = snapshot.control?.autoIteration || {};
-  const target = Number(auto.targetGenerations || auto.maxIterations || 10);
-  const showcase = node("div", { class: "command-block" }, [node("h3", { text: "Showcase vector" })]);
-  showcase.append(field("Target generations", node("input", { id: "showcaseTarget", type: "number", min: 1, max: 10, value: target })), node("div", { class: "button-line" }, [button("Start", { "data-showcase": "start" }), button("Pause", { "data-op-command": "pause-showcase-loop" }), button("Resume", { "data-op-command": "resume-showcase-loop" }), button("Stop", { "data-op-command": "stop-showcase-loop", class: "danger" }), button("Set target", { "data-showcase": "target" })]));
-  const nextForm = node("form", { id: "nextForm", class: "command-block" }, [node("h3", { text: "Next iteration" }), formInput("repoPath", "Absolute repository path", { required: true, value: snapshot.control?.autoIteration?.repoPath || snapshot.state?.repoPath || "/home/mojo/autonomous-projects/hermes-showcase-site" }), formInput("objective", "Objective", { required: true, value: snapshot.control?.currentObjective?.text || snapshot.state?.objective || "Advance the current bounded objective." }), formInput("changeText", "Bounded change", { textarea: true, required: true, placeholder: "One bounded objective-linked generation" }), button("Start next iteration", { type: "submit", class: "primary" })]);
-  const lineage = node("div", { class: "command-block" }, [node("h3", { text: "Iteration lineage" })]);
-  for (const iteration of snapshot.iterations.slice(0, 10)) lineage.append(node("div", { class: "item-row" }, [node("span", { text: iteration.objective || iteration.id }), button("Continue", { "data-lineage": "continue-from-iteration", "data-id": iteration.id }), button("Fork", { "data-lineage": "fork-from-iteration", "data-id": iteration.id }), button("Use", { "data-lineage": "use-as-next-direction", "data-id": iteration.id })]));
-  container.append(node("div", { class: "command-block" }, [node("h3", { text: "Run clearance" }), operationalButtons()]), showcase, nextForm, lineage);
+  const auto = snapshot.control?.autoIteration || {}, target = Number(auto.targetGenerations || auto.maxIterations || 10), selectedIteration = associatedIteration() || {};
+  const showcase = node("form", { id: "showcaseForm", "data-form": "showcase", class: "command-block" }, [node("h3", { text: "Showcase vector" }), formField("targetGenerations", "Target generations", { type: "number", min: 1, max: 10, value: target }), formField("repoPath", "Absolute repository path", { required: true, value: first(auto.repoPath, snapshot.state?.repoPath, selectedIteration.repoPath, "/home/mojo/autonomous-projects/hermes-showcase-site") }), formField("objective", "Objective", { textarea: true, required: true, value: currentObjective() }), button("Start loop", { type: "submit", class: "primary" }), node("div", { class: "button-line" }, [button("Pause loop", { "data-command": "pause-showcase-loop" }), button("Resume loop", { "data-command": "resume-showcase-loop" }), button("Stop loop", { "data-command": "stop-showcase-loop", class: "danger" }), button("Set target only", { "data-showcase-target": true })])]);
+  const next = node("form", { id: "nextForm", "data-form": "next", class: "command-block" }, [node("h3", { text: "Next bounded iteration" }), formField("repoPath", "Absolute repository path", { required: true, value: first(auto.repoPath, snapshot.state?.repoPath, selectedIteration.repoPath) }), formField("baseRef", "Base ref", { required: true, value: first(selectedIteration.baseRef, selectedIteration.commit, "HEAD") }), formField("objective", "Objective", { textarea: true, required: true, value: currentObjective() }), formField("changeText", "Bounded change", { textarea: true, required: true, value: "Complete one bounded objective-linked generation without unrelated feature or stack churn." }), button("Queue next iteration", { type: "submit", class: "primary" })]);
+  const lineage = node("form", { id: "lineageForm", "data-form": "lineage", class: "command-block" }, [node("h3", { text: "Iteration lineage" }), formField("mode", "Mode", { select: ["continue-from-iteration", "fork-from-iteration", "use-as-next-direction"], value: "continue-from-iteration" }), formField("sourceIterationId", "Source iteration", { required: true, value: selectedIteration.id }), formField("sourceRunId", "Source run", { value: first(selectedIteration.runId, recordRunId()) }), formField("repoPath", "Absolute repository path", { required: true, value: first(selectedIteration.repoPath, auto.repoPath) }), formField("baseRef", "Base ref", { required: true, value: first(selectedIteration.baseRef, selectedIteration.commit, "HEAD") }), formField("objective", "Objective", { textarea: true, required: true, value: first(selectedIteration.objective, currentObjective()) }), formField("changeText", "Bounded change", { textarea: true, required: true, value: first(selectedIteration.nextRecommendedDirection, selectedIteration.steeringText) }), button("Queue lineage request", { type: "submit", class: "primary" })]);
+  container.append(controlStateBlock(), node("div", { class: "command-block" }, [node("h3", { text: "Run clearance" }), operationalButtons()]), showcase, next, lineage);
 }
-
 function recoveryCommands(container) {
-  const blocker = snapshot.state?.blocker || snapshot.state?.block || snapshot.state?.hold;
-  const block = node("div", { class: "command-block" }, [node("h3", { text: "Collision resolution" })]);
-  if (blocker) block.append(node("div", { class: "alert-box", text: text(blocker.reason || blocker.message || blocker) }));
-  block.append(node("form", { id: "deblockForm" }, [formInput("prompt", "Deblock direction", { textarea: true, required: true, maxlength: 8000 }), node("div", { class: "button-line" }, [button("Send deblock", { type: "submit", class: "primary" }), button("Ask advice", { "data-deblock-advice": true })])]));
-  const adviceList = node("div", { class: "item-list" });
-  for (const advice of (snapshot.control?.deblockAdvice || []).filter((entry) => entry.status === "pending")) adviceList.append(node("div", { class: "item-row" }, [node("span", { text: short(advice.answer, 90) }), button("Approve", { "data-advice": "approve", "data-id": advice.id }), button("Deny", { "data-advice": "deny", "data-id": advice.id })]));
-  block.append(adviceList);
-  const steering = node("div", { class: "command-block" }, [node("h3", { text: "Steering vectors" }), node("form", { id: "objectiveForm" }, [formInput("text", "Current objective", { textarea: true, required: true, value: snapshot.control?.currentObjective?.text || snapshot.state?.objective }), button("Set objective", { type: "submit" })]), node("form", { id: "steerForm" }, [formInput("text", "Directive", { textarea: true, required: true }), formInput("runId", "Run ID", { value: currentRunId() }), button("Apply steering", { type: "submit", class: "primary" })])]);
-  for (const vector of snapshot.control?.activeSteering || []) steering.append(node("div", { class: "item-row" }, [node("span", { text: vector.directive || vector.text || vector.id }), button("Remove", { "data-remove-steering": vector.id })]));
-  container.append(block, steering);
+  const blocker = selectedBlocker(), current = blocker && blocker.runId === currentRunId();
+  const block = node("div", { class: "command-block" }, [node("h3", { text: "Alert resolution" }), blocker ? node("div", { class: "alert-box", text: `${blocker.reason} / ${current ? "CURRENT AUTHORITY" : "HISTORICAL"}` }) : node("div", { class: "empty", text: "No blocker is associated with the current strip." }), node("p", { class: "safety-note", text: current ? "The current blocker and run identity will be revalidated before sending." : "Direct recovery is unavailable unless this strip belongs to the currently blocked run." })]);
+  if (current) block.append(node("form", { id: "deblockForm", "data-form": "deblock" }, [formField("prompt", "Deblock direction", { textarea: true, required: true, maxlength: 8000, value: blocker.suggestedAction }), node("div", { class: "button-line" }, [button("Queue deblock", { type: "submit", class: "primary" }), button("Ask adviser", { "data-recovery-advice": true })])]));
+  const advice = node("div", { class: "command-block" }, [node("h3", { text: "Advice decisions" })]); for (const item of arr(snapshot.control?.deblockAdvice)) advice.append(node("div", { class: "item-row" }, [node("span", { text: `${item.status} / ${short(first(item.answer, item.prompt), 110)}` }), ...(item.status === "pending" ? [button("Approve", { "data-advice": "approve", "data-id": item.id }), button("Deny", { "data-advice": "deny", "data-id": item.id, class: "danger" })] : [])]));
+  const steering = node("div", { class: "command-block" }, [node("h3", { text: "Steering vectors" }), node("form", { id: "objectiveForm", "data-form": "objective" }, [formField("text", "Current objective", { textarea: true, required: true, value: currentObjective() }), button("Set objective", { type: "submit" })]), node("form", { id: "steerForm", "data-form": "steer" }, [formField("text", "Directive", { textarea: true, required: true }), formField("scope", "Scope", { select: ["next_run", "current_run", "queue"], value: "next_run" }), formField("priority", "Priority", { select: ["required", "preferred"], value: "required" }), button("Apply steering", { type: "submit", class: "primary" })])]); for (const item of arr(snapshot.control?.activeSteering)) steering.append(node("div", { class: "item-row" }, [node("span", { text: first(item.text, item.directive, item.id) }), button("Remove", { "data-remove-steering": item.id, class: "danger" })]));
+  container.append(controlStateBlock(), block, advice, steering);
 }
-
 function queueCommands(container) {
-  const add = node("form", { id: "queueForm", class: "command-block" }, [node("h3", { text: "Add direction" }), formInput("title", "Title", { required: true }), formInput("objective", "Objective", { textarea: true, required: true }), formInput("context", "Context", { textarea: true }), formInput("preferredRepo", "Preferred repository"), field("Pin immediately", node("input", { name: "pin", type: "checkbox" })), button("Add to queue", { type: "submit", class: "primary" }), button("Clear queue", { type: "button", "data-op-command": "clear-queue", class: "danger" })]);
-  const list = node("div", { class: "command-block" }, [node("h3", { text: "Queued vectors" })]);
-  for (const item of items(snapshot.queue, "items")) list.append(node("div", { class: "item-row" }, [node("span", { text: item.title || item.objective || item.id }), button("Pin", { "data-queue": "pin", "data-id": item.id }), button("Use", { "data-queue": "use", "data-id": item.id }), button("Archive", { "data-queue": "archive", "data-id": item.id })]));
-  container.append(add, list);
+  const add = node("form", { id: "queueForm", "data-form": "queue", class: "command-block" }, [node("h3", { text: "Add direction" }), formField("title", "Title", { required: true }), formField("objective", "Objective", { textarea: true, required: true }), formField("context", "Context", { textarea: true }), formField("constraints", "Constraints, one per line", { textarea: true }), formField("acceptanceGateIds", "Acceptance gate IDs, one per line", { textarea: true }), formField("preferredRepo", "Preferred repository"), formField("priority", "Priority", { type: "number", value: 50 }), node("label", { class: "field" }, [node("span", { text: "Pin immediately" }), node("input", { name: "pin", type: "checkbox" })]), button("Add queue item", { type: "submit", class: "primary" }), button("Clear queue", { "data-command": "clear-queue", class: "danger" })]);
+  const list = node("div", { class: "command-block" }, [node("h3", { text: "Queued vectors" })]); for (const item of arr(snapshot.queue?.items)) list.append(node("div", { class: "item-row" }, [node("span", { text: `${item.title || item.id} / ${item.status}` }), button("Inspect", { "data-record-type": "queue", "data-record-id": item.id }), button("Pin", { "data-queue": "pin", "data-id": item.id }), button("Use", { "data-queue": "use", "data-id": item.id }), button("Archive", { "data-queue": "archive", "data-id": item.id, class: "danger" })])); container.append(controlStateBlock(), add, list);
 }
-
 function gateCommands(container) {
-  const add = node("form", { id: "gateForm", class: "command-block" }, [node("h3", { text: "Add acceptance gate" }), formInput("id", "Gate ID", { required: true }), formInput("description", "Description", { textarea: true, required: true }), formInput("severity", "Severity", { value: "must" }), formInput("requiredEvidence", "Required evidence paths (comma separated)"), button("Add gate", { type: "submit", class: "primary" })]);
-  const list = node("div", { class: "command-block" }, [node("h3", { text: "Gate decisions" })]);
-  for (const gate of items(snapshot.gates, "gates")) list.append(node("div", { class: "item-row" }, [node("span", { text: `${gate.id} / ${gate.description || gate.title || gate.status || "gate"}` }), button("Pass", { "data-gate": "pass", "data-id": gate.id }), button("Need evidence", { "data-gate": "defer", "data-id": gate.id }), button("Attach evidence", { "data-gate": "attach", "data-id": gate.id }), button("Reset", { "data-gate": "update", "data-id": gate.id })]));
-  container.append(add, list);
+  const add = node("form", { id: "gateForm", "data-form": "gate", class: "command-block" }, [node("h3", { text: "Add acceptance gate" }), formField("id", "Gate ID (optional)"), formField("phase", "Phase", { value: "final-audit" }), formField("severity", "Severity", { select: ["must", "should"], value: "must" }), formField("description", "Description", { textarea: true, required: true }), formField("requiredEvidence", "Required evidence, one path per line", { textarea: true }), button("Add gate", { type: "submit", class: "primary" })]);
+  const list = node("div", { class: "command-block" }, [node("h3", { text: "Gate decision book" })]); for (const gate of arr(snapshot.gates?.gates)) list.append(node("form", { class: "gate-control", "data-form": `gate-${gate.id}`, "data-gate-id": gate.id }, [facts([["Gate", gate.id], ["Status", gate.status], ["Description", gate.description], ["Required", arr(gate.requiredEvidence).join(", ") || "none"]]), formField("status", "Decision status", { select: ["passed", "failed", "needs-evidence"], value: gate.status === "pending" ? "needs-evidence" : gate.status }), formField("decision", "Decision", { select: ["accepted", "rejected", "defer"], value: gate.status === "passed" ? "accepted" : "defer" }), formField("runId", "Evidence run", { value: recordRunId() }), formField("evidenceArtifacts", "Existing evidence paths, one per line", { textarea: true }), formField("notes", "Operator notes", { textarea: true }), node("div", { class: "button-line" }, [button("Record decision", { "data-gate-action": "decision" }), button("Attach evidence", { "data-gate-action": "attach" }), button("Update description", { "data-gate-action": "update" })])])); container.append(controlStateBlock(), add, list);
 }
+function renderCommandTray() { const drafts = captureDrafts(), container = clear($("commandContent")); $$('[data-tray-tab]').forEach((tab) => tab.classList.toggle("active", tab.dataset.trayTab === ui.trayTab)); const grid = node("div", { class: "command-grid" }); if (ui.trayTab === "run") runCommands(grid); else if (ui.trayTab === "recovery") recoveryCommands(grid); else if (ui.trayTab === "queue") queueCommands(grid); else gateCommands(grid); container.append(grid); const lifecycle = $("commandLifecycle"); lifecycle.textContent = ui.lastCommand ? `${ui.lastCommand.type} / ${ui.lastCommand.status} / target ${ui.lastCommand.target}${ui.lastCommand.commandId ? ` / ${ui.lastCommand.commandId}` : ""}` : "No command submitted this session."; lifecycle.className = `command-lifecycle${ui.lastCommand?.status === "rejected" || ui.lastCommand?.status === "outcome unknown" ? " error" : ""}`; restoreDrafts(drafts); }
 
-function renderCommandTray() {
-  const container = clear($("commandContent"));
-  document.querySelectorAll("[data-tray-tab]").forEach((tab) => tab.classList.toggle("active", tab.dataset.trayTab === ui.trayTab));
-  const grid = node("div", { class: "command-grid" });
-  if (ui.trayTab === "run") runCommands(grid);
-  else if (ui.trayTab === "recovery") recoveryCommands(grid);
-  else if (ui.trayTab === "queue") queueCommands(grid);
-  else gateCommands(grid);
-  container.append(grid);
-}
+function planDefaults(pipelineType, values = {}) { return { pipelineType, title: values.title || "", problem: values.problem || "", intendedUsers: values.intendedUsers || "", objective: values.objective || "", boundedScope: values.boundedScope || "", requirements: [], nonGoals: [], constraints: [], risks: [], repository: pipelineType === "managed" ? { path: values.repositoryPath || null, baseRef: values.baseRef || null, baseCommit: null } : { path: null, baseRef: null, baseCommit: null }, acceptanceGates: [], validationPolicy: { id: "apb.runner-selected.v1", expectations: [], clientCommandsAllowed: false }, milestones: [], limits: planLimits(), lineage: { mode: "new", sourcePlanId: null, sourceRevision: null, sourceRunId: null, sourceIterationId: null } }; }
+async function loadPlan(id, rerender = true, selectionGuard = null) { const revision = ++planRequestRevision; ui.planId = id; try { const detail = await client.getProjectPlan(id); const selectionChanged = selectionGuard && (selectionRevision !== selectionGuard.revision || ui.selected?.type !== selectionGuard.type || ui.selected?.id !== selectionGuard.id); if (revision !== planRequestRevision || ui.planId !== id || selectionChanged) { if (revision === planRequestRevision && selectionChanged) ui.planId = ui.planDetail?.ledger?.planId || null; return null; } ui.planDetail = detail; ui.planRevision = null; if (rerender) renderPlanning(); return detail; } catch (error) { const selectionChanged = selectionGuard && selectionRevision !== selectionGuard.revision; if (revision === planRequestRevision && selectionChanged) ui.planId = ui.planDetail?.ledger?.planId || null; if (revision === planRequestRevision && ui.planId === id && !selectionChanged) notify(error.message, true); return null; } }
+function planListPane() { const pane = node("div", { class: "plan-list" }), create = node("form", { id: "planCreateForm", "data-form": "plan-create" }, [node("h3", { text: "New persisted flight plan" }), formField("pipelineType", "Pipeline", { select: ["classic", "managed"], value: "classic" }), formField("title", "Title", { required: true }), formField("problem", "Problem", { textarea: true, required: true }), formField("intendedUsers", "Intended users", { textarea: true, required: true }), formField("objective", "Measurable objective", { textarea: true, required: true }), formField("boundedScope", "Bounded scope", { textarea: true, required: true }), formField("repositoryPath", "Repository path (managed)"), formField("baseRef", "Base ref (managed)"), button("Create draft", { type: "submit", class: "primary" })]); pane.append(create); for (const plan of snapshot.plans) pane.append(button("", { class: "index-row", "data-open-plan": plan.planId }, [node("i"), node("span", { text: plan.title || plan.planId }), node("small", { text: `${plan.state} / r${plan.currentRevision}` })])); return pane; }
+function renderPlans(container) { const workspace = node("div", { class: "planning-grid" }, [planListPane()]), detail = node("div", { class: "plan-editor" }, [node("h3", { text: "Persisted project flight plans" })]); if (ui.planDetail) detail.append(facts([["Plan", ui.planDetail.ledger?.planId], ["State", ui.planDetail.ledger?.state], ["Version", ui.planDetail.ledger?.version], ["Revision", ui.planDetail.revision?.revision], ["Digest", ui.planDetail.revision?.contentDigest], ["Active launch", ui.planDetail.ledger?.activeLaunchId]]), node("div", { class: "button-line" }, [button("Edit revision", { "data-plan-jump": "editor" }), button("Review lifecycle", { "data-plan-jump": "review" })])); else detail.append(node("p", { class: "empty", text: "Select a plan or create a bounded classic or managed draft." })); workspace.append(detail); container.append(workspace); }
+function renderPlanEditor(container) { if (!ui.planDetail) { container.append(node("div", { class: "empty", text: "Select a plan before editing." })); return; } const form = node("form", { id: "planEditorForm", "data-form": "plan-editor" }, [node("h3", { text: `New revision / ${ui.planDetail.revision.content.title || ui.planDetail.ledger.planId}` }), formField("content", "Complete plan content JSON", { textarea: true, required: true, value: JSON.stringify(ui.planDetail.revision.content, null, 2) }), button("Save immutable revision", { type: "submit", class: "primary" })]); container.append(form); }
+function renderPlanReview(container) { const detail = ui.planDetail; if (!detail) { container.append(node("div", { class: "empty", text: "Select a plan before review." })); return; } const ledger = detail.ledger, revision = detail.revision; container.append(facts([["Plan", ledger.planId], ["State", ledger.state], ["Version", ledger.version], ["Exact revision", revision.revision], ["Digest", revision.contentDigest]]), node("pre", { class: "raw", text: JSON.stringify(revision.content, null, 2) }), section("Revision and launch evidence", [node("div", { class: "button-line" }, arr(detail.revisions).map((item) => button(`Revision ${item.revision}`, { "data-plan-revision": item.revision }))), ui.planRevision ? node("pre", { class: "raw", text: JSON.stringify(ui.planRevision, null, 2) }) : node("details", {}, [node("summary", { text: "Decisions and launches" }), node("pre", { class: "raw", text: JSON.stringify({ decisions: detail.decisions, launches: detail.launches }, null, 2) })])]), formField("decisionNotes", "Decision notes", { textarea: true }), node("div", { class: "button-line" }, [button("Ready for review", { "data-plan-action": "ready" }), button("Approve exact revision", { "data-plan-action": "approve", class: "primary" }), button("Reject", { "data-plan-action": "reject", class: "danger" }), button("Launch approved", { "data-plan-action": "launch" }), button("Clone", { "data-plan-action": "clone" }), button("Fork", { "data-plan-action": "fork" }), button("Archive", { "data-plan-action": "archive", class: "danger" })])); }
+function renderAssistance(container) { container.append(node("p", { class: "safety-note", text: "Messages may be sent to the configured inference provider. Suggestions do not save, approve, launch, or execute a plan." }), node("div", { class: "button-line" }, [button("New classic conversation", { "data-new-assist": "classic" }), button("New managed conversation", { "data-new-assist": "managed" }), button("Refresh conversations", { "data-assist-refresh": true })])); for (const item of snapshot.assistance) container.append(button(`${item.pipelineType} / ${item.messageCount} messages`, { "data-assist-id": item.id })); const detail = ui.assistanceDetail; if (!detail) return; const log = node("div", { role: "log", "aria-live": "polite" }, arr(detail.messages).map((message) => node("article", { class: `message ${message.role}`, text: `${message.role}: ${message.content}` }))); container.append(log, node("form", { id: "assistanceForm", "data-form": "assistance" }, [formField("message", "Planning message", { textarea: true, required: true, maxlength: 16000 }), button("Send", { type: "submit", class: "primary" })])); if (detail.proposedContent) container.append(button("Create editable draft from proposal", { "data-create-proposal": true }), node("pre", { class: "raw", text: JSON.stringify(detail.proposedContent, null, 2) })); }
+function renderPlanning() { const drafts = captureDrafts(), container = clear($("planningContent")); $$('[data-plan-tab]').forEach((tab) => tab.classList.toggle("active", tab.dataset.planTab === ui.planTab)); if (ui.planTab === "plans") renderPlans(container); else if (ui.planTab === "editor") renderPlanEditor(container); else if (ui.planTab === "review") renderPlanReview(container); else renderAssistance(container); restoreDrafts(drafts); }
 
-function planDefaults(pipelineType, values = {}) {
-  return {
-    pipelineType, title: values.title || "", problem: values.problem || "", intendedUsers: values.intendedUsers || "", objective: values.objective || "", boundedScope: values.boundedScope || "",
-    requirements: values.requirements || [], nonGoals: values.nonGoals || [], constraints: values.constraints || [], risks: values.risks || [],
-    repository: { path: values.repositoryPath || null, baseRef: values.baseRef || null, baseCommit: null }, acceptanceGates: [],
-    validationPolicy: { id: "apb.runner-selected.v1", expectations: [], clientCommandsAllowed: false }, milestones: [],
-    limits: { maxIterations: 1, maxVariantsPerIteration: 3, maxParallelVariants: 3, maxAcceptedFeatures: 4, maxVisualMotifChanges: 1, maxNewSections: 1, stopAfterNoImprovement: 1 },
-    lineage: { mode: "new", sourcePlanId: null, sourceRevision: null, sourceRunId: null, sourceIterationId: null }
+function commandConfirmation(type, payload) {
+  const messages = {
+    stop: "Request a graceful stop of the current run at its next safe checkpoint?",
+    deblock: "Queue this recovery direction for the currently blocked run?",
+    "deblock-advice": "Send this blocker context to the configured recovery adviser?",
+    "approve-deblock-advice": "Approve this advice, record current-run steering, and queue its bounded continuation?",
+    "deny-deblock-advice": "Deny this pending recovery advice?",
+    "start-next-iteration": "Queue this bounded iteration for the next runner tick?",
+    "continue-from-iteration": `Continue from source iteration ${payload.sourceIterationId || "not reported"}?`,
+    "fork-from-iteration": `Fork from source iteration ${payload.sourceIterationId || "not reported"}?`,
+    "use-as-next-direction": `Use iteration ${payload.sourceIterationId || "not reported"} as the next direction?`,
+    "start-showcase-loop": "Start this bounded showcase loop and queue its first iteration?",
+    "pause-showcase-loop": "Request a showcase-loop pause at the next safe checkpoint?",
+    "resume-showcase-loop": "Resume showcase admission and clear pause/stop intent?",
+    "stop-showcase-loop": "Stop the showcase loop and clear its pending iteration request?",
+    "set-showcase-target": `Set the showcase target to ${payload.targetGenerations} generations?`,
+    "add-gate": `Add acceptance gate ${payload.id || payload.description || "with generated identity"}?`,
+    "update-gate": `Update acceptance gate ${payload.gateId || payload.id || "not reported"}?`,
+    "gate-decision": `Record ${payload.status || payload.decision || "this decision"} for gate ${payload.gateId || payload.id || "not reported"}?`,
+    "attach-gate-evidence": `Attach ${arr(payload.artifacts || payload.evidenceArtifacts).length} evidence reference(s) to gate ${payload.gateId || payload.id || "not reported"}?`,
+    "clear-queue": "Clear all queued work, its pinned objective, pending request, and queue-linked steering?",
+    "archive-queue-item": `Archive queue item ${payload.id || "not reported"}?`
   };
+  return messages[type] || "";
 }
+async function runCommand(type, payload = {}) {
+  if (pendingCommands.has(type)) return null;
+  const confirmation = commandConfirmation(type, payload);
+  if (confirmation && !globalThis.confirm(confirmation)) return null;
+  const directRecovery = ["deblock", "deblock-advice"].includes(type), stale = Date.now() - new Date(first(snapshot.connection.lastRefreshAt, snapshot.connection.lastMessageAt, 0)).valueOf(); pendingCommands.add(type); ui.lastCommand = { type, target: first(payload.gateId, payload.id, payload.sourceIterationId, payload.runId, payload.sourceRunId, currentRunId(), "control plane"), status: "validating", at: new Date().toISOString() }; renderCommandTrayIfOpen();
+  try {
+    if (directRecovery) await client.refresh();
+    else if (Number.isFinite(stale) && stale > 30_000) await client.refresh();
+    ui.lastCommand.status = "sending"; const correlationId = globalThis.crypto?.randomUUID?.() || `radar-${Date.now()}`;
+    if (directRecovery) { const current = currentRunId(), active = first(snapshot.state?.block, snapshot.state?.blocker, snapshot.state?.hold, arr(snapshot.state?.blockers)[0], isBlocked(snapshot.state?.status) ? snapshot.state?.lastAction : ""), blockerRunId = active && typeof active === "object" ? active.runId : null; if (!payload.runId || payload.runId !== current) throw Object.assign(new Error("Recovery target is no longer the current run. Inspect current authority or create a continuation/fork."), { status: 409 }); if (!active || blockerRunId && blockerRunId !== current) throw Object.assign(new Error("The current run no longer reports a matching active blocker. Refresh its strip before recovery."), { status: 409 }); }
+    const result = await client.command(type, payload, { actor: "radar-operator", correlationId, idempotencyKey: `${type}-${correlationId}`, refresh: true });
+    ui.lastCommand = { ...ui.lastCommand, status: "accepted", commandId: result.commandId || null, at: new Date().toISOString() }; notify(`${type} accepted${result.commandId ? ` / ${result.commandId}` : ""}. Confirm observed state.`); return result;
+  } catch (error) { ui.lastCommand = { ...ui.lastCommand, status: error.status == null ? "outcome unknown" : "rejected", at: new Date().toISOString() }; notify(`${type}: ${error.message}${error.details?.length ? ` / ${error.details.join("; ")}` : ""}`, true); return null; }
+  finally { pendingCommands.delete(type); renderCommandTrayIfOpen(); }
+}
+function renderCommandTrayIfOpen() { if ($("commandTray").open) renderCommandTray(); }
+async function iterationPayload(form, lineage = false) {
+  const revision = ++iterationPayloadRevision, data = Object.fromEntries(new FormData(form).entries()), sourceIterationId = lineage ? String(data.sourceIterationId || "").trim() : null, sourceRunId = lineage ? String(data.sourceRunId || "").trim() : null, iteration = lineage ? snapshot.iterations.find((item) => item.id === sourceIterationId) : null;
+  if (lineage && !iteration) { notify("Source iteration is no longer available. Reopen its flight strip before submitting lineage.", true); return null; }
+  if (lineage && !sourceRunId) { notify("Source run is required for lineage and must match the source iteration detail.", true); return null; }
+  let detail = null; if (iteration?.id) { try { detail = snapshot.iterationDetail?.id === iteration.id ? snapshot.iterationDetail : await client.loadIterationDetail(iteration.id); } catch (error) { if (revision === iterationPayloadRevision) notify(`Load source lineage: ${error.message}`, true); return null; } }
+  if (revision !== iterationPayloadRevision || !form.isConnected || (lineage && form.elements.sourceIterationId.value.trim() !== sourceIterationId)) return null;
+  if (lineage && detail?.id !== sourceIterationId) { notify("Loaded iteration detail identity does not match the requested source iteration.", true); return null; }
+  if (lineage && detail?.runId !== sourceRunId) { notify("Source run does not match the authoritative source iteration detail.", true); return null; }
+  const sourceState = detail?.iterationState || {}, sourceLimits = sourceState.limits || iteration?.limits || snapshot.control?.autoIteration || {};
+  const gates = lineage ? { acceptanceGateIds: arr(first(sourceState.acceptanceGateIds, iteration?.acceptanceGateIds)), snapshottedAcceptanceGates: arr(sourceState.acceptanceGates) } : currentGateSnapshot();
+  const payload = { ...data, sourceRunId: lineage ? sourceRunId : undefined, sourceIterationId: lineage ? sourceIterationId : undefined, runId: lineage ? undefined : currentRunId(), repoPath: first(data.repoPath, sourceState.repoPath, iteration?.repoPath), baseRef: first(data.baseRef, sourceState.baseRef, iteration?.baseRef, iteration?.commit, "HEAD"), objective: first(data.objective, sourceState.objective, iteration?.objective, currentObjective()), changeText: first(data.changeText, sourceState.nextRecommendedDirection, iteration?.steeringText), acceptanceGateIds: gates.acceptanceGateIds, snapshottedAcceptanceGates: gates.snapshottedAcceptanceGates, limits: iterationLimits(1, sourceLimits) };
+  delete payload.mode; return payload;
+}
+async function planAction(action) { const detail = ui.planDetail; if (!detail) return; const request = ++planRequestRevision, ledger = detail.ledger, revision = detail.revision, subject = { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest }, options = { expectedVersion: ledger.version }, notes = $("planningContent").querySelector('[name="decisionNotes"]')?.value.trim() || ""; if (action === "reject" && !notes) { notify("Rejection notes are required", true); return; } if (["launch", "archive"].includes(action) && !confirm(`${action === "launch" ? "Launch the exact approved revision" : "Archive this project plan"}?`)) return; try { let result; if (action === "ready") result = await client.submitProjectPlanForReview(subject, options); if (action === "approve") result = await client.approveProjectPlan({ ...subject, notes }, options); if (action === "reject") result = await client.rejectProjectPlan({ ...subject, notes }, options); if (action === "launch") result = await client.launchProjectPlan(subject, options); if (["clone", "fork"].includes(action)) { const payload = { ...subject, sourceRunId: recordRunId() || null, sourceIterationId: associatedIteration()?.id || null, baseRef: revision.content.pipelineType === "classic" ? null : first(revision.content.repository?.baseRef, "HEAD") }; result = action === "clone" ? await client.cloneProjectPlan(payload, options) : await client.forkProjectPlan(payload, options); } if (action === "archive") result = await client.archiveProjectPlan({ planId: ledger.planId }, options); if (request !== planRequestRevision || ui.planDetail?.ledger?.planId !== ledger.planId || ui.planDetail?.ledger?.version !== ledger.version) return; await client.refreshPlans(); if (request !== planRequestRevision) return; await loadPlan(result?.planId || ledger.planId); notify(`Project plan ${action} accepted`); } catch (error) { if (request === planRequestRevision) notify(error.message, true); } }
 
-async function loadPlan(planId) {
-  ui.selectedPlanId = planId;
-  ui.planRevision = null;
-  ui.planDetail = await perform("Load plan", () => client.getProjectPlan(planId));
-  renderPlanning();
-}
-
-function planListPane() {
-  const pane = node("div", { class: "plan-list" });
-  const create = node("form", { id: "planCreateForm" }, [
-    node("h3", { text: "New plan" }),
-    field("Pipeline", node("select", { name: "pipelineType" }, [node("option", { value: "classic", text: "classic" }), node("option", { value: "managed", text: "managed" })])),
-    formInput("title", "Title", { required: true }),
-    formInput("problem", "Problem", { textarea: true, required: true }),
-    formInput("intendedUsers", "Intended users", { required: true }),
-    formInput("objective", "Measurable objective", { textarea: true, required: true }),
-    formInput("boundedScope", "Bounded scope", { textarea: true, required: true }),
-    formInput("repositoryPath", "Repository path (managed only)"),
-    formInput("baseRef", "Base ref (managed only)"),
-    button("Create plan", { type: "submit", class: "primary" })
-  ]);
-  pane.append(create);
-  for (const plan of snapshot.plans) {
-    const row = button("", { class: "target-row", "data-plan-id": plan.planId });
-    row.append(node("span"), node("span", { text: plan.title || "Untitled plan" }), node("small", { text: `${plan.state} / r${plan.currentRevision}` }));
-    pane.append(row);
-  }
-  return pane;
-}
-
-function renderPlans(container) {
-  const workspace = node("div", { class: "planning-grid" }, [planListPane()]);
-  const detail = node("div", { class: "plan-editor" });
-  detail.append(node("h3", { text: "Persisted project flight plans" }), node("p", { text: "Select a plan to inspect it, or create a bounded classic or managed plan." }));
-  if (ui.planDetail) detail.append(factList([["plan", ui.planDetail.ledger?.planId], ["state", ui.planDetail.ledger?.state], ["revision", ui.planDetail.revision?.revision], ["digest", ui.planDetail.revision?.contentDigest], ["active launch", ui.planDetail.ledger?.activeLaunchId]]));
-  workspace.append(detail); container.append(workspace);
-}
-
-function renderPlanEditor(container) {
-  const detail = ui.planDetail;
-  if (!detail) { container.append(node("div", { class: "empty", text: "Select a plan in Plans before editing." })); return; }
-  const form = node("form", { id: "planEditorForm" }, [node("h3", { text: `Edit ${detail.revision.content.title || detail.ledger.planId}` }), field("Plan content JSON", node("textarea", { name: "content", required: true })), button("Save new revision", { type: "submit", class: "primary" })]);
-  form.querySelector("textarea").value = JSON.stringify(detail.revision.content, null, 2);
-  container.append(form);
-}
-
-function renderPlanReview(container) {
-  const detail = ui.planDetail;
-  if (!detail) { container.append(node("div", { class: "empty", text: "Select a plan before review." })); return; }
-  const ledger = detail.ledger;
-  const revision = detail.revision;
-  const revisions = node("div", { class: "button-line", "aria-label": "Saved plan revisions" }, (detail.revisions || []).map((item) => button(`Revision ${item.revision}`, { "data-plan-revision": item.revision })));
-  container.append(factList([["plan", ledger.planId], ["state", ledger.state], ["version", ledger.version], ["revision", revision.revision], ["digest", revision.contentDigest]]), node("pre", { class: "raw", text: JSON.stringify(revision.content, null, 2) }), section("Revision history", [revisions, ui.planRevision ? node("pre", { class: "raw", text: JSON.stringify(ui.planRevision, null, 2) }) : node("p", { text: "Select a saved revision to inspect its immutable content." })]), field("Decision notes", node("textarea", { id: "decisionNotes" })), node("div", { class: "button-line" }, [button("Ready for review", { "data-plan-action": "ready" }), button("Approve", { "data-plan-action": "approve", class: "primary" }), button("Reject", { "data-plan-action": "reject", class: "danger" }), button("Launch", { "data-plan-action": "launch" }), button("Clone", { "data-plan-action": "clone" }), button("Fork", { "data-plan-action": "fork" }), button("Archive", { "data-plan-action": "archive", class: "danger" })]));
-}
-
-async function loadAssistance(id) {
-  ui.assistanceId = id;
-  ui.assistanceDetail = await perform("Load conversation", () => client.getPlanAssistance(id));
-  renderPlanning();
-}
-
-function renderAssistance(container) {
-  const controls = node("div", { class: "button-line" }, [button("Start classic conversation", { "data-new-assist": "classic" }), button("Start managed conversation", { "data-new-assist": "managed" }), button("Refresh conversations", { "data-assist-refresh": true })]);
-  container.append(controls, node("p", { text: "Messages may be sent to the configured inference provider. Suggestions do not save, approve, launch, or execute a plan." }));
-  const list = node("div", { class: "item-list" });
-  for (const conversation of snapshot.assistance) list.append(button(`${conversation.pipelineType} / ${conversation.messageCount} messages`, { "data-assist-id": conversation.id }));
-  container.append(list);
-  const detail = ui.assistanceDetail;
-  if (!detail) return;
-  const transcript = node("div", { role: "log", "aria-live": "polite" });
-  for (const message of detail.messages || []) transcript.append(node("div", { class: `message ${message.role}`, text: `${message.role}: ${message.content}` }));
-  const form = node("form", { id: "assistanceForm" }, [field("Planning message", node("textarea", { name: "message", required: true, maxlength: 16000 })), button("Send", { type: "submit", class: "primary" })]);
-  container.append(transcript, form);
-  if (detail.proposedContent) container.append(button("Create plan from proposal", { "data-create-proposal": true }));
-}
-
-function renderPlanning() {
-  const container = clear($("planningContent"));
-  document.querySelectorAll("[data-plan-tab]").forEach((tab) => tab.classList.toggle("active", tab.dataset.planTab === ui.planTab));
-  if (ui.planTab === "plans") renderPlans(container);
-  else if (ui.planTab === "editor") renderPlanEditor(container);
-  else if (ui.planTab === "review") renderPlanReview(container);
-  else renderAssistance(container);
-}
-
-async function planAction(action) {
-  const detail = ui.planDetail;
-  if (!detail) return;
-  const ledger = detail.ledger;
-  const revision = detail.revision;
-  const identity = { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest };
-  const options = { expectedVersion: ledger.version, refresh: true };
-  const notes = $("decisionNotes")?.value.trim() || "";
-  if (action === "reject" && !notes) { notify("Reject plan: decision notes are required", true); return; }
-  let result;
-  if (action === "ready") result = await perform("Ready for review", () => client.submitProjectPlanForReview(identity, options));
-  if (action === "approve") result = await perform("Approve plan", () => client.approveProjectPlan({ ...identity, notes }, options));
-  if (action === "reject") result = await perform("Reject plan", () => client.rejectProjectPlan({ ...identity, notes }, options));
-  if (action === "launch") result = await perform("Launch plan", () => client.launchProjectPlan(identity, options));
-  if (action === "clone") result = await perform("Clone plan", () => client.cloneProjectPlan({ ...identity, sourceRunId: currentRunId(), sourceIterationId: snapshot.selectedIterationId }, options));
-  if (action === "fork") result = await perform("Fork plan", () => client.forkProjectPlan({ ...identity, sourceRunId: currentRunId(), sourceIterationId: snapshot.selectedIterationId, baseRef: revision.content.repository?.baseRef || "HEAD" }, options));
-  if (action === "archive") result = await perform("Archive plan", () => client.archiveProjectPlan({ planId: ledger.planId }, options));
-  if (result?.planId && result.planId !== ledger.planId) ui.selectedPlanId = result.planId;
-  if (ui.selectedPlanId) await loadPlan(ui.selectedPlanId);
-}
+function render() { const focus = focusKey(), drafts = captureDrafts(); records = buildRecords(); const selected = selectedRecord(); if (selected && !ui.selected) ui.selected = { type: selected.type, id: selected.id }; renderChrome(); renderRadar(); renderIndex(); renderScope(); renderCommandTrayIfOpen(); if ($("planningTray").open) renderPlanning(); restoreDrafts(drafts); if (focus) requestAnimationFrame(() => document.querySelector(focus)?.focus({ preventScroll: true })); }
 
 document.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-target-type]");
-  if (target) { await selectTarget(target.dataset.targetType, target.dataset.targetId); return; }
-  const indexed = event.target.closest("[data-select-type]");
-  if (indexed) { await selectTarget(indexed.dataset.selectType, indexed.dataset.selectId); return; }
-  const tab = event.target.closest("[data-tab]");
-  if (tab) { ui.scopeTab = tab.dataset.tab; renderScope(); return; }
-  const trayTab = event.target.closest("[data-tray-tab]");
-  if (trayTab) { ui.trayTab = trayTab.dataset.trayTab; renderCommandTray(); return; }
-  const planTab = event.target.closest("[data-plan-tab]");
-  if (planTab) { ui.planTab = planTab.dataset.planTab; renderPlanning(); return; }
-  const op = event.target.closest("[data-command],[data-op-command]");
-  if (op) { await command(op.dataset.command || op.dataset.opCommand, { reason: "Radar operator command" }); return; }
-  const showcase = event.target.closest("[data-showcase]");
-  if (showcase) {
-    const targetGenerations = Number($("showcaseTarget")?.value || 10);
-    if (showcase.dataset.showcase === "target") await command("set-showcase-target", { targetGenerations });
-    else await command("start-showcase-loop", { sourceRunId: currentRunId(), sourceIterationId: snapshot.selectedIterationId, repoPath: snapshot.control?.autoIteration?.repoPath || snapshot.state?.repoPath, objective: snapshot.control?.currentObjective?.text || snapshot.state?.objective || "Bounded showcase progression", targetGenerations, limits: { maxIterations: targetGenerations, maxVariantsPerIteration: 3, maxParallelVariants: 3, maxAcceptedFeatures: 4, maxVisualMotifChanges: 1, maxNewSections: 1, stopAfterNoImprovement: 1 } });
-    return;
-  }
-  if (event.target.closest("[data-deblock-advice]")) { await command("deblock-advice", { runId: currentRunId(), prompt: $("deblockForm")?.elements.prompt.value || "" }); return; }
-  const advice = event.target.closest("[data-advice]");
-  if (advice) { await command(advice.dataset.advice === "approve" ? "approve-deblock-advice" : "deny-deblock-advice", { adviceId: advice.dataset.id }); return; }
-  const remove = event.target.closest("[data-remove-steering]");
-  if (remove) { await command("remove-steering", { id: remove.dataset.removeSteering }); return; }
-  const queue = event.target.closest("[data-queue]");
-  if (queue) {
-    const item = items(snapshot.queue, "items").find((entry) => String(entry.id) === queue.dataset.id);
-    if (queue.dataset.queue === "pin") await command("pin-queue-item", { id: queue.dataset.id });
-    if (queue.dataset.queue === "archive") await command("archive-queue-item", { id: queue.dataset.id });
-    if (queue.dataset.queue === "use") await command("start-next-iteration", { queueItemId: item?.id, repoPath: item?.target?.preferredRepo || item?.preferredRepo, objective: item?.objective, changeText: item?.context || item?.title, acceptanceGateIds: item?.acceptanceGateIds || [] });
-    return;
-  }
-  const lineage = event.target.closest("[data-lineage]");
-  if (lineage) {
-    const iteration = snapshot.iterations.find((entry) => String(entry.id) === lineage.dataset.id);
-    await command(lineage.dataset.lineage, {
-      sourceIterationId: iteration?.id,
-      sourceRunId: iteration?.runId,
-      repoPath: iteration?.repoPath || snapshot.control?.autoIteration?.repoPath,
-      baseRef: iteration?.commit || "HEAD",
-      objective: iteration?.objective || snapshot.control?.currentObjective?.text,
-      changeText: iteration?.steeringText || `Continue one bounded direction from ${iteration?.id}`,
-      limits: snapshot.control?.autoIteration || { maxIterations: 1, maxVariantsPerIteration: 3, maxParallelVariants: 3 }
-    });
-    return;
-  }
-  const gate = event.target.closest("[data-gate]");
-  if (gate) {
-    const evidenceArtifacts = ["artifacts/gate-report.json", "artifacts/gate-decisions.json"];
-    if (gate.dataset.gate === "attach") await command("attach-gate-evidence", { gateId: gate.dataset.id, runId: snapshot.selectedRunId, evidenceArtifacts });
-    else if (gate.dataset.gate === "update") await command("update-gate", { gateId: gate.dataset.id, status: "pending" });
-    else await command("gate-decision", { gateId: gate.dataset.id, runId: snapshot.selectedRunId, status: gate.dataset.gate === "pass" ? "passed" : "needs-evidence", decision: gate.dataset.gate === "pass" ? "accepted" : "defer", evidenceArtifacts });
-    return;
-  }
-  const resource = event.target.closest("[data-resource-kind]");
-  if (resource) {
-    const kind = resource.dataset.resourceKind;
-    await perform("Load evidence", async () => {
-      let result;
-      if (kind === "json") result = snapshot.selectedRun?.run || selectedRun();
-      if (kind === "artifact") result = await client.loadArtifact(resource.dataset.resourceName);
-      if (kind === "log") result = await client.loadLog(resource.dataset.resourceName);
-      if (kind === "document") result = await client.loadDocument(resource.dataset.resourceName);
-      ui.resource = { title: resource.textContent, text: typeof result === "string" ? result : result?.text || JSON.stringify(result, null, 2) };
-      renderScope();
-    });
-    return;
-  }
-  const eventRow = event.target.closest("[data-event-id]");
-  if (eventRow) { const found = snapshot.events.find((entry) => entry.id === eventRow.dataset.eventId); ui.resource = { title: "Event payload", text: JSON.stringify(found?.raw || found, null, 2) }; ui.scopeTab = "evidence"; renderScope(); return; }
-  const iteration = event.target.closest("[data-iteration-id]");
-  if (iteration) { await perform("Load iteration", () => client.selectIteration(iteration.dataset.iterationId)); ui.resource = { title: "Iteration evidence", text: JSON.stringify(client.getSnapshot().iterationDetail, null, 2) }; renderScope(); return; }
-  const plan = event.target.closest("[data-plan-id]");
-  if (plan) { await loadPlan(plan.dataset.planId); return; }
-  const action = event.target.closest("[data-plan-action]");
-  if (action) { await planAction(action.dataset.planAction); return; }
-  const revision = event.target.closest("[data-plan-revision]");
-  if (revision && ui.planDetail) { ui.planRevision = await perform("Load revision", () => client.getProjectPlanRevision(ui.planDetail.ledger.planId, Number(revision.dataset.planRevision))); renderPlanning(); return; }
-  const newAssist = event.target.closest("[data-new-assist]");
-  if (newAssist) { ui.assistanceDetail = await perform("Start assistance", () => client.createPlanAssistance(newAssist.dataset.newAssist)); if (ui.assistanceDetail) { ui.assistanceId = ui.assistanceDetail.id; await client.listPlanAssistance(); } renderPlanning(); return; }
-  if (event.target.closest("[data-assist-refresh]")) { await perform("Refresh assistance", () => client.listPlanAssistance()); renderPlanning(); return; }
-  const assist = event.target.closest("[data-assist-id]");
-  if (assist) { await loadAssistance(assist.dataset.assistId); return; }
-  if (event.target.closest("[data-create-proposal]")) { const result = await perform("Create proposed plan", () => client.createProjectPlan({ content: ui.assistanceDetail.proposedContent }, { refresh: true })); if (result?.planId) await loadPlan(result.planId); return; }
+  const record = event.target.closest("[data-record-type]"); if (record) { await selectRecord(record.dataset.recordType, record.dataset.recordId, !record.closest("#radar")); return; }
+  const tab = event.target.closest("[data-tab]"); if (tab) { ui.scopeTab = tab.dataset.tab; renderScope(); return; }
+  const trayTab = event.target.closest("[data-tray-tab]"); if (trayTab) { ui.trayTab = trayTab.dataset.trayTab; renderCommandTray(); return; }
+  const planTab = event.target.closest("[data-plan-tab]"); if (planTab) { ui.planTab = planTab.dataset.planTab; renderPlanning(); return; }
+  const command = event.target.closest("[data-command]"); if (command) { await runCommand(command.dataset.command, { reason: "Radar operator command" }); return; }
+  const context = event.target.closest("[data-context-action]"); if (context) { if (context.dataset.contextAction === "refresh") await client.refresh().catch((error) => notify(error.message, true)); else { ui.trayTab = ["recovery", "queue", "gate"].includes(context.dataset.contextAction) ? context.dataset.contextAction.replace("gate", "gates") : context.dataset.contextAction === "continue" || context.dataset.contextAction === "fork" ? "run" : "run"; renderCommandTray(); $("commandTray").showModal(); $("commandTitle").focus(); if (["continue", "fork"].includes(context.dataset.contextAction)) { const mode = $("lineageForm")?.elements.mode; if (mode) mode.value = `${context.dataset.contextAction}-from-iteration`; } } return; }
+  if (event.target.closest("[data-recovery-advice]")) { await runCommand("deblock-advice", { runId: currentRunId(), prompt: $("deblockForm")?.elements.prompt.value || "Recommend the smallest safe recovery." }); return; }
+  const advice = event.target.closest("[data-advice]"); if (advice) { await runCommand(advice.dataset.advice === "approve" ? "approve-deblock-advice" : "deny-deblock-advice", { adviceId: advice.dataset.id }); return; }
+  const remove = event.target.closest("[data-remove-steering]"); if (remove) { await runCommand("remove-steering", { id: remove.dataset.removeSteering }); return; }
+  const queue = event.target.closest("[data-queue]"); if (queue) { const item = arr(snapshot.queue?.items).find((entry) => String(entry.id) === queue.dataset.id); if (!item) return; if (queue.dataset.queue === "pin") await runCommand("pin-queue-item", { id: item.id }); if (queue.dataset.queue === "archive") await runCommand("archive-queue-item", { id: item.id }); if (queue.dataset.queue === "use") { const gates = currentGateSnapshot(arr(item.acceptanceGateIds)); await runCommand("start-next-iteration", { queueItemId: item.id, runId: currentRunId(), repoPath: first(item.target?.preferredRepo, snapshot.control?.autoIteration?.repoPath), baseRef: "HEAD", objective: item.objective, changeText: first(item.context, `Complete one bounded generation for ${item.title}.`), ...gates, limits: iterationLimits() }); } return; }
+  const gateAction = event.target.closest("[data-gate-action]"); if (gateAction) { const form = gateAction.closest("form"), data = Object.fromEntries(new FormData(form).entries()), artifacts = String(data.evidenceArtifacts || "").split(/\r?\n/).map((item) => item.trim()).filter(Boolean), gateId = form.dataset.gateId; if (gateAction.dataset.gateAction === "attach" && !artifacts.length) { notify("Enter at least one existing evidence path", true); return; } if (gateAction.dataset.gateAction === "decision") await runCommand("gate-decision", { gateId, runId: data.runId || null, status: data.status, decision: data.decision, evidenceArtifacts: artifacts, notes: data.notes }); if (gateAction.dataset.gateAction === "attach") await runCommand("attach-gate-evidence", { gateId, runId: data.runId || null, artifacts, notes: data.notes }); if (gateAction.dataset.gateAction === "update") { const description = prompt("Updated gate description", arr(snapshot.gates?.gates).find((item) => item.id === gateId)?.description || ""); if (description !== null) await runCommand("update-gate", { gateId, description }); } return; }
+  const resource = event.target.closest("[data-resource-kind]"); if (resource) { const kind = resource.dataset.resourceKind, runId = resource.dataset.resourceRun, selected = selectedRecord(), objectKey = selected ? `${selected.type}:${selected.id}` : "none", selectionAtRequest = selectionRevision, revision = ++resourceRevision, title = resource.textContent; if (!runId) { notify("Resource has no owning run", true); return; } try { let result; if (kind === "run") { if (snapshot.selectedRunId !== runId) await client.selectRun(runId); result = client.getSnapshot().selectedRun.run; } if (kind === "artifact") result = await client.loadArtifact(resource.dataset.resourceName, runId); if (kind === "log") result = await client.loadLog(resource.dataset.resourceName, runId); if (kind === "document") result = await client.loadDocument(resource.dataset.resourceName, runId); const current = selectedRecord(); if (revision !== resourceRevision || selectionAtRequest !== selectionRevision || !current || `${current.type}:${current.id}` !== objectKey || recordRunId(current) !== runId) return; ui.resource = { title, runId, objectKey, revision, text: typeof result === "string" ? result : result?.text || JSON.stringify(result, null, 2) }; renderScope(); } catch (error) { if (revision === resourceRevision && selectionAtRequest === selectionRevision) notify(error.message, true); } return; }
+  const openPlan = event.target.closest("[data-open-plan]"); if (openPlan) { const detail = await loadPlan(openPlan.dataset.openPlan); if (!detail) return; if (!$("planningTray").open) $("planningTray").showModal(); renderPlanning(); return; }
+  const jump = event.target.closest("[data-plan-jump]"); if (jump) { ui.planTab = jump.dataset.planJump; renderPlanning(); return; }
+  const planActionNode = event.target.closest("[data-plan-action]"); if (planActionNode) { await planAction(planActionNode.dataset.planAction); return; }
+  const revision = event.target.closest("[data-plan-revision]"); if (revision) { const request = ++planRequestRevision, planId = ui.planDetail?.ledger?.planId, planVersion = ui.planDetail?.ledger?.version, revisionNumber = Number(revision.dataset.planRevision); try { const detail = await client.getProjectPlanRevision(planId, revisionNumber); if (request !== planRequestRevision || ui.planDetail?.ledger?.planId !== planId || ui.planDetail?.ledger?.version !== planVersion) return; ui.planRevision = detail; renderPlanning(); } catch (error) { if (request === planRequestRevision) notify(error.message, true); } return; }
+  const newAssist = event.target.closest("[data-new-assist]"); if (newAssist) { const request = ++assistanceRequestRevision; try { const detail = await client.createPlanAssistance(newAssist.dataset.newAssist); if (request !== assistanceRequestRevision) return; ui.assistanceDetail = detail; renderPlanning(); } catch (error) { if (request === assistanceRequestRevision) notify(error.message, true); } return; }
+  if (event.target.closest("[data-assist-refresh]")) { await client.listPlanAssistance().catch((error) => notify(error.message, true)); renderPlanning(); return; }
+  const assist = event.target.closest("[data-assist-id]"); if (assist) { const request = ++assistanceRequestRevision, id = assist.dataset.assistId; try { const detail = await client.getPlanAssistance(id); if (request !== assistanceRequestRevision || detail.id !== id) return; ui.assistanceDetail = detail; renderPlanning(); } catch (error) { if (request === assistanceRequestRevision) notify(error.message, true); } return; }
+  if (event.target.closest("[data-create-proposal]")) { const assistanceId = ui.assistanceDetail?.id, assistanceVersion = ui.assistanceDetail?.version, request = ++planRequestRevision; try { const result = await client.createProjectPlan({ content: ui.assistanceDetail.proposedContent }, { refresh: true }); if (request !== planRequestRevision || ui.assistanceDetail?.id !== assistanceId || ui.assistanceDetail?.version !== assistanceVersion) return; const detail = await loadPlan(result.planId); if (!detail) return; ui.planTab = "editor"; renderPlanning(); } catch (error) { if (request === planRequestRevision) notify(error.message, true); } return; }
+  if (event.target.closest("[data-showcase-target]")) await runCommand("set-showcase-target", { targetGenerations: Number($("showcaseForm").elements.targetGenerations.value) });
 });
 
 document.addEventListener("submit", async (event) => {
-  const form = event.target;
-  if (!["nextForm", "deblockForm", "objectiveForm", "steerForm", "queueForm", "gateForm", "planCreateForm", "planEditorForm", "assistanceForm"].includes(form.id)) return;
-  event.preventDefault();
-  const data = Object.fromEntries(new FormData(form).entries());
-  if (form.id === "nextForm") await command("start-next-iteration", { runId: currentRunId(), repoPath: snapshot.control?.autoIteration?.repoPath || snapshot.state?.repoPath, ...data });
-  if (form.id === "deblockForm") await command("deblock", { runId: currentRunId(), ...data });
-  if (form.id === "objectiveForm") await command("set-current-objective", { ...data, runId: currentRunId(), source: "radar" });
-  if (form.id === "steerForm") await command("steer", data);
-  if (form.id === "queueForm") await command("add-queue-item", { ...data, pin: form.elements.pin.checked, source: "radar", target: { preferredRepo: data.preferredRepo || null } });
-  if (form.id === "gateForm") await command("add-gate", { ...data, requiredEvidence: data.requiredEvidence.split(",").map((value) => value.trim()).filter(Boolean).join("\n") });
-  if (form.id === "planCreateForm") {
-    const result = await perform("Create plan", () => client.createProjectPlan({ content: planDefaults(data.pipelineType, data) }, { refresh: true }));
-    if (result?.planId) { await loadPlan(result.planId); ui.planTab = "editor"; renderPlanning(); }
-  }
-  if (form.id === "planEditorForm") {
-    try {
-      const content = JSON.parse(data.content);
-      await perform("Update plan", () => client.updateProjectPlan({ planId: ui.planDetail.ledger.planId, content }, { expectedVersion: ui.planDetail.ledger.version, refresh: true }));
-      await loadPlan(ui.planDetail.ledger.planId);
-    } catch (error) { notify(`Plan JSON: ${error.message}`, true); }
-  }
-  if (form.id === "assistanceForm") { ui.assistanceDetail = await perform("Send planning message", () => client.messagePlanAssistance(ui.assistanceDetail.id, ui.assistanceDetail.version, data.message)); renderPlanning(); }
-  if (!["planCreateForm", "planEditorForm", "assistanceForm"].includes(form.id)) form.reset();
+  const form = event.target; if (!(form instanceof HTMLFormElement) || form.method === "dialog") return; event.preventDefault(); const data = Object.fromEntries(new FormData(form).entries());
+  if (form.id === "showcaseForm") { const target = Number(data.targetGenerations), gates = currentGateSnapshot(); await runCommand("start-showcase-loop", { sourceRunId: currentRunId(), sourceIterationId: associatedIteration()?.id || null, repoPath: data.repoPath, baseRef: "HEAD", objective: data.objective, changeText: `Generation 1/${target}: complete one bounded showcase generation.`, targetGenerations: target, ...gates, limits: iterationLimits(target, snapshot.control?.autoIteration || {}) }); return; }
+  if (form.id === "nextForm") { const payload = await iterationPayload(form); if (payload) await runCommand("start-next-iteration", payload); return; }
+  if (form.id === "lineageForm") { const type = data.mode, payload = await iterationPayload(form, true); if (payload) await runCommand(type, payload); return; }
+  if (form.id === "deblockForm") { await runCommand("deblock", { runId: currentRunId(), prompt: data.prompt }); return; }
+  if (form.id === "objectiveForm") { await runCommand("set-current-objective", { text: data.text, runId: currentRunId(), source: "radar" }); return; }
+  if (form.id === "steerForm") { await runCommand("steer", data); return; }
+  if (form.id === "queueForm") { await runCommand("add-queue-item", { ...data, priority: Number(data.priority), pin: form.elements.pin.checked, constraints: data.constraints, acceptanceGateIds: data.acceptanceGateIds.split(/\r?\n/).map((item) => item.trim()).filter(Boolean), target: data.preferredRepo ? { preferredRepo: data.preferredRepo } : {}, source: "radar" }); return; }
+  if (form.id === "gateForm") { await runCommand("add-gate", { ...data, requiredEvidence: data.requiredEvidence }); return; }
+  if (form.id === "planCreateForm") { const request = ++planRequestRevision; try { const result = await client.createProjectPlan({ content: planDefaults(data.pipelineType, data) }, { refresh: true }); if (request !== planRequestRevision) return; const detail = await loadPlan(result.planId); if (!detail) return; ui.planTab = "editor"; renderPlanning(); } catch (error) { if (request === planRequestRevision) notify(error.message, true); } return; }
+  if (form.id === "planEditorForm") { const planId = ui.planDetail?.ledger?.planId, version = ui.planDetail?.ledger?.version, revision = ui.planDetail?.revision?.revision, request = ++planRequestRevision; try { const content = JSON.parse(data.content); await client.updateProjectPlan({ planId, content }, { expectedVersion: version, refresh: true }); if (request !== planRequestRevision || ui.planDetail?.ledger?.planId !== planId || ui.planDetail?.ledger?.version !== version || ui.planDetail?.revision?.revision !== revision) return; await loadPlan(planId); notify("Plan revision saved"); } catch (error) { if (request === planRequestRevision) notify(`Plan revision: ${error.message}`, true); } return; }
+  if (form.id === "assistanceForm") { const request = ++assistanceRequestRevision, id = ui.assistanceDetail?.id, version = ui.assistanceDetail?.version; try { const detail = await client.messagePlanAssistance(id, version, data.message); if (request !== assistanceRequestRevision || detail.id !== id) return; ui.assistanceDetail = detail; renderPlanning(); } catch (error) { if (request === assistanceRequestRevision) notify(error.message, true); } }
 });
 
-$("radar").addEventListener("keydown", async (event) => {
-  const targets = [...$("radar").querySelectorAll(".target")];
-  const index = targets.indexOf(document.activeElement);
-  if (index < 0) return;
-  let next = index;
-  if (["ArrowRight", "ArrowDown"].includes(event.key)) next = (index + 1) % targets.length;
-  else if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = (index - 1 + targets.length) % targets.length;
-  else if (event.key === "Home") next = 0;
-  else if (event.key === "End") next = targets.length - 1;
-  else if (["Enter", " "].includes(event.key)) { event.preventDefault(); await selectTarget(document.activeElement.dataset.targetType, document.activeElement.dataset.targetId); return; }
-  else return;
-  event.preventDefault();
-  targets.forEach((target, targetIndex) => target.setAttribute("tabindex", targetIndex === next ? "0" : "-1"));
-  targets[next].focus();
-});
-
+function compositeKeys(event, selector, activation) { const current = event.target.closest(selector); if (!current) return; const items = $$(selector, event.currentTarget), index = items.indexOf(current); let next = null; if (["ArrowRight", "ArrowDown"].includes(event.key)) next = items[(index + 1) % items.length]; if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = items[(index - 1 + items.length) % items.length]; if (event.key === "Home") next = items[0]; if (event.key === "End") next = items.at(-1); if (["Enter", " "].includes(event.key) && activation) { event.preventDefault(); activation(current); return; } if (next) { event.preventDefault(); items.forEach((item) => item.tabIndex = -1); next.tabIndex = 0; next.focus(); if (selector.includes("data-tab")) next.click(); } }
+$("radar").addEventListener("keydown", (event) => compositeKeys(event, ".target", (item) => selectRecord(item.dataset.recordType, item.dataset.recordId, true)));
+$("scope").querySelector(".scope-tabs").addEventListener("keydown", (event) => compositeKeys(event, "[data-tab]"));
+$("trackFilter").addEventListener("input", (event) => { ui.filter = event.target.value; renderIndex(); });
 $("streamToggle").addEventListener("click", async () => snapshot.connection.paused ? client.resume().catch((error) => notify(error.message, true)) : client.pause());
-$("connectButton").addEventListener("click", () => perform("Reconnect", () => client.connect()));
-$("disconnectButton").addEventListener("click", () => { client.disconnect(); notify("Live transport disconnected"); });
-$("refreshButton").addEventListener("click", () => perform("Refresh", () => client.refresh()));
-$("openCommands").addEventListener("click", () => { renderCommandTray(); $("commandTray").showModal(); });
-$("openPlanning").addEventListener("click", async () => { $("planningTray").showModal(); await Promise.allSettled([client.refreshPlans(), client.listPlanAssistance()]); renderPlanning(); });
+$("connectButton").addEventListener("click", () => client.connect().catch((error) => notify(error.message, true))); $("disconnectButton").addEventListener("click", () => { client.disconnect(); notify("Live transport disconnected"); }); $("refreshButton").addEventListener("click", () => client.refresh().catch((error) => notify(error.message, true)));
+$("openCommands").addEventListener("click", () => { renderCommandTray(); $("commandTray").showModal(); $("commandTitle").focus(); });
+$("openPlanning").addEventListener("click", async () => { $("planningTray").showModal(); await Promise.allSettled([client.refreshPlans(), client.listPlanAssistance()]); renderPlanning(); $("planningTitle").focus(); });
+$("openHelp").addEventListener("click", () => { $("helpDialog").showModal(); $("helpTitle").focus(); }); $("closeHelp").addEventListener("click", () => $("helpDialog").close()); $("helpDialog").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
 
 initGrid();
-client.subscribe((next) => { snapshot = next; if (!ui.selectedPlanId && next.plans[0]) ui.selectedPlanId = next.plans[0].planId; render(); });
+client.subscribe((next) => { snapshot = next; render(); });
 client.connect().catch((error) => notify(`Initial connection: ${error.message}`, true));
+globalThis.setInterval(renderFreshness, 1000);

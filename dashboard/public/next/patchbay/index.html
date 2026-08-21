@@ -14,12 +14,14 @@
       <span class="wordmark" aria-hidden="true">H//PB</span>
       <div><h1>Patchbay</h1><p>Autonomous signal routing</p></div>
     </div>
-    <div id="systemReadout" class="system-readout" role="status" aria-live="polite">Loading system signal...</div>
+    <div id="systemReadout" class="system-readout">Loading system signal...</div>
     <div class="header-actions">
       <button id="streamToggle" type="button">Pause stream</button>
       <button id="connectionToggle" type="button">Disconnect</button>
       <button id="refreshButton" type="button">Refresh signal</button>
       <button id="linearToggle" type="button" aria-pressed="false">Linear controls</button>
+      <button id="openInspector" type="button" aria-controls="inspector">Inspector</button>
+      <button id="openHelp" type="button">Help</button>
       <button id="openPlanner" class="hot" type="button">Open plan rack</button>
     </div>
   </header>
@@ -31,7 +33,7 @@
   </nav>
 
   <main id="patchField" class="patch-field" aria-label="Operational patch field">
-    <svg id="cableLayer" class="cable-layer" aria-hidden="true"></svg>
+    <svg id="cableLayer" class="cable-layer" role="group" aria-label="Inspectable signal, control, and evidence cable routes"></svg>
 
     <section id="workflowModule" class="module module-workflow" data-module tabindex="-1" aria-labelledby="workflowTitle">
       <i class="port port-in" data-port="workflow-in" aria-hidden="true"></i>
@@ -47,7 +49,7 @@
       <label class="control-label" for="runSelect">Selected stream</label>
       <select id="runSelect"><option value="">No run available</option></select>
       <div id="runSummary" class="readout">Waiting for a run source.</div>
-      <div class="button-row"><button type="button" data-evidence-tab="run">Scope run JSON</button><button type="button" data-action="run-now">Run now</button></div>
+      <div class="button-row"><button type="button" data-inspect-current="run">Inspect run</button><button type="button" data-evidence-tab="run">Scope run JSON</button><button type="button" data-action="run-now">Run now</button></div>
       <i class="port port-out" data-port="run-out" aria-hidden="true"></i>
     </section>
 
@@ -71,6 +73,7 @@
     <section id="controlModule" class="module module-control" data-module tabindex="-1" aria-labelledby="controlTitle">
       <i class="port port-in" data-port="control-in" aria-hidden="true"></i>
       <header><span class="module-code">05 / CONTROL</span><h2 id="controlTitle">Steering matrix</h2><span id="admissionState" class="state-tag">enabled</span></header>
+      <dl id="controlFacts" class="meter-grid"></dl>
       <div class="button-row transport"><button type="button" data-action="pause">Pause</button><button type="button" data-action="resume">Resume</button><button type="button" data-action="hold">Hold</button><button type="button" data-action="unhold">Unhold</button><button class="danger" type="button" data-action="stop">Stop</button></div>
       <form id="steerForm" class="compact-form"><label>Directive<textarea name="text" maxlength="8000" required placeholder="Explicit bounded steering instruction"></textarea></label><label>Scope<select name="scope"><option value="next_run">Next run</option><option value="current_run">Current run</option><option value="queue">Queue</option></select></label><label>Priority<select name="priority"><option value="required">Required</option><option value="preferred">Preferred</option></select></label><button class="hot" type="submit">Patch steering</button><button id="setObjective" type="button">Set directive as current objective</button></form>
       <div id="steeringList" class="mini-list"></div>
@@ -80,7 +83,7 @@
     <section id="deblockModule" class="module module-deblock" data-module tabindex="-1" aria-labelledby="deblockTitle">
       <i class="port port-in" data-port="deblock-in" aria-hidden="true"></i>
       <header><span class="module-code">06 / RECOVERY</span><h2 id="deblockTitle">Deblock processor</h2><span id="blockState" class="state-tag">clear</span></header>
-      <div id="blockerReadout" class="readout">No blocker reported.</div>
+      <button id="blockerReadout" class="readout inspectable" type="button" data-inspect-type="blocker" data-inspect-id="current">No blocker reported.</button>
       <form id="deblockForm" class="compact-form"><label>Recovery prompt<textarea name="prompt" maxlength="8000" required placeholder="Smallest safe recovery request"></textarea></label><button class="hot" type="submit">Queue deblock</button><button type="button" id="askAdvice">Ask advice first</button></form>
       <div id="adviceReadout" class="mini-list"></div>
       <i class="port port-out" data-port="deblock-out" aria-hidden="true"></i>
@@ -105,7 +108,7 @@
       <label>Showcase target <input id="showcaseTarget" type="number" min="1" max="10" value="10"></label>
       <div class="button-row"><button class="hot" type="button" data-action="start-next-iteration">Start generation</button><button type="button" data-action="start-showcase-loop">Start loop</button><button type="button" data-action="set-showcase-target">Set target</button><button type="button" data-action="pause-showcase-loop">Pause loop</button><button type="button" data-action="resume-showcase-loop">Resume loop</button><button class="danger" type="button" data-action="stop-showcase-loop">Stop loop</button></div>
       <label class="control-label" for="iterationSelect">Iteration lineage</label><select id="iterationSelect"><option value="">No iteration available</option></select>
-      <div class="button-row"><button type="button" data-lineage="continue-from-iteration">Continue</button><button type="button" data-lineage="fork-from-iteration">Fork</button><button type="button" data-lineage="use-as-next-direction">Use direction</button><button type="button" data-evidence-tab="iteration">Scope iteration</button></div>
+      <div class="button-row"><button type="button" data-inspect-current="iteration">Inspect iteration</button><button type="button" data-lineage="continue-from-iteration">Continue</button><button type="button" data-lineage="fork-from-iteration">Fork</button><button type="button" data-lineage="use-as-next-direction">Use direction</button><button type="button" data-evidence-tab="iteration">Scope iteration</button></div>
       <i class="port port-out" data-port="showcase-out" aria-hidden="true"></i>
     </section>
 
@@ -120,16 +123,21 @@
     <section id="evidenceModule" class="module module-evidence" data-module tabindex="-1" aria-labelledby="evidenceTitle">
       <i class="port port-in" data-port="evidence-in" aria-hidden="true"></i>
       <header><span class="module-code">10 / OUTPUT</span><h2 id="evidenceTitle">Evidence scope</h2><span id="evidenceState" class="state-tag">run</span></header>
-      <div class="scope-tabs" role="tablist" aria-label="Evidence source"><button role="tab" data-evidence-tab="spec">SPEC</button><button role="tab" data-evidence-tab="devplan">DEVPLAN</button><button role="tab" data-evidence-tab="artifacts">Artifacts</button><button role="tab" data-evidence-tab="logs">Logs</button><button role="tab" data-evidence-tab="run" aria-selected="true">Run</button><button role="tab" data-evidence-tab="iteration">Iteration</button><button role="tab" data-evidence-tab="audit">Audit</button></div>
-      <div id="resourceList" class="resource-list"></div>
-      <pre id="evidenceOutput" tabindex="0">Select an evidence source.</pre>
+      <div class="scope-tabs" role="tablist" aria-label="Evidence source"><button id="evidenceTabSpec" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="spec">SPEC</button><button id="evidenceTabDevplan" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="devplan">DEVPLAN</button><button id="evidenceTabArtifacts" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="artifacts">Artifacts</button><button id="evidenceTabLogs" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="logs">Logs</button><button id="evidenceTabRun" role="tab" aria-controls="evidencePanel" aria-selected="true" tabindex="0" data-evidence-tab="run">Run</button><button id="evidenceTabIteration" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="iteration">Iteration</button><button id="evidenceTabAudit" role="tab" aria-controls="evidencePanel" aria-selected="false" tabindex="-1" data-evidence-tab="audit">Audit</button></div>
+      <div id="evidencePanel" role="tabpanel" aria-labelledby="evidenceTabRun"><div id="resourceList" class="resource-list"></div><pre id="evidenceOutput" tabindex="0">Select an evidence source.</pre></div>
       <i class="port port-out" data-port="evidence-out" aria-hidden="true"></i>
     </section>
   </main>
 
+  <dialog id="inspector" class="inspector" aria-labelledby="inspectorTitle">
+    <header><div><span class="module-code">SCOPE / AUTHORITATIVE</span><h2 id="inspectorTitle" tabindex="-1">Context inspector</h2></div><button id="closeInspector" type="button">Close inspector</button></header>
+    <div id="inspectorStatus" class="inspector-status" role="status" aria-live="polite">Select a module, cable, run, agent, event, tool, queue item, gate, iteration, plan, or blocker.</div>
+    <div id="inspectorBody" class="inspector-body"></div>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <section id="planner" class="planner" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden>
+  <dialog id="planner" class="planner" aria-labelledby="plannerTitle">
     <header><div><span class="module-code">PLAN / PERSISTED</span><h2 id="plannerTitle">Project plan rack</h2></div><span id="planStatus" role="status">Ready</span><button id="closePlanner" type="button">Close plan rack</button></header>
     <nav class="planner-tabs" aria-label="Plan rack sections"><button data-plan-pane="list">Plans</button><button data-plan-pane="edit">Edit</button><button data-plan-pane="review">Review</button><button data-plan-pane="assist">Assistance</button></nav>
     <div id="planError" class="error-box" role="alert" hidden></div>
@@ -139,7 +147,16 @@
       <section class="plan-review" data-plan-panel="review"><div id="planReview" class="empty-state">Select a saved revision.</div></section>
       <aside class="plan-assist" data-plan-panel="assist"><div id="planAssist"></div></aside>
     </div>
-  </section>
+  </dialog>
+
+  <dialog id="helpDialog" class="help-dialog" aria-labelledby="helpTitle">
+    <header><div><span class="module-code">MANUAL / OPERATOR</span><h2 id="helpTitle" tabindex="-1">Patchbay operating guide</h2></div><button id="closeHelp" type="button">Close help</button></header>
+    <div class="help-grid">
+      <section><h3>Signal model</h3><p>Modules are authoritative API domains. Cables show major signal, control, and evidence routes; they are not draggable configuration. Activate a module, object, or cable to inspect its source, destination, owning run, activity, evidence, and safe actions.</p><h3>Keyboard</h3><p>Press <kbd>M</kbd> to enter the patch field. Arrow keys move between modules. Tab reaches every control. Enter or Space inspects a focused module. Escape closes Help, the plan rack, or the inspector. Linear controls retain the same actions without visual cables.</p><h3>Live telemetry</h3><p>SSE carries state, events, and heartbeat messages. The masthead reports transport and age. Pause freezes the view and buffers events; Resume reconciles buffered and current state. Disconnect stops updates. Refresh performs a full API reconciliation.</p></section>
+      <section><h3>Control safety</h3><p>An accepted command is persisted intent, not proof that the runner has observed it. Confirm requested pause, stop, run-now, next-run, and loop state against the observed workflow in the inspector. Stop and pause normally take effect at a checkpoint.</p><p>Deblock and advice target the current blocked run only. Historical or terminal work is evidence-only: continue, fork, use as next direction, or clone/fork a reviewed project plan. Gate decisions record judgment; they do not manufacture required evidence.</p><h3>Planning</h3><p>Assistance is discussion and may use the configured inference provider. A proposal becomes mutable only after explicit conversion. Saved revisions are immutable review subjects; approval binds the exact digest, and launch requires explicit source-branch confirmation.</p></section>
+      <section class="wide"><h3>Supported operation commands</h3><div id="helpCommands" class="command-index"></div><h3>Project plan lifecycle</h3><div id="helpPlanActions" class="command-index"></div><h3>State meanings</h3><dl><dt>Current</dt><dd>The object belongs to the active run and may support current-run advice/deblock.</dd><dt>Historical</dt><dd>The owning run is not active; inspect retained evidence and recover through new lineage.</dd><dt>Requested</dt><dd>Control-plane intent has been accepted but may await a runner checkpoint or tick.</dd><dt>Observed</dt><dd>State currently reported by the runner through API/SSE.</dd></dl></section>
+    </div>
+  </dialog>
 
   <script type="module" src="./patchbay.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>

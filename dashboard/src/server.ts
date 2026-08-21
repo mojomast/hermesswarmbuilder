@@ -334,7 +334,7 @@ function normalizeIterationRequestPayload(type: string, payload: any, control: a
   const reqType = type === "fork-from-iteration" ? "fork" : type === "continue-from-iteration" ? "continue" : type === "use-as-next-direction" ? "use-as-next-direction" : "start_next_iteration";
   const sourceRunId = payload.sourceRunId || payload.runId || null;
   const sourceIterationIdRaw = payload.sourceIterationId || payload.iterationId || null;
-  const sourceIter = listIterations().find((x: any) => x.id === sourceIterationIdRaw || x.runId === sourceRunId);
+  const sourceIter = sourceIterationIdRaw ? listIterations().find((x: any) => x.id === sourceIterationIdRaw) : listIterations().find((x: any) => x.runId === sourceRunId);
   return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", acceptanceGateIds: Array.isArray(payload.acceptanceGateIds) ? payload.acceptanceGateIds : (sourceIter?.acceptanceGateIds || []), snapshottedAcceptanceGates: Array.isArray(payload.snapshottedAcceptanceGates) ? payload.snapshottedAcceptanceGates : undefined, createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationPolicy: "runner-selected-only", expectedArtifacts: ["artifacts/lifecycle-contract.json", "artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json", "artifacts/handoff.json"] };
 }
 function iterationRequestErrors(req: any) {
@@ -343,7 +343,28 @@ function iterationRequestErrors(req: any) {
   if (!String(req.objective || "").trim()) errors.push("objective is required");
   if (!String(req.changeText || "").trim()) errors.push("bounded changeText is required");
   if (!String(req.baseRef || "").trim()) errors.push("baseRef is required");
-  if (!req.limits || typeof req.limits !== "object") errors.push("iteration limits are required");
+  const lineageRequest = ["continue", "fork", "use-as-next-direction"].includes(req.type);
+  if (lineageRequest) {
+    if (!req.sourceRunId) errors.push("sourceRunId is required for lineage requests");
+    if (!req.sourceIterationId) errors.push("sourceIterationId is required for lineage requests");
+    const source = req.sourceIterationId ? listIterations().find((item: any) => item.id === req.sourceIterationId) : null;
+    if (req.sourceIterationId && !source) errors.push("sourceIterationId does not identify a retained iteration");
+    if (source && req.sourceRunId !== source.runId) errors.push("sourceRunId does not match sourceIterationId");
+  }
+  const bounds: Record<string, [number, number]> = { maxIterations: [1, 10], maxVariantsPerIteration: [1, 5], maxParallelVariants: [1, 5], maxAcceptedFeatures: [1, 4], maxVisualMotifChanges: [0, 1], maxNewSections: [0, 1], stopAfterNoImprovement: [1, 3] };
+  if (!req.limits || typeof req.limits !== "object" || Array.isArray(req.limits)) errors.push("iteration limits are required");
+  else {
+    for (const [key, [minimum, maximum]] of Object.entries(bounds)) if (!Number.isInteger(req.limits[key]) || req.limits[key] < minimum || req.limits[key] > maximum) errors.push(`${key} must be an integer from ${minimum} through ${maximum}`);
+    if (Number.isInteger(req.limits.maxParallelVariants) && Number.isInteger(req.limits.maxVariantsPerIteration) && req.limits.maxParallelVariants > req.limits.maxVariantsPerIteration) errors.push("maxParallelVariants cannot exceed maxVariantsPerIteration");
+  }
+  if (!Array.isArray(req.acceptanceGateIds) || req.acceptanceGateIds.some((id: any) => typeof id !== "string" || !id.trim())) errors.push("acceptanceGateIds must be an array of non-empty strings");
+  if (lineageRequest && req.acceptanceGateIds?.length) {
+    if (!Array.isArray(req.snapshottedAcceptanceGates)) errors.push("snapshottedAcceptanceGates are required for lineage gate IDs");
+    else {
+      const snapshottedIds = new Set(req.snapshottedAcceptanceGates.map((gate: any) => gate?.id));
+      for (const id of req.acceptanceGateIds) if (!snapshottedIds.has(id)) errors.push(`acceptance gate ${id} is missing its source snapshot`);
+    }
+  }
   return errors;
 }
 function appendRunGateDecision(runId: string, decision: any) {
@@ -407,6 +428,27 @@ function defaultGates() { return { schemaVersion: "apb.gates.v1", updatedAt: now
 function readControl() { return { ...defaultControl(), ...safeReadJson(paths.control, defaultControl()) }; }
 function readQueue() { const q = safeReadJson(paths.queue, defaultQueue()); if (!Array.isArray(q.items)) q.items = []; return { ...defaultQueue(), ...q, items: q.items }; }
 function readGates() { const g = safeReadJson(paths.gates, defaultGates()); if (!Array.isArray(g.gates)) g.gates = []; return { ...defaultGates(), ...g, gates: g.gates }; }
+function activeBlocker(state: any) {
+  return state.block || state.blocker || state.hold || (Array.isArray(state.blockers) ? state.blockers[0] : null) || (["blocked", "on-hold"].includes(state.status) ? { status: state.status, phase: state.phase } : null);
+}
+function currentRecoveryError(state: any, runId: any) {
+  if (!runId || typeof runId !== "string") return json({ error: "runId is required for current-run recovery" }, 400);
+  if (!state.currentRunId || runId !== state.currentRunId) return json({ error: "recovery runId does not match the current run", currentRunId: state.currentRunId || null }, 409);
+  const blocker = activeBlocker(state);
+  if (!blocker) return json({ error: "the current run is not blocked or on hold" }, 409);
+  if (typeof blocker === "object" && blocker.runId && blocker.runId !== runId) return json({ error: "the active blocker belongs to a different run", blockerRunId: blocker.runId }, 409);
+  return null;
+}
+function blockerSignature(blocker: any) {
+  if (!blocker || typeof blocker !== "object") return String(blocker || "");
+  return JSON.stringify(Object.fromEntries(["id", "blockerId", "runId", "agentId", "toolCallId", "reason", "message", "phase", "status"].filter((key) => blocker[key] != null).map((key) => [key, blocker[key]])));
+}
+function requiredEvidence(value: any) {
+  if (value == null) return [];
+  const entries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/) : null;
+  if (!entries) return null;
+  return entries.map((item: any) => String(item).trim()).filter(Boolean);
+}
 function writeControl(c: any) {
   withProjectionLock(STATE_ROOT, () => {
     const current = safeReadJson(paths.control, {}), currentPointer = current.projectLaunchRequest, incomingPointer = c.projectLaunchRequest;
@@ -484,13 +526,14 @@ async function handleCommand(req: Request) {
     control.nextRunRequest = req; control.requestedRunNow = true; control.currentObjective = { text: objective, source: "showcase-loop", queueItemId: req.queueItemId, runId: req.sourceRunId, updatedAt: now(), updatedBy: actor };
     upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { autoIteration: control.autoIteration, nextRunRequest: req, effective: "next_runner_tick" }));
   }
-  if (type === "steer") { const steer = { id: uid("steer"), scope: payload.scope || "next_run", priority: payload.priority || "required", text: payload.text || payload.objective || "", createdBy: actor, createdAt: now(), expires: payload.expires || { type: "until_removed" } }; control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20); writeControl(control); return json(commandAck(command, { steeringId: steer.id })); }
+  if (type === "steer") { const steeringText = String(payload.text || payload.objective || "").trim(); if (!steeringText) return json({ error: "steering text is required" }, 400); const steer = { id: uid("steer"), scope: payload.scope || "next_run", priority: payload.priority || "required", text: steeringText, createdBy: actor, createdAt: now(), expires: payload.expires || { type: "until_removed" } }; control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20); writeControl(control); return json(commandAck(command, { steeringId: steer.id })); }
   if (type === "deblock") {
     const prompt = String(payload.prompt || payload.text || "").trim();
     if (!prompt) return json({ error: "a deblock prompt is required" }, 400);
     if (Buffer.byteLength(prompt) > 8_000) return json({ error: "deblock prompt exceeds 8000 bytes" }, 413);
     const state = readState();
-    const request = { id: uid("deblock"), prompt, runId: payload.runId || state.currentRunId || null, blocker: state.block || state.blocker || state.hold || null, status: "pending", requestedBy: actor, requestedAt: now() };
+    const recoveryError = currentRecoveryError(state, payload.runId); if (recoveryError) return recoveryError;
+    const request = { id: uid("deblock"), prompt, runId: payload.runId, blocker: activeBlocker(state), status: "pending", requestedBy: actor, requestedAt: now() };
     const steer = { id: uid("steer"), scope: "current_run", priority: "required", text: `DEBLOCK REQUEST ${request.id}: ${prompt}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id };
     control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
     control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20);
@@ -502,9 +545,9 @@ async function handleCommand(req: Request) {
   if (type === "deblock-advice") {
     const prompt = String(payload.prompt || "").trim() || "Analyze the reported blocker, inspect the available evidence, and recommend the smallest safe recovery path.";
     if (Buffer.byteLength(prompt) > 8_000) return json({ error: "advice question exceeds 8000 bytes" }, 413);
-    const state = readState(); const blocker = state.block || state.blocker || state.hold || null;
+    const state = readState(); const recoveryError = currentRecoveryError(state, payload.runId); if (recoveryError) return recoveryError; const blocker = activeBlocker(state);
     try {
-      const advice = { id: uid("advice"), runId: payload.runId || state.currentRunId || null, prompt, blocker, answer: await requestDeblockAdvice(prompt, blocker), status: "pending", requestedBy: actor, requestedAt: now() };
+      const advice = { id: uid("advice"), runId: payload.runId, prompt, blocker, answer: await requestDeblockAdvice(prompt, blocker), status: "pending", requestedBy: actor, requestedAt: now() };
       control.deblockAdvice = [advice, ...(Array.isArray(control.deblockAdvice) ? control.deblockAdvice : [])].slice(0, 20);
       writeControl(control);
       return json(commandAck(command, { advice, effective: "operator review required" }));
@@ -512,10 +555,19 @@ async function handleCommand(req: Request) {
   }
   if (["approve-deblock-advice", "deny-deblock-advice"].includes(type)) {
     const advice = (control.deblockAdvice || []).find((item: any) => item.id === payload.adviceId);
-    if (!advice || advice.status !== "pending") return json({ error: "pending deblock advice not found" }, 404);
+    if (!payload.adviceId) return json({ error: "adviceId is required" }, 400);
+    if (!advice) return json({ error: `deblock advice ${payload.adviceId} not found` }, 404);
+    if (advice.status !== "pending") return json({ error: `deblock advice ${payload.adviceId} is already ${advice.status}` }, 409);
+    if (type === "approve-deblock-advice") {
+      const state = readState();
+      const recoveryError = currentRecoveryError(state, advice.runId); if (recoveryError) return recoveryError;
+      const currentBlocker = activeBlocker(state);
+      if (advice.blocker && blockerSignature(advice.blocker) !== blockerSignature(currentBlocker)) return json({ error: "deblock advice no longer matches the current blocker" }, 409);
+      if (!String(advice.answer || "").trim()) return json({ error: "deblock advice has no recommendation to approve" }, 409);
+    }
     advice.status = type === "approve-deblock-advice" ? "approved" : "denied"; advice.decidedAt = now(); advice.decidedBy = actor;
     if (advice.status === "approved") {
-      const state = readState(); const runId = advice.runId || state.currentRunId || null; const request = { id: uid("deblock"), prompt: advice.answer, runId, blocker: advice.blocker, status: "pending", requestedBy: actor, requestedAt: now(), adviceId: advice.id };
+      const state = readState(); const runId = advice.runId; const request = { id: uid("deblock"), prompt: advice.answer, runId, blocker: activeBlocker(state), status: "pending", requestedBy: actor, requestedAt: now(), adviceId: advice.id };
       control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
       control.activeSteering = [{ id: uid("steer"), scope: "current_run", priority: "required", text: `APPROVED DEBLOCK ADVICE ${advice.id}: ${advice.answer}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id }, ...(control.activeSteering || [])].slice(0, 20);
       const sourceIter = listIterations().find((item: any) => item.runId === runId);
@@ -540,8 +592,8 @@ async function handleCommand(req: Request) {
     writeControl(control);
     return json(commandAck(command, { adviceId: advice.id, status: advice.status, nextRunRequest: advice.status === "approved" ? control.nextRunRequest : null, effective: advice.status === "approved" ? "continuation queued" : "no run changes" }));
   }
-  if (type === "remove-steering") { const id = payload.id || payload.steeringId; control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
-  if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
+  if (type === "remove-steering") { const id = payload.id || payload.steeringId; if (!id) return json({ error: "steering id is required" }, 400); if (!(control.activeSteering || []).some((x: any) => x.id === id)) return json({ error: `active steering ${id} not found` }, 404); control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
+  if (type === "set-current-objective") { const objective = String(payload.text || payload.objective || "").trim(); if (!objective) return json({ error: "objective text is required" }, 400); control.currentObjective = { text: objective, source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
   if (["start-next-iteration", "continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) {
     const req = normalizeIterationRequestPayload(type, payload, control, actor);
     const requestErrors = iterationRequestErrors(req); if (requestErrors.length) return json({ error: "invalid managed launch request", details: requestErrors }, 400);
@@ -550,13 +602,15 @@ async function handleCommand(req: Request) {
   }
   if (type === "gate-decision") {
     const id = payload.id || payload.gateId;
+    if (!id) return json({ error: "gate id is required" }, 400);
+    if (!gates.gates.some((gate: any) => gate.id === id)) return json({ error: `gate ${id} not found` }, 404);
     const decision = { schemaVersion: "apb.gate-decision.v1", id: uid("decision"), gateId: id, runId: payload.runId || null, status: payload.status || "needs-evidence", decision: payload.decision || payload.status || "noted", evidenceArtifacts: payload.evidenceArtifacts || [], notes: payload.notes || "", decidedAt: now(), decidedBy: actor };
     for (const gate of gates.gates) if (gate.id === id) { gate.decisions = [decision, ...(gate.decisions || [])].slice(0, 20); gate.status = decision.status; gate.updatedAt = now(); gate.updatedBy = actor; }
     writeGates(gates); if (decision.runId) appendRunGateDecision(decision.runId, decision); return json(commandAck(command, { gateId: id, decision }));
   }
-  if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "attach-gate-evidence") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); if (!gates.gates.some((gate: any) => gate.id === id)) return json({ error: `gate ${id} not found` }, 404); for (const gate of gates.gates) if (gate.id === id) { gate.evidence = [{ id: uid("evidence"), runId: payload.runId || null, artifacts: payload.artifacts || payload.evidenceArtifacts || [], notes: payload.notes || "", attachedAt: now(), attachedBy: actor }, ...(gate.evidence || [])].slice(0, 30); gate.updatedAt = now(); gate.updatedBy = actor; } writeGates(gates); return json(commandAck(command, { gateId: id })); }
   if (type === "run-now") { control.requestedRunNow = true; writeControl(control); return json(commandAck(command, { effective: "next_runner_tick" })); }
-  if (type === "add-queue-item") { const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective: payload.objective || "", context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }
+  if (type === "add-queue-item") { const objective = String(payload.objective || "").trim(); if (!objective) return json({ error: "queue item objective is required" }, 400); const item = { id: uid("queue"), rank: queue.items.length + 1, priority: Number(payload.priority || 50), status: payload.pin ? "pinned" : "queued", title: payload.title || "Untitled project", objective, context: payload.context || "", constraints: String(payload.constraints || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), acceptanceGateIds: payload.acceptanceGateIds || [], target: payload.target || {}, createdBy: actor, createdAt: now(), updatedAt: now(), source: payload.source || "dashboard" }; queue.items.push(item); if (payload.pin) control.pinnedQueueItemId = item.id; writeQueue(queue); writeControl(control); return json(commandAck(command, { item })); }
   if (type === "clear-queue") {
     const clearedAt = now(), items = queue.items || [], queueItemIds = new Set(items.map((item: any) => item.id).filter(Boolean));
     if (control.pinnedQueueItemId) queueItemIds.add(control.pinnedQueueItemId);
@@ -569,10 +623,10 @@ async function handleCommand(req: Request) {
     writeQueue(queue); writeControl(control);
     return json(commandAck(command, { clearedQueueItemCount: items.length, clearedSteeringCount: retiredSteering.length, runnerParity: runnerParity() }));
   }
-  if (type === "pin-queue-item") { const id = payload.id || payload.itemId; for (const item of queue.items) item.status = item.id === id ? "pinned" : (item.status === "pinned" ? "queued" : item.status); control.pinnedQueueItemId = id; writeQueue(queue); writeControl(control); const item = queue.items.find((x: any) => x.id === id); if (item) writeFileSync(paths.idea, queueItemText(item)); return json(commandAck(command, { pinnedQueueItemId: id, exportedIdeaTxt: !!item })); }
-  if (type === "archive-queue-item") { const id = payload.id || payload.itemId; for (const item of queue.items) if (item.id === id) item.status = "archived"; if (control.pinnedQueueItemId === id) control.pinnedQueueItemId = null; writeQueue(queue); writeControl(control); return json(commandAck(command, { archived: id })); }
-  if (type === "add-gate") { const gate = { id: payload.id || uid("gate"), phase: payload.phase || "final-audit", severity: payload.severity || "must", description: payload.description || payload.title || "Acceptance gate", requiredEvidence: String(payload.requiredEvidence || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean), status: "pending", createdAt: now(), createdBy: actor }; gates.gates.push(gate); writeGates(gates); return json(commandAck(command, { gate })); }
-  if (type === "update-gate") { const id = payload.id || payload.gateId; for (const gate of gates.gates) if (gate.id === id) Object.assign(gate, payload, { updatedAt: now(), updatedBy: actor }); writeGates(gates); return json(commandAck(command, { gateId: id })); }
+  if (type === "pin-queue-item") { const id = payload.id || payload.itemId; if (!id) return json({ error: "queue item id is required" }, 400); const item = queue.items.find((x: any) => x.id === id); if (!item) return json({ error: `queue item ${id} not found` }, 404); if (item.status === "archived") return json({ error: `queue item ${id} is archived` }, 409); if (control.pinnedQueueItemId === id && item.status === "pinned") return json({ error: `queue item ${id} is already pinned` }, 409); for (const row of queue.items) row.status = row.id === id ? "pinned" : (row.status === "pinned" ? "queued" : row.status); control.pinnedQueueItemId = id; writeQueue(queue); writeControl(control); writeFileSync(paths.idea, queueItemText(item)); return json(commandAck(command, { pinnedQueueItemId: id, exportedIdeaTxt: true })); }
+  if (type === "archive-queue-item") { const id = payload.id || payload.itemId; if (!id) return json({ error: "queue item id is required" }, 400); const item = queue.items.find((x: any) => x.id === id); if (!item) return json({ error: `queue item ${id} not found` }, 404); if (item.status === "archived") return json({ error: `queue item ${id} is already archived` }, 409); item.status = "archived"; if (control.pinnedQueueItemId === id) control.pinnedQueueItemId = null; writeQueue(queue); writeControl(control); return json(commandAck(command, { archived: id })); }
+  if (type === "add-gate") { const evidence = requiredEvidence(payload.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); const gate = { id: payload.id || uid("gate"), phase: payload.phase || "final-audit", severity: payload.severity || "must", description: payload.description || payload.title || "Acceptance gate", requiredEvidence: evidence, status: "pending", createdAt: now(), createdBy: actor }; gates.gates.push(gate); writeGates(gates); return json(commandAck(command, { gate })); }
+  if (type === "update-gate") { const id = payload.id || payload.gateId; if (!id) return json({ error: "gate id is required" }, 400); const gate = gates.gates.find((row: any) => row.id === id); if (!gate) return json({ error: `gate ${id} not found` }, 404); const updates = Object.fromEntries(Object.entries(payload).filter(([key]) => !["id", "gateId"].includes(key))); if ("requiredEvidence" in updates) { const evidence = requiredEvidence(updates.requiredEvidence); if (!evidence) return json({ error: "requiredEvidence must be an array or newline-delimited string" }, 400); updates.requiredEvidence = evidence; } const changed = Object.entries(updates).some(([key, value]) => JSON.stringify(gate[key]) !== JSON.stringify(value)); if (!changed) return json({ error: `gate ${id} update has no changes` }, 409); Object.assign(gate, updates, { updatedAt: now(), updatedBy: actor }); writeGates(gates); return json(commandAck(command, { gateId: id })); }
   return json({ error: `unknown command type ${type}` }, 400);
 }
 

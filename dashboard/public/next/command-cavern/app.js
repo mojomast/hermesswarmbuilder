@@ -869,6 +869,7 @@ function drawConfirm() {
 
 function setTabletMinimized(minimized) {
   tabletMinimized = Boolean(minimized);
+  if (!tabletMinimized) cavernSelection = null;
   announce(tabletMinimized ? "Control tablet minimized. Cavern geometry is exposed; activate RESTORE TABLET or press T." : "Control tablet restored to full controls.");
   renderer?.requestFrame();
 }
@@ -1033,7 +1034,7 @@ class CavernRenderer {
   }
   isPortrait(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return aspect < 1; }
   tabletHalf(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) {
-    if (tabletMinimized) return this.isPortrait(aspect) ? [.55, 1.24] : [1.05, .59];
+    if (tabletMinimized) return this.isPortrait(aspect) ? [.3, .675] : [1.05, .59];
     if (!this.isPortrait(aspect)) return [3.25, 1.83];
     const distance = .45 - this.cameraZ(aspect), textureAspect = PORTRAIT_TEXTURE_HEIGHT / PORTRAIT_TEXTURE_WIDTH;
     const halfWidth = Math.min(distance * aspect / (2 * 1.42) * .92, distance / (2 * 1.42 * textureAspect) * .92);

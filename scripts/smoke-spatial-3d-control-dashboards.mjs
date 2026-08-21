@@ -83,7 +83,7 @@ assert.match(cavern, /function cavernRenderSignature\(value\)/, 'Command Cavern:
 assert.match(cavern, /if \(changed\) renderer\.requestFrame\(\)/, 'Command Cavern: unchanged telemetry still renders');
 assert.match(cavern, /MINIMIZABLE_TECTONIC_TABLET/, 'Command Cavern: minimizable tablet marker missing');
 assert.match(cavern, /function drawMinimizedUi\(\)/, 'Command Cavern: minimized restore inscription missing');
-assert.match(cavern, /tabletMinimized\) return this\.isPortrait\(aspect\) \? \[\.55, 1\.24\] : \[1\.05, \.59\]/, 'Command Cavern: minimized physical SDF bounds missing');
+assert.match(cavern, /tabletMinimized\) return this\.isPortrait\(aspect\) \? \[\.3, \.675\] : \[1\.05, \.59\]/, 'Command Cavern: minimized physical SDF bounds missing');
 assert.match(cavern, /RESTORE TABLET \[T\]/, 'Command Cavern: scene-native restore control missing');
 assert.match(cavern, /event\.key\.toLowerCase\(\) === "t"/, 'Command Cavern: tablet keyboard toggle missing');
 assert.match(cavern, /const LANDMARK_META = \[/, 'Command Cavern: exposed scene landmark catalogue missing');

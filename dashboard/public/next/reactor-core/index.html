@@ -4,101 +4,349 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Reactor Core | Class 1E Safety & SPDS Console</title>
+  <title>Nuclear Reactor Core Safety &amp; SPDS Console | Hermes SwarmBuilder</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <!-- Class 1E Masthead -->
-  <header class="rc-masthead">
+  <!-- Master Class 1E Safety Masthead Rail -->
+  <header class="rc-masthead" role="banner">
     <div class="rc-brand">
       <span class="rc-badge-1e">CLASS 1E</span>
-      <span>WESTINGHOUSE AP1000 // NUCLEAR CORE SAFETY CONSOLE</span>
+      <div class="rc-title-block">
+        <span class="rc-brand-text">WESTINGHOUSE AP1000 // CORE SAFETY CONSOLE</span>
+        <span class="rc-sub-brand">NUCLEAR STEAM SUPPLY &amp; SPDS SUPERVISORY WORKSTATION</span>
+      </div>
     </div>
-    <div style="display:flex;gap:14px;font-size:10.5px;" aria-live="polite">
-      <span>THERMAL POWER: <b id="thermalPower">100.0% (3,400 MWth)</b></span>
-      <span>CORE DELTA-T: <b style="color:var(--rc-flux-blue);">+34.2 °C</b></span>
-      <span>RPS TRIP: <b id="rpsTripStatus" style="color:var(--rc-flux-green);">ARMED / NORMAL</b></span>
-      <span>PHASE: <b id="rcPhase" style="color:var(--rc-flux-green);">IDLE</b></span>
+
+    <!-- Safety Parameter Display Strip -->
+    <div class="rc-telemetry-strip" aria-live="polite">
+      <div class="rc-stat-item">
+        <span class="rc-stat-label">THERMAL POWER</span>
+        <span class="rc-stat-val" id="thermalPower">3,400 MWth (100%)</span>
+      </div>
+      <div class="rc-stat-item">
+        <span class="rc-stat-label">CORE ΔT</span>
+        <span class="rc-stat-val" id="coreDeltaT">+34.2 °C</span>
+      </div>
+      <div class="rc-stat-item">
+        <span class="rc-stat-label">RPS INTERLOCK</span>
+        <span class="rc-stat-val" id="rpsTripStatus">ARMED / NORMAL</span>
+      </div>
+      <div class="rc-stat-item">
+        <span class="rc-stat-label">LINK</span>
+        <span class="rc-stat-val" id="connectionStatus">CONNECTED (SSE)</span>
+      </div>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button id="btnResyncCore" class="rc-btn" type="button">SYNC RPS</button>
-      <button id="btnBoration" class="rc-btn" style="background:#0369a1;" type="button">CVCS BORATION</button>
+
+    <!-- Action & SCRAM Control Strip -->
+    <div class="rc-masthead-actions">
+      <button id="btnStreamToggle" class="rc-btn" type="button" title="Pause or resume live telemetry stream">PAUSE STREAM</button>
+      <button id="btnResyncCore" class="rc-btn" type="button" title="Resynchronize Reactor Protection System">RESYNC RPS</button>
+      <button id="btnOpenCommand" class="rc-btn primary" type="button" title="Open Operator Command Station [C]">COMMAND STATION</button>
+      <button id="btnOpenPlanner" class="rc-btn primary" type="button" title="Open Fuel Load &amp; Project Planner [P]">PLANNER</button>
+      <button id="btnOpenEvidence" class="rc-btn" type="button" title="Inspect Nuclear Safety Evidence [E]">EVIDENCE</button>
+      <button id="btnOpenHelp" class="rc-btn" type="button" title="Open Nuclear Operations Manual [H]">HELP &amp; MANUAL</button>
+      <button id="btnManualScram" class="rc-btn-scram" type="button" title="Emergency Reactor SCRAM: Gravity Drop All Rod Banks">EMERGENCY SCRAM</button>
     </div>
   </header>
 
+  <!-- 16-Phase Workflow Strip -->
+  <section class="rc-workflow-bar" aria-label="16-Phase SwarmBuilder Reactor Workflow Progression">
+    <div class="rc-workflow-lead">
+      <span class="rc-wf-label">REACTOR WORKFLOW:</span>
+      <span class="rc-wf-phase" id="rcPhase">IDLE</span>
+      <span class="rc-wf-run" id="rcActiveRun">RUN: NONE</span>
+    </div>
+    <div class="rc-phase-track" id="workflowPhases" role="list">
+      <!-- 16 phases rendered by app.js -->
+    </div>
+    <div class="rc-blocker-banner" id="rcBlockerBanner" hidden>
+      <span class="rc-blocker-icon">☢️</span>
+      <span class="rc-blocker-text" id="rcBlockerText">RPS TRIP INTERLOCK ACTIVE</span>
+      <button id="btnQuickDeblock" class="rc-btn danger" type="button">DEBLOCK TRIP</button>
+    </div>
+  </section>
+
+  <!-- Main 3-Column Console Stage -->
   <main class="rc-stage">
-    <!-- Left Half: Hexagonal Core Flux Matrix & Control Rods -->
+    <!-- Left Column: 61-Hexagonal Core Flux Matrix & Control Rod Deck -->
     <section class="rc-left-col" aria-label="Hexagonal Fuel Matrix and Control Rods">
-      <div class="rc-core-wrap">
-        <svg id="hexCoreSvg" viewBox="0 0 600 550" role="img" aria-label="61-Element Hexagonal Nuclear Core Lattice"></svg>
+      <!-- 61-Element Hex Core Lattice -->
+      <div class="rc-core-wrap" aria-label="61-Element Hexagonal Nuclear Core Lattice">
+        <div class="rc-core-header">
+          <span class="rc-core-title">61-ELEMENT HEXAGONAL CORE AXIAL FLUX MATRIX</span>
+          <div class="rc-core-hud">
+            <span>SELECTED ASSEMBLY: <b id="lblSelectedFa">FA-01 (CENTER)</b></span>
+            <span>AVG FLUX: <b id="lblAvgFlux" style="color:var(--rc-flux-cyan);">0.94</b></span>
+          </div>
+        </div>
+        <div class="rc-svg-holder">
+          <svg id="hexCoreSvg" viewBox="0 0 600 550" role="img" aria-label="61-Element Hexagonal Nuclear Core Lattice"></svg>
+        </div>
       </div>
 
-      <!-- Control Rod Servo Bank Deck -->
+      <!-- Control Rod Drive Mechanism (CRDM) Servos Deck -->
       <div class="rc-rod-deck" aria-label="Control Rod Drive Mechanism Servos">
         <div class="rc-rod-unit" id="rodBankA">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:15%;"></div></div>
-          <span style="font-size:8.5px;color:#64748b;">BANK A</span>
+          <span class="rc-rod-label">BANK A (15%)</span>
         </div>
         <div class="rc-rod-unit" id="rodBankB">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:25%;"></div></div>
-          <span style="font-size:8.5px;color:#64748b;">BANK B</span>
+          <span class="rc-rod-label">BANK B (25%)</span>
         </div>
         <div class="rc-rod-unit" id="rodBankC">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:40%;"></div></div>
-          <span style="font-size:8.5px;color:#64748b;">BANK C</span>
+          <span class="rc-rod-label">BANK C (40%)</span>
         </div>
         <div class="rc-rod-unit" id="rodBankD">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:60%;"></div></div>
-          <span style="font-size:8.5px;color:#64748b;">BANK D</span>
+          <span class="rc-rod-label">BANK D (60%)</span>
         </div>
         <div class="rc-rod-unit" id="rodBankSD1">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span style="font-size:8.5px;color:#10b981;">SHUTDOWN 1</span>
+          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S1 (0%)</span>
         </div>
         <div class="rc-rod-unit" id="rodBankSD2">
           <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span style="font-size:8.5px;color:#10b981;">SHUTDOWN 2</span>
+          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S2 (0%)</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankSD3">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
+          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S3 (0%)</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankSD4">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
+          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S4 (0%)</span>
         </div>
       </div>
     </section>
 
-    <!-- Right Half: SPDS & Emergency SCRAM -->
-    <aside class="rc-right-col" aria-label="Safety Parameters and SCRAM Control">
-      <!-- Armed SCRAM Button -->
-      <div class="rc-section">
-        <div class="rc-scram-box">
-          <div>
-            <div style="color:#ef4444;font-weight:900;font-size:11px;">EMERGENCY REACTOR SCRAM</div>
-            <div style="font-size:9.5px;color:#94a3b8;">Manual Trip Breakers: ARMED</div>
+    <!-- Center Column: Safety Parameter Display System (SPDS) & Assembly Details -->
+    <section class="rc-center-col" aria-label="Safety Parameter Display System (SPDS)">
+      <!-- 8-Parameter SPDS Polygon -->
+      <div class="rc-spds-wrap">
+        <div class="rc-spds-header">
+          <span class="rc-spds-title">NUREG-0700 SAFETY PARAMETER DISPLAY SYSTEM (SPDS)</span>
+          <span class="rc-badge success" id="spdsStatusBadge">CLASS 1E NORMAL</span>
+        </div>
+        <div class="rc-spds-canvas-holder">
+          <canvas id="spdsCanvas" role="img" aria-label="8-Axis Nuclear Safety Parameter Display Polygon"></canvas>
+        </div>
+      </div>
+
+      <!-- Fuel Assembly Telemetry & Reactivity Deck -->
+      <div class="rc-assembly-meta-wrap">
+        <div class="rc-section-header">
+          <span>FUEL ASSEMBLY TELEMETRY (<span id="faIdDisplay">FA-01</span>)</span>
+          <button id="btnTrimBoration" class="rc-btn tiny primary" type="button">BORON TRIM</button>
+        </div>
+        <div class="rc-param-grid">
+          <div><label>ZONE / RING:</label> <b id="lblFaRing">RING 0 (CORE CENTER)</b></div>
+          <div><label>PEAK LINEAR POWER:</label> <b id="lblFaPower">38.4 kW/m</b></div>
+          <div><label>BURNUP STATUS:</label> <b id="lblFaBurnup">14,250 MWd/MTU</b></div>
+          <div><label>CLADDING TEMP:</label> <b id="lblFaTemp">318.4 °C (SAFE)</b></div>
+          <div><label>DNBR MARGIN:</label> <b id="lblFaDnbr" style="color:var(--rc-flux-green);">2.42 (&gt;1.30 LIM)</b></div>
+          <div><label>QPTR TILT:</label> <b id="lblFaQptr">1.008 (&lt;1.02 LIM)</b></div>
+        </div>
+      </div>
+
+      <!-- Active Runs Selector -->
+      <div class="rc-runs-deck">
+        <div class="rc-section-header">
+          <span>OPERATIONAL RUNS (<span id="runCount">0</span>)</span>
+          <button id="btnRefreshRuns" class="rc-btn tiny" type="button">REFRESH</button>
+        </div>
+        <select id="runSelect" class="rc-select" aria-label="Select active or historical run">
+          <option value="">No run loaded</option>
+        </select>
+        <div class="rc-run-meta-card" id="runMetaCard">
+          <div><span class="rc-dim">ID:</span> <span id="runCardId">None</span></div>
+          <div><span class="rc-dim">PROJECT:</span> <span id="runCardProject">None</span></div>
+          <div><span class="rc-dim">STATUS:</span> <span id="runCardStatus">Idle</span></div>
+          <div><span class="rc-dim">TASK:</span> <span id="runCardTask">No task</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Swarm Agents, Live Traffic Feed & Quick Gates -->
+    <aside class="rc-right-col" aria-label="Swarm Control Rods and Telemetry">
+      <!-- Active Swarm Agents -->
+      <section class="rc-section" style="max-height:14rem;display:flex;flex-direction:column;" aria-label="Swarm Control Servos">
+        <div class="rc-section-header">
+          <span>SWARM AGENT PROBES (<span id="agentCount">0</span>)</span>
+          <span class="rc-dim" style="font-size:11px;">RPS MONITORED</span>
+        </div>
+        <div class="rc-agent-list" id="agentList">
+          <!-- Rendered by app.js -->
+        </div>
+      </section>
+
+      <!-- Live Telemetry Stream -->
+      <section class="rc-section" style="flex:1;display:flex;flex-direction:column;min-height:16rem;" aria-label="Live Telemetry Feed">
+        <div class="rc-section-header">
+          <span>RPS TELEMETRY &amp; TOOL DISPATCH FEED</span>
+          <span class="rc-badge" id="telemetryCount">0 EVENTS</span>
+        </div>
+        <div class="rc-feed-controls">
+          <input id="telemetrySearch" class="rc-input" type="search" placeholder="Search events, tools, agents...">
+          <div class="rc-filter-chips">
+            <button class="rc-chip active" data-filter="all" type="button">ALL</button>
+            <button class="rc-chip" data-filter="tools" type="button">TOOLS</button>
+            <button class="rc-chip" data-filter="errors" type="button">ERRORS</button>
+            <button class="rc-chip" data-filter="system" type="button">SYSTEM</button>
+            <label class="rc-check-label"><input id="chkAutoScroll" type="checkbox" checked> AUTO</label>
           </div>
-          <button id="btnManualScram" class="rc-btn-scram" type="button">SCRAM</button>
         </div>
-      </div>
+        <div class="rc-telemetry-list" id="telemetryList" role="log" aria-live="polite">
+          <!-- Rendered by app.js -->
+        </div>
+      </section>
 
-      <!-- Core Deblock & Steering -->
-      <div class="rc-section">
-        <div class="rc-section-title">CORE REACTIVITY STEERING</div>
-        <div style="display:flex;gap:6px;">
-          <button id="btnDeblockCore" class="rc-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
-          <button id="btnAdviceCore" class="rc-btn" style="flex:1;" type="button">QUERY ADVICE</button>
+      <!-- Quick Acceptance Gates -->
+      <section class="rc-section" aria-label="Acceptance Gates">
+        <div class="rc-section-header">
+          <span>CLASS 1E ACCEPTANCE GATES</span>
+          <button id="btnOpenCommandGates" class="rc-btn tiny" type="button">MANAGE</button>
         </div>
-      </div>
-
-      <!-- Core Fuel Load Plans -->
-      <div class="rc-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div class="rc-section-title" style="margin-bottom:0;">CORE FUEL LOAD PLANS</div>
-          <button id="btnNewFuelPlan" class="rc-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+        <div class="rc-gates-quick-list" id="gatesQuickList">
+          <!-- Rendered by app.js -->
         </div>
-        <div id="fuelPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
-          <!-- Rendered by Mithril / app.js -->
-        </div>
-      </div>
+      </section>
     </aside>
   </main>
 
-  <div id="rcToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+  <!-- ==================== MODALS & DRAWERS ==================== -->
 
+  <!-- OPERATOR COMMAND STATION MODAL -->
+  <dialog id="commandModal" class="rc-dialog" aria-labelledby="cmdModalTitle">
+    <div class="rc-dialog-pane wide">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">🎛️</span>
+          <h2 id="cmdModalTitle">CLASS 1E OPERATOR COMMAND STATION // RUN AUTHORITY</h2>
+        </div>
+        <button id="btnCloseCommand" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+
+      <nav class="rc-modal-tabs">
+        <button class="rc-tab-btn active" data-cmd-tab="runctrl" type="button">RUN CONTROLS</button>
+        <button class="rc-tab-btn" data-cmd-tab="showcase" type="button">SHOWCASE LOOP</button>
+        <button class="rc-tab-btn" data-cmd-tab="deblock" type="button">DEBLOCK &amp; RECOVERY</button>
+        <button class="rc-tab-btn" data-cmd-tab="steering" type="button">STEERING DIRECTIVES</button>
+        <button class="rc-tab-btn" data-cmd-tab="queue" type="button">TASK QUEUE</button>
+        <button class="rc-tab-btn" data-cmd-tab="gates" type="button">ACCEPTANCE GATES</button>
+      </nav>
+
+      <div class="rc-dialog-body" id="cmdTabContent">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- PROJECT PLANNING WORKSTATION MODAL -->
+  <dialog id="plannerModal" class="rc-dialog" aria-labelledby="plannerModalTitle">
+    <div class="rc-dialog-pane ultra-wide">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">📐</span>
+          <h2 id="plannerModalTitle">PROJECT PLANNING WORKSTATION // CORE FUEL RELOAD RECIPES</h2>
+        </div>
+        <button id="btnClosePlanner" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+
+      <nav class="rc-modal-tabs">
+        <button class="rc-tab-btn active" data-plan-tab="list" type="button">SAVED PLANS</button>
+        <button class="rc-tab-btn" data-plan-tab="editor" type="button">PLAN EDITOR</button>
+        <button class="rc-tab-btn" data-plan-tab="review" type="button">REVIEW &amp; LAUNCH</button>
+        <button class="rc-tab-btn" data-plan-tab="copilot" type="button">PLANNING COPILOT</button>
+      </nav>
+
+      <div class="rc-dialog-body" id="plannerTabContent">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- EVIDENCE & ARTIFACTS VAULT MODAL -->
+  <dialog id="evidenceModal" class="rc-dialog" aria-labelledby="evidenceModalTitle">
+    <div class="rc-dialog-pane wide">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">📦</span>
+          <h2 id="evidenceModalTitle">EVIDENCE &amp; ARTIFACTS VAULT // NUCLEAR SAFETY DOSSIER</h2>
+        </div>
+        <button id="btnCloseEvidence" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+
+      <nav class="rc-modal-tabs">
+        <button class="rc-tab-btn active" data-evidence-tab="spec" type="button">SPEC.MD</button>
+        <button class="rc-tab-btn" data-evidence-tab="devplan" type="button">DEVPLAN.MD</button>
+        <button class="rc-tab-btn" data-evidence-tab="run" type="button">RUN JSON</button>
+        <button class="rc-tab-btn" data-evidence-tab="artifacts" type="button">ARTIFACTS</button>
+        <button class="rc-tab-btn" data-evidence-tab="logs" type="button">LOGS TAIL</button>
+        <button class="rc-tab-btn" data-evidence-tab="iterations" type="button">ITERATION SCORECARD</button>
+        <button class="rc-tab-btn" data-evidence-tab="audit" type="button">AUDIT TRAIL</button>
+      </nav>
+
+      <div class="rc-dialog-body" id="evidenceTabContent">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- TOOL CALL INSPECTOR MODAL -->
+  <dialog id="toolModal" class="rc-dialog" aria-labelledby="toolModalTitle">
+    <div class="rc-dialog-pane">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">🔍</span>
+          <h2 id="toolModalTitle">TOOL CALL DISPATCH INSPECTOR</h2>
+        </div>
+        <button id="btnCloseTool" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+      <div class="rc-dialog-body" id="toolModalContent">
+        <!-- Tool call JSON details rendered dynamically -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- INLINE FILE & ARTIFACT VIEWER MODAL -->
+  <dialog id="fileViewerModal" class="rc-dialog" aria-labelledby="fileViewerTitle">
+    <div class="rc-dialog-pane large">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">📄</span>
+          <h2 id="fileViewerTitle">ARTIFACT PREVIEW</h2>
+        </div>
+        <button id="btnCloseFileViewer" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+      <div class="rc-dialog-body">
+        <pre class="rc-code-block" id="fileViewerContent">Loading artifact...</pre>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- NUCLEAR OPERATIONS HELP & MANUAL MODAL -->
+  <dialog id="helpModal" class="rc-dialog" aria-labelledby="helpModalTitle">
+    <div class="rc-dialog-pane wide">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group">
+          <span class="rc-icon">📖</span>
+          <h2 id="helpModalTitle">CLASS 1E NUCLEAR OPERATIONS MANUAL // REACTOR SAFETY &amp; SPDS</h2>
+        </div>
+        <button id="btnCloseHelp" class="rc-btn small" type="button">CLOSE ✕</button>
+      </header>
+      <div class="rc-dialog-body" id="helpModalContent">
+        <!-- Rendered in app.js -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- TOAST NOTIFICATION HUB -->
+  <div id="rcToast" class="rc-toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- Shared Global Dashboard Directory Navigation Bar -->
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>
 </body>

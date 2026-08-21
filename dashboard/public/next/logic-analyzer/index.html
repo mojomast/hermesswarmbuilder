@@ -8,56 +8,103 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <header class="la-masthead">
+  <!-- Header Masthead -->
+  <header class="la-masthead" role="banner">
     <div class="la-brand">
-      <span>LOGIC</span>ANALYZER // TLA7000
+      <span class="la-brand-highlight">LOGIC</span>ANALYZER
+      <span class="la-model-tag">// TLA7000 HARDWARE BUS PROBE</span>
     </div>
     <div class="la-status-cluster" aria-live="polite">
-      <span id="connectionLamp" class="la-lamp active"></span>
-      <span id="connectionText">SSE_LOCKED</span>
-      <span id="sampleRateText">100 kS/s</span>
-      <span id="bufferDepthText">BUF: 0/5000</span>
+      <span id="connectionLamp" class="la-lamp active" title="SSE Stream Status"></span>
+      <span id="connectionText" class="la-stat-val">SSE_LOCKED</span>
+      <span class="la-divider">|</span>
+      <span class="la-stat-label">RATE:</span> <span id="sampleRateText" class="la-stat-val">100 kS/s</span>
+      <span class="la-divider">|</span>
+      <span class="la-stat-label">DEPTH:</span> <span id="bufferDepthText" class="la-stat-val">0 / 2000</span>
+      <span class="la-divider">|</span>
+      <span class="la-stat-label">RUN:</span> <span id="currentRunBadge" class="la-stat-val">NONE</span>
       <span id="phaseBadge" class="la-chip info">IDLE</span>
     </div>
-    <div class="la-toolbar" aria-label="Acquisition and pattern controls">
-      <button id="btnRunStop" class="la-btn primary" type="button">RUN / STOP</button>
-      <button id="btnSingle" class="la-btn" type="button">SINGLE TRIG</button>
-      <button id="btnRefresh" class="la-btn" type="button">RESYNC</button>
-      <button id="btnCommands" class="la-btn" type="button">PATTERN GEN</button>
-      <button id="btnPlanning" class="la-btn" type="button">PLAN ROM</button>
+    <div class="la-toolbar" role="toolbar" aria-label="Acquisition and Pattern Controls">
+      <button id="btnRunStop" class="la-btn primary" type="button" title="Pause or Resume Live Telemetry Acquisition [Space]">RUN / STOP</button>
+      <button id="btnSingle" class="la-btn" type="button" title="Single Trigger Resync [T]">TRIG RESYNC</button>
+      <button id="btnCommands" class="la-btn action" type="button" title="Operator Command Station / Pattern Generator [C]">PATTERN GEN</button>
+      <button id="btnPlanning" class="la-btn" type="button" title="Project Planning ROM Workstation [P]">PLAN ROM</button>
+      <button id="btnHelp" class="la-btn" type="button" title="Hardware Manual & Keyboard Shortcuts [H]">MANUAL & HELP</button>
     </div>
   </header>
 
-  <main class="la-workbench">
-    <section class="la-scope-stage" aria-label="Digital Timing Waveform Oscilloscope">
+  <!-- Main Workbench Layout -->
+  <main class="la-workbench" role="main">
+    <!-- Left Stage: Waveform Scope + State Listing -->
+    <section class="la-scope-stage" aria-label="Digital Timing Waveform Oscilloscope & Bus Disassembler">
+      <!-- Waveform Stage Header / Controls -->
+      <div class="la-stage-controls">
+        <div class="la-control-group">
+          <span class="la-group-title">TIMEBASE:</span>
+          <button id="btnZoomIn" class="la-btn xs" type="button" title="Zoom In Timebase [ArrowUp]">+</button>
+          <button id="btnZoomOut" class="la-btn xs" type="button" title="Zoom Out Timebase [ArrowDown]">-</button>
+          <span id="zoomDisplay" class="la-timebase-val">1.0 s/div</span>
+        </div>
+        <div class="la-control-group">
+          <span class="la-group-title">CURSORS:</span>
+          <button id="btnResetCursors" class="la-btn xs" type="button" title="Center Cursors on Viewport">CENTER</button>
+          <button id="btnSnapTrigger" class="la-btn xs" type="button" title="Snap C1 to Trigger T0">SNAP T0</button>
+        </div>
+        <div class="la-control-group">
+          <label class="la-checkbox-label">
+            <input id="chkAutoScroll" type="checkbox" checked>
+            <span>AUTO-SCROLL T0</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- High-DPI Canvas Viewport -->
       <div class="la-timing-canvas-wrap">
         <canvas id="waveformCanvas" aria-label="Logic Waveform Diagram" role="img"></canvas>
       </div>
-      <div class="la-cursor-hud" aria-label="Measurement Cursors">
-        <div class="la-cursor-val"><span class="la-c1">C1:</span> <span id="c1Val">T=0.000s</span></div>
-        <div class="la-cursor-val"><span class="la-c2">C2:</span> <span id="c2Val">T=0.000s</span></div>
-        <div class="la-cursor-val"><span class="la-delta">Δt:</span> <span id="deltaTVal">0.000s</span> (<span id="freqVal">0.0 Hz</span>)</div>
-        <div class="la-cursor-val"><span>ZOOM:</span> <span id="zoomVal">1.0s/div</span></div>
+
+      <!-- Measurement Cursor HUD Strip -->
+      <div class="la-cursor-hud" aria-label="Delta-Time Measurement Cursors">
+        <div class="la-cursor-val"><span class="la-c1-label">C1 (Cyan):</span> <span id="c1Val">T=0.000s</span></div>
+        <div class="la-cursor-val"><span class="la-c2-label">C2 (Magenta):</span> <span id="c2Val">T=0.000s</span></div>
+        <div class="la-cursor-val"><span class="la-delta-label">Δt:</span> <span id="deltaTVal">0.000s</span> (<span id="freqVal">0.0 Hz</span>)</div>
+        <div class="la-cursor-val"><span class="la-stat-label">TRIGGER T0:</span> <span id="triggerVal">LATEST</span></div>
+        <div class="la-cursor-val"><span class="la-stat-label">C1 BUS STATE:</span> <span id="c1BusState" class="la-bus-preview">IDLE</span></div>
       </div>
+
+      <!-- Lower Deck: Synchronized State Listing (Bus Disassembler) -->
       <div class="la-lower-deck">
         <div class="la-listing-pane">
           <div class="la-pane-header">
-            <span>SYNCHRONIZED STATE LISTING (BUS DISASSEMBLER)</span>
-            <span id="listingCount">0 SAMPLES</span>
+            <div class="la-pane-title-group">
+              <span class="la-pane-title">SYNCHRONIZED STATE LISTING (BUS PROTOCOL DISASSEMBLER)</span>
+              <span id="listingCount" class="la-chip info">0 SAMPLES</span>
+            </div>
+            <div class="la-filter-bar">
+              <input id="listingSearch" type="search" placeholder="Search disassembler packets..." class="la-input-search" aria-label="Filter state listing">
+              <div class="la-filter-buttons" role="group" aria-label="Channel Filters">
+                <button class="la-filter-btn active" data-filter="all" type="button">ALL</button>
+                <button class="la-filter-btn" data-filter="tools" type="button">TOOLS</button>
+                <button class="la-filter-btn" data-filter="alerts" type="button">ALERTS / ERRORS</button>
+                <button class="la-filter-btn" data-filter="system" type="button">SYSTEM</button>
+              </div>
+            </div>
           </div>
           <div class="la-listing-table-wrap">
             <table class="la-table" role="grid" aria-label="State Listing Table">
               <thead>
                 <tr>
-                  <th>SAMPLE #</th>
-                  <th>TIMESTAMP</th>
-                  <th>BUS / CHANNEL</th>
-                  <th>EVENT / ACTION</th>
-                  <th>PAYLOAD SUMMARY</th>
+                  <th scope="col" style="width: 100px;">SAMPLE #</th>
+                  <th scope="col" style="width: 140px;">TIMESTAMP</th>
+                  <th scope="col" style="width: 160px;">POD / CHANNEL</th>
+                  <th scope="col" style="width: 180px;">EVENT / ACTION</th>
+                  <th scope="col">PAYLOAD DISASSEMBLY</th>
+                  <th scope="col" style="width: 90px; text-align: center;">INSPECT</th>
                 </tr>
               </thead>
               <tbody id="stateListingBody">
-                <tr><td colspan="5" style="text-align:center;color:#556;">Awaiting logic acquisition frames...</td></tr>
+                <tr><td colspan="6" style="text-align:center;color:var(--la-text-dim);padding:24px;">Awaiting logic acquisition frames from Hermes Swarm...</td></tr>
               </tbody>
             </table>
           </div>
@@ -65,29 +112,61 @@
       </div>
     </section>
 
-    <aside class="la-inspector-deck" aria-label="Signal Inspector and ROM Programmer">
+    <!-- Right Stage: Inspector Deck & ROM Programmer (Preact Container) -->
+    <aside class="la-inspector-deck" aria-label="Signal Inspector, Evidence Viewer, and ROM Programmer">
       <div class="la-tabs" role="tablist" aria-label="Inspector Panels">
-        <button class="la-tab active" role="tab" aria-selected="true" data-tab="signals">SIGNALS</button>
-        <button class="la-tab" role="tab" aria-selected="false" data-tab="evidence">EVIDENCE</button>
-        <button class="la-tab" role="tab" aria-selected="false" data-tab="plans">PROJECT PLANS</button>
-        <button class="la-tab" role="tab" aria-selected="false" data-tab="assist">AI ASSIST</button>
+        <button id="tab-signals" class="la-tab active" role="tab" aria-selected="true" data-tab="signals">SIGNALS &amp; RUNS</button>
+        <button id="tab-evidence" class="la-tab" role="tab" aria-selected="false" data-tab="evidence">EVIDENCE</button>
+        <button id="tab-plans" class="la-tab" role="tab" aria-selected="false" data-tab="plans">PROJECT PLANS</button>
+        <button id="tab-assist" class="la-tab" role="tab" aria-selected="false" data-tab="assist">AI COPILOT</button>
       </div>
       <div id="inspectorContent" class="la-tab-content">
-        <!-- Rendered by Preact / app.js -->
+        <!-- Rendered reactively via Preact in app.js -->
       </div>
     </aside>
   </main>
 
-  <dialog id="patternGenDialog" class="la-dialog">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <h3 style="font-size:12px;color:var(--la-cyan);">PATTERN GENERATOR & OPERATOR VECTOR TRANSMITTER</h3>
-      <button class="la-btn" type="button" id="btnClosePatternGen">X</button>
+  <!-- Pattern Generator & Operator Command Station Dialog -->
+  <dialog id="patternGenDialog" class="la-dialog" aria-labelledby="patternGenTitle">
+    <div class="la-dialog-header">
+      <h3 id="patternGenTitle" class="la-dialog-title">PATTERN GENERATOR &amp; OPERATOR COMMAND STATION</h3>
+      <button class="la-btn xs" type="button" id="btnClosePatternGen" aria-label="Close Pattern Generator">✕</button>
     </div>
-    <div id="patternGenContent"></div>
+    <div id="patternGenContent" class="la-dialog-body">
+      <!-- Rendered reactively via Preact in app.js -->
+    </div>
   </dialog>
 
-  <div id="statusToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:3px;font-size:11px;z-index:999;"></div>
+  <!-- Evidence / Artifact / Log / Plan Viewer Modal -->
+  <dialog id="evidenceViewerDialog" class="la-dialog la-dialog-lg" aria-labelledby="evidenceViewerTitle">
+    <div class="la-dialog-header">
+      <h3 id="evidenceViewerTitle" class="la-dialog-title">TELEMETRY ARTIFACT DISSECTOR</h3>
+      <div class="la-dialog-header-actions">
+        <button id="btnCopyEvidence" class="la-btn xs" type="button">COPY RAW</button>
+        <button id="btnCloseEvidence" class="la-btn xs" type="button" aria-label="Close Viewer">✕</button>
+      </div>
+    </div>
+    <div class="la-dialog-body">
+      <div id="evidenceMeta" class="la-meta-strip"></div>
+      <pre id="evidenceBody" class="la-code-block"></pre>
+    </div>
+  </dialog>
 
+  <!-- Hardware Manual & Operator Guide Modal -->
+  <dialog id="helpManualDialog" class="la-dialog la-dialog-lg" aria-labelledby="helpManualTitle">
+    <div class="la-dialog-header">
+      <h3 id="helpManualTitle" class="la-dialog-title">TLA7000 HARDWARE MANUAL &amp; OPERATOR GUIDE</h3>
+      <button id="btnCloseHelp" class="la-btn xs" type="button" aria-label="Close Manual">✕</button>
+    </div>
+    <div id="helpManualContent" class="la-dialog-body la-manual-body">
+      <!-- Rendered in app.js or static manual content -->
+    </div>
+  </dialog>
+
+  <!-- Status Notification Toast -->
+  <div id="statusToast" role="status" aria-live="polite" class="la-toast"></div>
+
+  <!-- Scripts -->
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>
 </body>

@@ -4,81 +4,97 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Robotics Teleoperation Workstation | JPL GDS & MoveIt</title>
+  <title>Robotics Teleoperation | Planetary Rover Twin & DSN Uplink</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <!-- Top DSN Rail -->
   <header class="rt-masthead">
     <div class="rt-brand">
-      <span>NASA JPL // PERSEVERANCE GDS & MOVEIT 2</span>
+      <span>NASA JPL</span> // MARS 2020 TELEOP WORKSTATION
     </div>
     <div class="rt-dsn-status" aria-live="polite">
-      <span>DSN STATION 14 (GOLDSTONE): <b style="color:var(--rt-hud-green);">UPLINK LOCKED</b></span>
-      <span>RTLT LATENCY: <b id="rtltLatency">14.2 ms</b></span>
-      <span>SOL: <b id="solDay">SOL 412</b></span>
-      <span>PHASE: <b id="roverPhase" style="color:var(--rt-hud-cyan);">IDLE</b></span>
+      <span>DSN 70M: <b style="color:var(--rt-hud-green);">LOCKED 8.4 GHz</b></span>
+      <span>MISSION RUN: <b id="roverRunId" style="color:#fff;">NONE</b></span>
+      <span>PHASE: <b id="missionPhase" style="color:var(--rt-hud-cyan);">IDLE</b></span>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button id="btnResyncDsn" class="rt-btn" type="button">SYNC DSN</button>
-      <button id="btnEStopRover" class="rt-btn danger" type="button">EMERGENCY ALL-STOP</button>
+    <div class="rt-toolbar" aria-label="Rover operator controls">
+      <button id="btnRefresh" class="rt-btn" type="button">SYNC DSN</button>
+      <button id="btnCommands" class="rt-btn primary" type="button">UPLINK BUNDLE</button>
+      <button id="btnPlanning" class="rt-btn" type="button">MISSION PLANS</button>
+      <button id="btnHelp" class="rt-btn" type="button" style="border-color:var(--rt-hud-cyan);">? MANUAL</button>
     </div>
   </header>
 
   <main class="rt-workbench">
-    <!-- 3D WebGL Kinematics Viewport -->
-    <section class="rt-viewport-wrap" aria-label="3D Rover Digital Twin and Terrain Costmap">
-      <canvas id="webglCanvas" role="img" aria-label="3D Rover Articulated Digital Twin Simulation"></canvas>
+    <!-- Left 3D Viewport Stage (60% width) -->
+    <section class="rt-viewport-wrap" aria-label="3D Kinematic Rover Digital Twin Viewport">
+      <canvas id="webglCanvas" role="img" aria-label="Three.js WebGL Rover Kinematics Viewport"></canvas>
 
-      <!-- Heads-Up Display (HUD) -->
-      <div class="rt-hud-overlay" aria-label="Rover Subsystem HUD">
-        <div style="color:var(--rt-hud-cyan);font-weight:bold;">ROVER DIGITAL TWIN // 6-DOF TELEMETRY</div>
-        <div>RUN ID: <b id="hudRunId" style="color:#fff;">NONE</b></div>
-        <div>BATTERY: <b style="color:var(--rt-hud-green);">94.2% (720 Wh)</b></div>
-        <div>JOINT 1 (AZIMUTH): <span id="j1Val">+014.2°</span></div>
-        <div>JOINT 2 (ELEVATION): <span id="j2Val">-032.5°</span></div>
-        <div>JOINT 3 (WRIST): <span id="j3Val">+088.0°</span></div>
-        <div>OBSTACLE RISK: <b id="riskVal" style="color:var(--rt-hud-green);">LOW (0.04)</b></div>
+      <!-- Heads-Up Display Overlay -->
+      <div class="rt-hud-overlay" aria-label="Telemetry HUD">
+        <div style="font-weight:900;color:var(--rt-hud-cyan);">ROVER KINEMATICS HUD</div>
+        <div>ARM AZIMUTH (&theta;1): <b style="color:#fff;" id="hudTheta1">045.0°</b></div>
+        <div>ARM ELEVATION (&theta;2): <b style="color:#fff;" id="hudTheta2">030.0°</b></div>
+        <div>WRIST PITCH (&theta;3): <b style="color:#fff;" id="hudTheta3">-015.0°</b></div>
+        <div>BATTERY SOC: <b style="color:var(--rt-hud-green);">98.4% (31.2V)</b></div>
+        <div>OBSTACLE RISK: <b style="color:var(--rt-hud-green);" id="hudRisk">0.02 (CLEAR)</b></div>
       </div>
     </section>
 
-    <!-- Right Staged Uplink & Mission Planner Deck -->
-    <aside class="rt-teleop-deck" aria-label="Staged Uplink and Mission Planner">
-      <!-- Staged Uplink Sequencer -->
-      <div class="rt-section">
-        <div class="rt-section-header">STAGED UPLINK COMMAND SEQUENCER</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
-          <button id="btnStagePause" class="rt-btn" type="button">STAGE PAUSE</button>
-          <button id="btnStageResume" class="rt-btn" type="button">STAGE RESUME</button>
-          <button id="btnStageWake" class="rt-btn primary" type="button">STAGE RUN NOW</button>
-          <button id="btnStageLoop" class="rt-btn" style="color:var(--rt-hud-amber);" type="button">STAGE SHOWCASE</button>
-        </div>
-        <button id="btnTransmitUplink" class="rt-btn primary" style="width:100%;" type="button">TRANSMIT UPLINK PASS (ARM & FIRE)</button>
+    <!-- Right Teleop Deck (40% width) -->
+    <aside class="rt-teleop-deck" aria-label="Telemetry and Staged Uplink Deck">
+      <div class="rt-tabs" role="tablist" aria-label="Inspector Panels">
+        <button class="rt-tab active" role="tab" aria-selected="true" data-tab="kinematics">KINEMATICS</button>
+        <button class="rt-tab" role="tab" aria-selected="false" data-tab="traffic">DSN LOG</button>
+        <button class="rt-tab" role="tab" aria-selected="false" data-tab="evidence">EVIDENCE</button>
+        <button class="rt-tab" role="tab" aria-selected="false" data-tab="assist">NAV AI</button>
       </div>
-
-      <!-- Deblock & Steer Guidance -->
-      <div class="rt-section">
-        <div class="rt-section-header">HAZARD RECOVERY & STEERING</div>
-        <div style="display:flex;gap:6px;">
-          <button id="btnDeblockRover" class="rt-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
-          <button id="btnAdviceRover" class="rt-btn" style="flex:1;" type="button">QUERY ADVICE</button>
-        </div>
-      </div>
-
-      <!-- Mission Sequence Plans -->
-      <div class="rt-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div class="rt-section-header" style="margin-bottom:0;">MISSION PLANS</div>
-          <button id="btnNewMissionPlan" class="rt-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
-        </div>
-        <div id="missionPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
-          <!-- Rendered by Three.js / app.js -->
-        </div>
+      <div id="inspectorContent" class="rt-tab-content">
+        <!-- Rendered by Three.js / app.js -->
       </div>
     </aside>
   </main>
 
-  <div id="rtToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+  <!-- Uplink Commands Modal -->
+  <dialog id="commandDialog" class="rt-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--rt-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--rt-hud-cyan);font-weight:800;">DSN UPLINK SEQUENCER & RECOVERY ACTIONS</h3>
+      <button class="rt-btn" type="button" id="btnCloseCommands">CLOSE [X]</button>
+    </div>
+    <div id="commandDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- Mission Plans Modal -->
+  <dialog id="planDialog" class="rt-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--rt-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--rt-hud-cyan);font-weight:800;">MISSION ACTIVITY PLANS & REVISIONS</h3>
+      <button class="rt-btn" type="button" id="btnClosePlans">CLOSE [X]</button>
+    </div>
+    <div id="planDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- Help & Manual Modal -->
+  <dialog id="helpDialog" class="rt-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--rt-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--rt-hud-cyan);font-weight:800;">ROBOTICS TELEOP OPERATIONAL MANUAL</h3>
+      <button class="rt-btn" type="button" id="btnCloseHelp">CLOSE [X]</button>
+    </div>
+    <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:0.85rem;font-size:0.85rem;line-height:1.6;color:var(--rt-text);">
+      <p><b style="color:var(--rt-hud-cyan);">System Overview:</b> Modeled after NASA Jet Propulsion Laboratory (JPL) Mars 2020 Ground Data System (GDS) and ROS MoveIt robotics teleoperation architectures.</p>
+      <h4 style="color:var(--rt-hud-green);margin-top:0.5rem;">3D Digital Twin & Staged Uplinks</h4>
+      <ul style="padding-left:1.5rem;display:grid;gap:0.3rem;">
+        <li><b>3D Kinematic Digital Twin</b>: Real-time WebGL visualization of the rover chassis, 6-wheel rocker-bogie suspension, and 3-segment robotic manipulator arm.</li>
+        <li><b>Staged Uplink Sequencer</b>: Teleoperation commands are staged into uplink packages and dispatched across the Deep Space Network (DSN).</li>
+        <li><b>Obstacle Avoidance Risk HUD</b>: Evaluates execution hazards and blocker conditions automatically.</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <div id="rtToast" role="status" aria-live="polite" style="position:fixed;bottom:1rem;right:1rem;display:none;padding:0.6rem 1.2rem;border-radius:4px;font-size:0.9rem;font-weight:700;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.8);"></div>
 
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>

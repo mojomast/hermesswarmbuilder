@@ -4,105 +4,1005 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>CNC Machining Center | 5-Axis G-Code Motion Controller</title>
+  <title>CNC Machining Center | Fanuc 31i-B5 5-Axis Motion Controller</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body>
-  <header class="cnc-masthead">
-    <div class="cnc-brand">
-      <span class="cnc-badge auto" id="modeBadge">AUTO</span>
-      <span>FANUC 31i-B5 // 5-AXIS CNC MACHINING CENTER</span>
+<body x-data="cncApp()" x-init="init()" @keydown.window="handleKeydown($event)">
+  <div class="cnc-app-container">
+    <!-- Industrial Controller Masthead -->
+    <header class="cnc-masthead">
+      <div class="cnc-brand-group">
+        <!-- 3-Color Andon Beacon Light Tower -->
+        <div class="cnc-andon-tower" :title="'Machine State: ' + (isBlocked ? 'ALARM / BLOCKED' : isRunning ? 'CYCLE RUNNING' : 'FEED HOLD / IDLE')">
+          <div class="cnc-andon-lamp red" :class="{ lit: isBlocked }"></div>
+          <div class="cnc-andon-lamp amber" :class="{ lit: isPaused && !isBlocked }"></div>
+          <div class="cnc-andon-lamp green" :class="{ lit: isRunning && !isBlocked }"></div>
+        </div>
+
+        <div class="cnc-brand-title">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="cnc-mode-badge" :class="machineMode">{{ machineMode.toUpperCase() }}</span>
+            <span class="cnc-brand-name">FANUC 31i-B5 // 5-AXIS CNC MACHINING CENTER</span>
+          </div>
+          <span class="cnc-brand-sub">HIGH-SPEED SUBTRACTIVE SWARM FABRICATOR & MOTION CONTROLLER</span>
+        </div>
+      </div>
+
+      <!-- Quick Telemetry & Coordinate Strip -->
+      <div class="cnc-masthead-status">
+        <div class="cnc-status-item">
+          <span class="cnc-status-label">WCS:</span>
+          <select class="cnc-select-wcs" x-model="selectedWcs">
+            <option value="G54">G54 (PART ZERO 1)</option>
+            <option value="G55">G55 (FIXTURE 2)</option>
+            <option value="G56">G56 (ROTARY A/B)</option>
+            <option value="G57">G57 (STOCK ENVELOPE)</option>
+          </select>
+        </div>
+
+        <div class="cnc-status-item">
+          <span class="cnc-status-label">PART PROG:</span>
+          <b class="cnc-cyan-val" x-text="activeProgramName">O1001.NC</b>
+        </div>
+
+        <div class="cnc-status-item">
+          <span class="cnc-status-label">TARGET RUN:</span>
+          <select class="cnc-run-select" :value="snapshot.selectedRunId || ''" @change="onRunChange($event.target.value)">
+            <option value="" disabled>Select target run...</option>
+            <template x-for="r in snapshot.runs" :key="r.id || r.runId">
+              <option :value="r.id || r.runId" x-text="(r.id || r.runId) + ' (' + (r.status || 'unknown') + ')'"></option>
+            </template>
+          </select>
+        </div>
+
+        <div class="cnc-status-item">
+          <span class="cnc-status-label">CYCLE PHASE:</span>
+          <span class="cnc-phase-pill" :class="'phase-' + (snapshot.state?.phase || 'idle')" x-text="(snapshot.state?.phase || 'IDLE').toUpperCase()"></span>
+        </div>
+
+        <div class="cnc-status-item" x-show="isBlocked">
+          <button class="cnc-alarm-btn" @click="openModal('command', 'deblock')">
+            <span class="cnc-alarm-flash">⚠</span> ALARM TRIPPED: DEBLOCK
+          </button>
+        </div>
+
+        <div class="cnc-status-item">
+          <span class="cnc-status-label">DNC BUS:</span>
+          <span class="cnc-dnc-pill" :class="snapshot.connection?.status" x-text="(snapshot.connection?.status || 'OFFLINE').toUpperCase()"></span>
+        </div>
+      </div>
+
+      <!-- Masthead Action Buttons -->
+      <div class="cnc-masthead-actions">
+        <button class="cnc-top-btn" @click="togglePauseStream()" :class="{ active: snapshot.connection?.paused }">
+          <span x-text="snapshot.connection?.paused ? 'RESUME DNC' : 'HOLD DNC'"></span>
+        </button>
+        <button class="cnc-top-btn" @click="refreshAll()" title="Re-sync all NC controller registries">
+          SYNC DNC
+        </button>
+        <button class="cnc-top-btn" @click="toggleConnection()">
+          <span x-text="snapshot.connection?.status === 'disconnected' ? 'CONNECT DNC' : 'DISCONNECT'"></span>
+        </button>
+        <button class="cnc-top-btn highlight" @click="openModal('telemetry')">
+          DNC LOGS (<span x-text="snapshot.events?.length || 0"></span>)
+        </button>
+        <button class="cnc-top-btn highlight" @click="openModal('evidence')">
+          CMM EVIDENCE
+        </button>
+        <button class="cnc-top-btn highlight" @click="openModal('command')">
+          COMMAND STATION
+        </button>
+        <button class="cnc-top-btn highlight" @click="openModal('planner')">
+          CAM PLANS (<span x-text="snapshot.plans?.length || 0"></span>)
+        </button>
+        <button class="cnc-top-btn highlight" @click="openModal('copilot')">
+          CAM COPILOT
+        </button>
+        <button class="cnc-top-btn help-btn" @click="openModal('help')">
+          HANDBOOK (?)
+        </button>
+      </div>
+    </header>
+
+    <!-- Main CNC Pendant Deck -->
+    <main class="cnc-pendant">
+      <!-- Left Column: 5-Axis Precision DRO & 3D Isometric Toolpath Viewport -->
+      <section class="cnc-left-col" aria-label="Position DRO and Toolpath Simulation">
+        <!-- 5-Axis Precision DRO Panel -->
+        <div class="cnc-dro-panel" aria-label="Digital Readout Coordinates">
+          <!-- Axis X -->
+          <div class="cnc-dro-axis" :class="{ moving: isRunning }">
+            <div class="cnc-axis-header">
+              <span class="cnc-axis-name">AXIS X (PROGRESS TRAVEL)</span>
+              <span class="cnc-axis-mode" x-text="droMode"></span>
+            </div>
+            <div class="cnc-axis-val-row">
+              <span class="cnc-axis-val" x-text="formatCoordinate(droX)">+000.000</span>
+              <span class="cnc-axis-unit" x-text="unitLabel">mm</span>
+            </div>
+            <div class="cnc-axis-dtg">DTG: <span x-text="formatCoordinate(100 - droX)">+100.000</span></div>
+          </div>
+
+          <!-- Axis Y -->
+          <div class="cnc-dro-axis" :class="{ moving: isRunning }">
+            <div class="cnc-axis-header">
+              <span class="cnc-axis-name">AXIS Y (FEATURE STEP)</span>
+              <span class="cnc-axis-mode" x-text="droMode"></span>
+            </div>
+            <div class="cnc-axis-val-row">
+              <span class="cnc-axis-val" x-text="formatCoordinate(droY)">+001.000</span>
+              <span class="cnc-axis-unit" x-text="unitLabel">mm</span>
+            </div>
+            <div class="cnc-axis-dtg">DTG: <span x-text="formatCoordinate(50 - droY)">+049.000</span></div>
+          </div>
+
+          <!-- Axis Z -->
+          <div class="cnc-dro-axis" :class="{ moving: isRunning }">
+            <div class="cnc-axis-header">
+              <span class="cnc-axis-name">AXIS Z (TOOL DEPTH / AGENTS)</span>
+              <span class="cnc-axis-mode" x-text="droMode"></span>
+            </div>
+            <div class="cnc-axis-val-row">
+              <span class="cnc-axis-val z-val" x-text="formatCoordinate(droZ)">-004.000</span>
+              <span class="cnc-axis-unit" x-text="unitLabel">mm</span>
+            </div>
+            <div class="cnc-axis-dtg">SPINDLE LOAD: <span class="cnc-cyan-val" x-text="spindleLoadPct + '%'">42%</span></div>
+          </div>
+
+          <!-- Axis A -->
+          <div class="cnc-dro-axis" :class="{ moving: isRunning }">
+            <div class="cnc-axis-header">
+              <span class="cnc-axis-name">AXIS A (GATE TILT HEAD)</span>
+              <span class="cnc-axis-mode">ROTARY</span>
+            </div>
+            <div class="cnc-axis-val-row">
+              <span class="cnc-axis-val a-val" x-text="formatAngle(droA)">+035.000°</span>
+              <span class="cnc-axis-unit">deg</span>
+            </div>
+            <div class="cnc-axis-dtg">RANGE: -120° / +120°</div>
+          </div>
+
+          <!-- Axis B -->
+          <div class="cnc-dro-axis" :class="{ moving: isRunning }">
+            <div class="cnc-axis-header">
+              <span class="cnc-axis-name">AXIS B (THROUGHPUT TABLE)</span>
+              <span class="cnc-axis-mode">ROTARY</span>
+            </div>
+            <div class="cnc-axis-val-row">
+              <span class="cnc-axis-val b-val" x-text="formatAngle(droB)">+180.000°</span>
+              <span class="cnc-axis-unit">deg</span>
+            </div>
+            <div class="cnc-axis-dtg">CONTINUOUS 360°</div>
+          </div>
+        </div>
+
+        <!-- 3D Isometric Toolpath Viewport Canvas -->
+        <div class="cnc-toolpath-wrap">
+          <!-- Canvas Overlay HUD -->
+          <div class="cnc-canvas-hud">
+            <div class="cnc-hud-item">
+              <span>VIEW:</span>
+              <div class="cnc-view-btn-group">
+                <button class="cnc-view-btn" :class="{ active: viewPreset === 'iso' }" @click="setViewPreset('iso')">ISO</button>
+                <button class="cnc-view-btn" :class="{ active: viewPreset === 'top' }" @click="setViewPreset('top')">TOP (XY)</button>
+                <button class="cnc-view-btn" :class="{ active: viewPreset === 'front' }" @click="setViewPreset('front')">FRONT (XZ)</button>
+                <button class="cnc-view-btn" :class="{ active: viewPreset === 'side' }" @click="setViewPreset('side')">SIDE (YZ)</button>
+              </div>
+            </div>
+
+            <div class="cnc-hud-item">
+              <span>ROTATION:</span>
+              <button class="cnc-view-btn" @click="autoRotate = !autoRotate">
+                <span x-text="autoRotate ? 'PAUSE ORBIT' : 'AUTO ORBIT'"></span>
+              </button>
+            </div>
+
+            <div class="cnc-hud-item">
+              <span>TRAJECTORY:</span>
+              <b class="cnc-green-val"><span x-text="toolpathPoints.length"></span> BLOCKS</b>
+            </div>
+          </div>
+
+          <canvas id="toolpathCanvas" role="img" aria-label="Isometric 3D CNC Toolpath Simulation Viewport"></canvas>
+        </div>
+      </section>
+
+      <!-- Right Column: Spindle Speed, ATC Tool Turret, G-Code Stream, Hard-Keys -->
+      <aside class="cnc-right-col" aria-label="G-Code Execution and Machine Controls">
+        <!-- Spindle & Feed Pacing Box -->
+        <div class="cnc-spindle-box">
+          <div class="cnc-spindle-metric">
+            <span class="cnc-metric-label">SPINDLE SPEED (M03)</span>
+            <div class="cnc-tach-val" x-text="spindleRpm.toLocaleString() + ' RPM'">14,200 RPM</div>
+            <div class="cnc-tach-bar-wrap">
+              <div class="cnc-tach-bar" :style="{ width: (spindleRpm / 24000 * 100) + '%' }"></div>
+            </div>
+          </div>
+
+          <div class="cnc-spindle-metric">
+            <span class="cnc-metric-label">FEED RATE OVERRIDE (FRO)</span>
+            <div class="cnc-fro-val">
+              <span x-text="froPct + '%'">100%</span>
+              <small>(<span x-text="Math.round(1200 * (froPct / 100))">1200</span> mm/min)</small>
+            </div>
+            <input type="range" min="10" max="150" step="5" x-model.number="froPct" class="cnc-fro-slider">
+          </div>
+
+          <div class="cnc-spindle-metric">
+            <span class="cnc-metric-label">ACTIVE TOOL (ATC)</span>
+            <div class="cnc-tool-val" x-text="activeToolName">T01 (LEAD ARCHITECT)</div>
+            <div class="cnc-tool-offset">D01: R3.000 / L120.000</div>
+          </div>
+        </div>
+
+        <!-- Automatic Tool Changer (ATC) Turret Pocket Strip -->
+        <div class="cnc-atc-turret">
+          <template x-for="(tool, idx) in atcTools" :key="tool.id">
+            <div class="cnc-turret-pocket" :class="{ active: activeToolId === tool.id, ready: tool.status === 'ready' }" @click="selectToolPocket(tool.id)">
+              <span class="cnc-pocket-id" x-text="tool.id">T01</span>
+              <span class="cnc-pocket-role" x-text="tool.role">ARCH</span>
+              <div class="cnc-pocket-lamp" :class="tool.status"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- G-Code Program Stream Buffer -->
+        <div class="cnc-gcode-header">
+          <span>G-CODE EXECUTION BUFFER (BLOCKS)</span>
+          <span class="cnc-dim-text">LOOK-AHEAD: 50 BLOCKS</span>
+        </div>
+
+        <div class="cnc-gcode-pane" id="gcodeBuffer" aria-label="G-Code Block Execution Stream">
+          <template x-for="(block, idx) in gcodeBlocks" :key="idx">
+            <div class="cnc-gcode-line" :class="{ active: idx === activeBlockIndex }">
+              <span class="cnc-line-num" x-text="'N' + String((idx + 1) * 10).padStart(4, '0')">N0010</span>
+              <span class="cnc-line-text" x-text="block.text"></span>
+              <span class="cnc-line-tag" x-text="block.tag" x-show="block.tag"></span>
+            </div>
+          </template>
+        </div>
+
+        <!-- MDI Manual Data Input Steering Box -->
+        <div class="cnc-mdi-box">
+          <div class="cnc-mdi-header">
+            <span>MDI DIRECTIVE INJECTION (MANUAL DATA INPUT)</span>
+            <button class="cnc-btn-mini" @click="queryDeblockAdvice()">AI ADVICE</button>
+          </div>
+          <div class="cnc-mdi-row">
+            <input type="text" x-model="mdiDirective" @keydown.enter="executeMdiSteer()" placeholder="Enter MDI steering block (e.g. G04 P2 / Steer QA)..." class="cnc-mdi-input">
+            <button class="cnc-mdi-btn" @click="executeMdiSteer()">EXEC MDI</button>
+          </div>
+        </div>
+
+        <!-- Industrial Operator Hard-Keys -->
+        <div class="cnc-hardkeys">
+          <button class="cnc-hardkey start" @click="cycleStart()" title="Initiate / Step autonomous execution">
+            <span class="cnc-hardkey-icon">▶</span>
+            <span>CYCLE START</span>
+          </button>
+          <button class="cnc-hardkey hold" @click="feedHold()" title="Pause axis feeds and buffer transitions">
+            <span class="cnc-hardkey-icon">⏸</span>
+            <span>FEED HOLD</span>
+          </button>
+          <button class="cnc-hardkey estop" @click="emergencyStop()" title="Emergency stop latched">
+            <span class="cnc-hardkey-icon">🛑</span>
+            <span>E-STOP</span>
+          </button>
+        </div>
+      </aside>
+    </main>
+
+    <!-- ==================== INDUSTRIAL MODALS ==================== -->
+
+    <!-- Modal 1: DNC Telemetry & Tool Call Stream -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'telemetry'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">📡</span>
+            <b>DNC TELEMETRY & TOOL CALL MONITOR</b>
+            <span class="cnc-pill"><span x-text="filteredEvents.length"></span> Blocks Logged</span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-modal-toolbar">
+          <div class="cnc-search-box">
+            <input type="text" x-model="telemetrySearch" placeholder="Search G-code, tool calls, agents, errors, M-codes..." class="cnc-search-input">
+            <button class="cnc-clear-btn" x-show="telemetrySearch" @click="telemetrySearch = ''">✕</button>
+          </div>
+          <div class="cnc-filter-pills">
+            <button class="cnc-filter-pill" :class="{ active: telemetryFilter === 'all' }" @click="telemetryFilter = 'all'">ALL (<span x-text="snapshot.events?.length || 0"></span>)</button>
+            <button class="cnc-filter-pill" :class="{ active: telemetryFilter === 'tools' }" @click="telemetryFilter = 'tools'">TOOL CALLS (<span x-text="toolCallEvents.length"></span>)</button>
+            <button class="cnc-filter-pill" :class="{ active: telemetryFilter === 'errors' }" @click="telemetryFilter = 'errors'">ALARMS / ERRORS</button>
+            <button class="cnc-filter-pill" :class="{ active: telemetryFilter === 'state' }" @click="telemetryFilter = 'state'">CYCLE STATES</button>
+            <button class="cnc-filter-pill" :class="{ active: telemetryFilter === 'artifacts' }" @click="telemetryFilter = 'artifacts'">PART ARTIFACTS</button>
+          </div>
+        </div>
+
+        <div class="cnc-modal-body panel-scroll">
+          <div class="cnc-telemetry-table" x-show="filteredEvents.length">
+            <template x-for="ev in filteredEvents" :key="ev.id">
+              <div class="cnc-event-row" :class="'level-' + (ev.level || 'info')" @click="inspectToolCall(ev)">
+                <span class="cnc-ev-time" x-text="formatTime(ev.ts)"></span>
+                <span class="cnc-ev-source" x-text="ev.agentId || ev.source || 'CNC-SYS'"></span>
+                <span class="cnc-ev-type" x-text="ev.type"></span>
+                <span class="cnc-ev-msg" x-text="ev.message || ev.data?.action || ev.data?.toolName || 'Block Event'"></span>
+                <button class="cnc-ev-btn" x-show="ev.data?.sanitizedInput || ev.data?.sanitizedOutput || ev.data?.error">
+                  INSPECT PAYLOAD
+                </button>
+              </div>
+            </template>
+          </div>
+          <div class="cnc-empty-state" x-show="!filteredEvents.length">
+            No telemetry records matching filter criteria.
+          </div>
+        </div>
+      </div>
     </div>
-    <div style="display:flex;gap:12px;font-size:10.5px;" aria-live="polite">
-      <span>WCS: <b style="color:var(--cnc-cyan);">G54 PART ZERO</b></span>
-      <span>PROG: <b id="progName">O1001.NC</b></span>
-      <span>CYCLE: <b id="cyclePhase" style="color:var(--cnc-dro-green);">IDLE</b></span>
+
+    <!-- Modal 2: Evidence & Quality Inspection Metrology Lab -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'evidence'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">🔬</span>
+            <b>EVIDENCE & QUALITY METROLOGY LAB (CMM)</b>
+            <span class="cnc-pill">TARGET: <span x-text="snapshot.selectedRunId || 'NONE'"></span></span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-modal-tabs">
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'spec' }" @click="loadSpecDocument()">SPEC.md</button>
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'devplan' }" @click="loadDevplanDocument()">DEVPLAN.md</button>
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'rundata' }" @click="evidenceTab = 'rundata'">RUN METADATA (JSON)</button>
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'artifacts' }" @click="evidenceTab = 'artifacts'">PART ARTIFACTS (<span x-text="snapshot.selectedRun?.artifacts?.length || 0"></span>)</button>
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'logs' }" @click="evidenceTab = 'logs'">MACHINE LOGS (<span x-text="snapshot.selectedRun?.logs?.length || 0"></span>)</button>
+          <button class="cnc-modal-tab" :class="{ active: evidenceTab === 'scorecard' }" @click="evidenceTab = 'scorecard'">TOLERANCE SCORECARD (<span x-text="snapshot.iterations?.length || 0"></span>)</button>
+        </div>
+
+        <div class="cnc-modal-body panel-scroll">
+          <!-- SPEC Document -->
+          <div x-show="evidenceTab === 'spec'" class="cnc-doc-viewer">
+            <div class="cnc-doc-header">
+              <b>BLUEPRINT SPECIFICATION (SPEC.md)</b>
+              <button class="cnc-btn-mini" @click="copyText(loadedDocText)">COPY SPEC</button>
+            </div>
+            <pre class="cnc-code-block" x-text="loadedDocText || 'Loading SPEC.md...'"></pre>
+          </div>
+
+          <!-- DEVPLAN Document -->
+          <div x-show="evidenceTab === 'devplan'" class="cnc-doc-viewer">
+            <div class="cnc-doc-header">
+              <b>CAM TOOLPATH ROUTING PLAN (DEVPLAN.md)</b>
+              <button class="cnc-btn-mini" @click="copyText(loadedDocText)">COPY DEVPLAN</button>
+            </div>
+            <pre class="cnc-code-block" x-text="loadedDocText || 'Loading DEVPLAN.md...'"></pre>
+          </div>
+
+          <!-- Run Metadata JSON -->
+          <div x-show="evidenceTab === 'rundata'" class="cnc-doc-viewer">
+            <div class="cnc-doc-header">
+              <b>RUN EXECUTION LEDGER & MACHINE REGISTERS</b>
+              <button class="cnc-btn-mini" @click="copyText(JSON.stringify(snapshot.selectedRun?.run || snapshot.state, null, 2))">COPY JSON</button>
+            </div>
+            <pre class="cnc-code-block" x-text="JSON.stringify(snapshot.selectedRun?.run || snapshot.state, null, 2)"></pre>
+          </div>
+
+          <!-- Artifacts List & Inline Viewer -->
+          <div x-show="evidenceTab === 'artifacts'" class="cnc-artifacts-pane">
+            <div class="cnc-artifacts-sidebar">
+              <b>MACHINED PART ARTIFACTS</b>
+              <div class="cnc-artifact-list">
+                <template x-for="art in snapshot.selectedRun?.artifacts" :key="art">
+                  <button class="cnc-artifact-item" :class="{ active: selectedArtifactName === art }" @click="loadArtifactContent(art)">
+                    ⚙ <span x-text="art"></span>
+                  </button>
+                </template>
+                <div x-show="!snapshot.selectedRun?.artifacts?.length" class="cnc-empty-mini">No part artifacts filed for this run.</div>
+              </div>
+            </div>
+            <div class="cnc-artifacts-content">
+              <div class="cnc-doc-header">
+                <b x-text="selectedArtifactName || 'Select an artifact to inspect'"></b>
+                <button class="cnc-btn-mini" x-show="loadedArtifactText" @click="copyText(loadedArtifactText)">COPY TEXT</button>
+              </div>
+              <pre class="cnc-code-block" x-text="loadedArtifactText || 'No artifact selected.'"></pre>
+            </div>
+          </div>
+
+          <!-- Logs List & Tail Viewer -->
+          <div x-show="evidenceTab === 'logs'" class="cnc-artifacts-pane">
+            <div class="cnc-artifacts-sidebar">
+              <b>MACHINE SPINDLE & SERVO LOGS</b>
+              <div class="cnc-artifact-list">
+                <template x-for="log in snapshot.selectedRun?.logs" :key="log">
+                  <button class="cnc-artifact-item" :class="{ active: selectedLogName === log }" @click="loadLogContent(log)">
+                    📋 <span x-text="log"></span>
+                  </button>
+                </template>
+                <div x-show="!snapshot.selectedRun?.logs?.length" class="cnc-empty-mini">No log files recorded for this run.</div>
+              </div>
+            </div>
+            <div class="cnc-artifacts-content">
+              <div class="cnc-doc-header">
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <b x-text="selectedLogName || 'Select a log file'"></b>
+                  <label style="font-size:10px;">Tail:
+                    <select x-model.number="logTail" @change="reloadSelectedLog()" class="cnc-select-mini">
+                      <option :value="100">100 lines</option>
+                      <option :value="250">250 lines</option>
+                      <option :value="500">500 lines</option>
+                      <option :value="1000">1000 lines</option>
+                      <option :value="2000">2000 lines</option>
+                    </select>
+                  </label>
+                </div>
+                <button class="cnc-btn-mini" x-show="loadedLogText" @click="copyText(loadedLogText)">COPY LOG</button>
+              </div>
+              <pre class="cnc-code-block" x-text="loadedLogText || 'No log file selected.'"></pre>
+            </div>
+          </div>
+
+          <!-- Iteration Scorecard -->
+          <div x-show="evidenceTab === 'scorecard'" class="cnc-scorecard-pane">
+            <div class="cnc-doc-header">
+              <b>SHOWCASE ITERATION TOLERANCE SCORECARD</b>
+              <span><span x-text="snapshot.iterations?.length || 0"></span> ITERATIONS MEASURED</span>
+            </div>
+            <div class="cnc-iteration-grid" x-show="snapshot.iterations && snapshot.iterations.length">
+              <template x-for="it in snapshot.iterations" :key="it.id">
+                <div class="cnc-iteration-card" :class="{ active: snapshot.selectedIterationId === it.id }" @click="selectIteration(it.id)">
+                  <div class="cnc-it-head">
+                    <b x-text="'PASS #' + (it.iterationIndex || it.id)"></b>
+                    <span class="cnc-pill" :class="'status-' + (it.status || 'eval')" x-text="(it.status || 'EVAL').toUpperCase()"></span>
+                  </div>
+                  <div class="cnc-it-meta">
+                    <div>SCORE: <b class="cnc-green-val" x-text="(it.score != null ? it.score.toFixed(3) : 'N/A')"></b></div>
+                    <div>VARIANTS: <b x-text="it.variants?.length || it.variantCount || 0"></b></div>
+                    <div>ACCEPTED: <b x-text="it.acceptedFeatures?.length || 0"></b></div>
+                  </div>
+                  <p class="cnc-it-summary" x-text="it.summary || it.objective || 'Dimensional inspection nominal.'"></p>
+                </div>
+              </template>
+            </div>
+            <div class="cnc-empty-state" x-show="!snapshot.iterations?.length">
+              No showcase machining iterations recorded. Launch a showcase creative loop to generate iterative scorecards.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button id="btnRefresh" class="cnc-hardkey" style="padding:4px 8px;font-size:9.5px;" type="button">SYNC DNC</button>
-      <button id="btnMdiSteer" class="cnc-hardkey" style="background:#0369a1;padding:4px 8px;font-size:9.5px;" type="button">MDI STEER</button>
+
+    <!-- Modal 3: Machining Command Station & Deblock Intercom -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'command'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">🎛</span>
+            <b>MACHINING COMMAND STATION & DEBLOCK INTERCOM</b>
+            <span class="cnc-pill" :class="snapshot.state?.phase" x-text="(snapshot.state?.phase || 'IDLE').toUpperCase()"></span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-modal-tabs">
+          <button class="cnc-modal-tab" :class="{ active: commandTab === 'lifecycle' }" @click="commandTab = 'lifecycle'">MOTION CONTROLS</button>
+          <button class="cnc-modal-tab" :class="{ active: commandTab === 'deblock' }" @click="commandTab = 'deblock'">
+            ALARM DEBLOCK & RECOVERY <span class="cnc-tab-alert" x-show="isBlocked">!</span>
+          </button>
+          <button class="cnc-modal-tab" :class="{ active: commandTab === 'queue' }" @click="commandTab = 'queue'">PART QUEUE (<span x-text="snapshot.queue?.items?.length || 0"></span>)</button>
+          <button class="cnc-modal-tab" :class="{ active: commandTab === 'gates' }" @click="commandTab = 'gates'">GO / NO-GO GAUGES (<span x-text="snapshot.gates?.gates?.length || 0"></span>)</button>
+        </div>
+
+        <div class="cnc-modal-body panel-scroll">
+          <!-- Motion Controls Tab -->
+          <div x-show="commandTab === 'lifecycle'" class="cnc-command-panel">
+            <h3 class="cnc-panel-heading">Kinematic Spindle & Feed Execution Controls</h3>
+            <div class="cnc-command-grid">
+              <div class="cnc-command-card">
+                <b>Cycle Start (Run Now)</b>
+                <p>Advance the numerical control interpreter by one cycle block immediately.</p>
+                <button class="cnc-btn-action green" @click="executeCommand('run-now')">CYCLE START (RUN NOW)</button>
+              </div>
+              <div class="cnc-command-card">
+                <b>Feed Hold (Pause)</b>
+                <p>Decelerate feed axes to a standstill while maintaining spindle synchronization.</p>
+                <button class="cnc-btn-action yellow" @click="executeCommand('pause')">FEED HOLD (PAUSE)</button>
+              </div>
+              <div class="cnc-command-card">
+                <b>Cycle Resume</b>
+                <p>Accelerate feed axes back to programmed velocity and resume cutting passes.</p>
+                <button class="cnc-btn-action green" @click="executeCommand('resume')">CYCLE RESUME</button>
+              </div>
+              <div class="cnc-command-card">
+                <b>Intake Admission Hold</b>
+                <p>Prevent new NC part programs from entering the machine spindle queue.</p>
+                <div style="display:flex;gap:6px;">
+                  <button class="cnc-btn-action orange" @click="executeCommand('hold')">HOLD INTAKE</button>
+                  <button class="cnc-btn-action blue" @click="executeCommand('unhold')">RELEASE HOLD</button>
+                </div>
+              </div>
+              <div class="cnc-command-card danger-card">
+                <b>Emergency Stop (E-Stop)</b>
+                <p>Trip the safety contactors, drop spindle drive power, and latch alarm condition.</p>
+                <button class="cnc-btn-action red" @click="executeCommand('stop')">EMERGENCY STOP (E-STOP)</button>
+              </div>
+            </div>
+
+            <!-- Showcase Loop Slider -->
+            <div class="cnc-showcase-box">
+              <div class="cnc-showcase-header">
+                <b>5-AXIS SHOWCASE ITERATIVE MACHINING LOOP</b>
+                <span class="cnc-cyan-val"><span x-text="showcaseLoopCount"></span> PASSES</span>
+              </div>
+              <input type="range" min="1" max="10" step="1" x-model.number="showcaseLoopCount" class="cnc-fro-slider" @change="setShowcaseTarget()">
+              <div class="cnc-showcase-btn-row">
+                <button class="cnc-btn-mini green" @click="startShowcaseLoop()">START LOOP</button>
+                <button class="cnc-btn-mini" @click="pauseShowcaseLoop()">PAUSE</button>
+                <button class="cnc-btn-mini" @click="resumeShowcaseLoop()">RESUME</button>
+                <button class="cnc-btn-mini red" @click="stopShowcaseLoop()">STOP</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deblock & Recovery Tab -->
+          <div x-show="commandTab === 'deblock'" class="cnc-command-panel">
+            <h3 class="cnc-panel-heading">Spindle Jam, Alarm Recovery & Steering</h3>
+
+            <div class="cnc-blocker-banner" x-show="isBlocked">
+              <b style="color:#ef4444;font-size:12px;">MACHINE ALARM INTERRUPT ACTIVE</b>
+              <p x-text="blockerDetails || 'Axis interlock tripped. Feed motion arrested.'"></p>
+            </div>
+
+            <div class="cnc-deblock-grid">
+              <!-- Custom Deblock -->
+              <div class="cnc-card-box">
+                <b>Inject Custom Toolpath Recovery Directives</b>
+                <p class="cnc-hint">Send manual jog coordinates or parameter overrides to clear axis interlocks.</p>
+                <textarea x-model="deblockCustomPrompt" placeholder="Enter recovery instructions..." class="cnc-textarea" rows="3"></textarea>
+                <button class="cnc-btn-action orange" @click="sendDeblockPrompt()">DISPATCH RECOVERY OVERRIDE</button>
+              </div>
+
+              <!-- Hermes Deblock Advice -->
+              <div class="cnc-card-box">
+                <b>Query Hermes CAM Deblock Advisory</b>
+                <p class="cnc-hint">Consult orchestrator AI for tool deflection analysis and automatic toolpath patching.</p>
+                <input type="text" x-model="deblockAdviceQuery" placeholder="Optional context or alarm query..." class="cnc-text-input">
+                <button class="cnc-btn-action blue" @click="queryDeblockAdvice()">QUERY HERMES ADVISORY</button>
+
+                <div class="cnc-advice-review-box" x-show="activeAdvice">
+                  <b>ADVISORY PROPOSAL:</b>
+                  <p x-text="activeAdvice?.text || activeAdvice?.summary || JSON.stringify(activeAdvice)"></p>
+                  <div class="cnc-advice-actions">
+                    <button class="cnc-btn-action green" @click="approveAdvice()">APPROVE & CLEAR ALARM</button>
+                    <button class="cnc-btn-action red" @click="denyAdvice()">DISMISS ADVICE</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Steering Directives Manager -->
+              <div class="cnc-card-box full-width">
+                <div class="cnc-card-header">
+                  <b>Active Machine Steering Directives</b>
+                  <span><span x-text="snapshot.control?.steering?.length || 0"></span> Active</span>
+                </div>
+                <div class="cnc-steering-form">
+                  <input type="text" x-model="newSteeringDirective" placeholder="Inject new steering directive..." class="cnc-text-input">
+                  <select x-model="newSteeringScope" class="cnc-select-mini">
+                    <option value="current">Current Part Program Scope</option>
+                    <option value="all">Global Shopfloor Scope</option>
+                  </select>
+                  <button class="cnc-btn-action green" @click="addSteering()">ADD DIRECTIVE</button>
+                </div>
+                <div class="cnc-steering-list" x-show="snapshot.control?.steering && snapshot.control?.steering.length">
+                  <template x-for="(st, idx) in snapshot.control.steering" :key="idx">
+                    <div class="cnc-steering-item">
+                      <span x-text="st.directive || st.text || st"></span>
+                      <button class="cnc-btn-remove" @click="removeSteering(st.id || idx)">REMOVE ✕</button>
+                    </div>
+                  </template>
+                </div>
+                <div class="cnc-empty-mini" x-show="!snapshot.control?.steering?.length">No active steering directives registered.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Part Queue Tab -->
+          <div x-show="commandTab === 'queue'" class="cnc-command-panel">
+            <div class="cnc-card-header">
+              <h3 class="cnc-panel-heading">Machining Part Program Queue</h3>
+              <button class="cnc-btn-action red" @click="clearQueue()">CLEAR PART QUEUE</button>
+            </div>
+
+            <!-- Add Queue Item -->
+            <div class="cnc-add-queue-box">
+              <b>Enqueue NC Part Job</b>
+              <div class="cnc-queue-form-row">
+                <input type="text" x-model="newQueueTitle" placeholder="Part Program Name / Target..." class="cnc-text-input">
+                <select x-model="newQueuePriority" class="cnc-select-mini">
+                  <option value="normal">Priority: Normal</option>
+                  <option value="high">Priority: High</option>
+                  <option value="urgent">Priority: Urgent</option>
+                </select>
+                <button class="cnc-btn-action green" @click="addQueueItem()">ENQUEUE PART</button>
+              </div>
+            </div>
+
+            <!-- Queue Items List -->
+            <div class="cnc-queue-list" x-show="snapshot.queue?.items && snapshot.queue?.items.length">
+              <template x-for="item in snapshot.queue.items" :key="item.id">
+                <div class="cnc-queue-item-row" :class="{ pinned: item.id === snapshot.control?.pinnedQueueItemId || item.status === 'pinned' }">
+                  <div class="cnc-queue-item-left">
+                    <span class="cnc-queue-id" x-text="'#' + item.id"></span>
+                    <b class="cnc-queue-title" x-text="item.title || item.objective || 'NC Job'"></b>
+                    <span class="cnc-pill" :class="'priority-' + (item.priority || 'normal')" x-text="(item.priority || 'normal').toUpperCase()"></span>
+                  </div>
+                  <div class="cnc-queue-item-actions">
+                    <button class="cnc-btn-mini blue" @click="pinQueueItem(item.id)">PIN PRIORITY</button>
+                    <button class="cnc-btn-mini red" @click="archiveQueueItem(item.id)">ARCHIVE</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="cnc-empty-state" x-show="!snapshot.queue?.items?.length">
+              Part queue is empty. Load part programs above to stage machining tasks.
+            </div>
+          </div>
+
+          <!-- Go / No-Go Gauges Tab -->
+          <div x-show="commandTab === 'gates'" class="cnc-command-panel">
+            <h3 class="cnc-panel-heading">Go / No-Go Tolerance & Quality Inspection Gauges</h3>
+
+            <!-- Add Gate Form -->
+            <div class="cnc-add-queue-box">
+              <b>Register Tolerance Gauge</b>
+              <div class="cnc-queue-form-row">
+                <input type="text" x-model="newGateName" placeholder="Gauge Name (e.g. Bore Diameter ±0.01mm)..." class="cnc-text-input">
+                <select x-model="newGateType" class="cnc-select-mini">
+                  <option value="acceptance">Dimensional Tolerance</option>
+                  <option value="security">Safety Interlock</option>
+                  <option value="performance">Surface Finish (Ra)</option>
+                  <option value="human">Manual CMM Inspection</option>
+                </select>
+                <button class="cnc-btn-action green" @click="addGate()">ADD GAUGE</button>
+              </div>
+            </div>
+
+            <!-- Gates List -->
+            <div class="cnc-gates-grid" x-show="snapshot.gates?.gates && snapshot.gates?.gates.length">
+              <template x-for="gate in snapshot.gates.gates" :key="gate.id">
+                <div class="cnc-gate-card" :class="'gate-' + (gate.status || 'pending')">
+                  <div class="cnc-gate-head">
+                    <b x-text="gate.name || gate.id"></b>
+                    <span class="cnc-pill" :class="'gate-status-' + (gate.status || 'pending')" x-text="(gate.status || 'PENDING').toUpperCase()"></span>
+                  </div>
+                  <p class="cnc-gate-desc" x-text="gate.description || gate.type || 'Quality gate validation criteria.'"></p>
+
+                  <div class="cnc-gate-decision-row">
+                    <input type="text" x-model="gate.tempRationale" placeholder="CMM inspection report..." class="cnc-text-input mini">
+                    <button class="cnc-btn-mini green" @click="makeGateDecision(gate.id, 'passed', gate.tempRationale)">PASS (GO) ✓</button>
+                    <button class="cnc-btn-mini red" @click="makeGateDecision(gate.id, 'failed', gate.tempRationale)">FAIL (NO-GO) ✕</button>
+                    <button class="cnc-btn-mini blue" @click="attachGateEvidence(gate.id)">ATTACH CMM</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="cnc-empty-state" x-show="!snapshot.gates?.gates?.length">
+              No tolerance inspection gauges registered.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </header>
 
-  <main class="cnc-pendant">
-    <!-- Left Half: 5-Axis DRO & 3D Toolpath Canvas -->
-    <section class="cnc-left-col" aria-label="Position DRO and Toolpath Simulation">
-      <!-- 5-Axis Precision DRO -->
-      <div class="cnc-dro-panel" aria-label="Digital Readout Coordinates">
-        <div class="cnc-dro-axis">
-          <span class="cnc-axis-name">AXIS X (PROGRESS)</span>
-          <span class="cnc-axis-val" id="droX">+000.000</span>
-        </div>
-        <div class="cnc-dro-axis">
-          <span class="cnc-axis-name">AXIS Y (GENERATION)</span>
-          <span class="cnc-axis-val" id="droY">+001.000</span>
-        </div>
-        <div class="cnc-dro-axis">
-          <span class="cnc-axis-name">AXIS Z (DEPTH/AGENTS)</span>
-          <span class="cnc-axis-val" id="droZ">-004.000</span>
-        </div>
-        <div class="cnc-dro-axis">
-          <span class="cnc-axis-name">AXIS A (GATE TILT)</span>
-          <span class="cnc-axis-val" id="droA">+000.000°</span>
-        </div>
-        <div class="cnc-dro-axis">
-          <span class="cnc-axis-name">AXIS B (THROUGHPUT)</span>
-          <span class="cnc-axis-val" id="droB">+045.000°</span>
+    <!-- Modal 4: CAM Project Planning Workstation -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'planner'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">📐</span>
+            <b>CAM PROJECT PLANNING WORKSTATION (PART PROGRAMS)</b>
+            <span class="cnc-pill"><span x-text="snapshot.plans?.length || 0"></span> NC Programs Registered</span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-planner-layout">
+          <!-- Left: NC Part Program List -->
+          <aside class="cnc-planner-sidebar">
+            <div class="cnc-sidebar-head">
+              <b>NC PART PROGRAMS</b>
+              <button class="cnc-btn-action green mini" @click="openNewPlanModal()">+ NEW PROG</button>
+            </div>
+            <div class="cnc-planner-list panel-scroll">
+              <template x-for="(p, idx) in snapshot.plans" :key="p.planId">
+                <div class="cnc-plan-item" :class="{ active: p.planId === planEditor.planId }" @click="selectPlanForEdit(p.planId)">
+                  <div class="cnc-plan-item-top">
+                    <b x-text="'O' + (1000 + idx) + ' (' + (p.title || p.planId) + ')'"></b>
+                    <span class="cnc-pill" :class="'status-' + (p.status || 'draft')" x-text="p.status || 'draft'"></span>
+                  </div>
+                  <div class="cnc-plan-item-sub">
+                    <span x-text="(p.pipelineType || 'classic') + ' • v' + (p.version || 1)"></span>
+                    <small x-text="formatDate(p.updatedAt || p.createdAt)"></small>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!snapshot.plans?.length" class="cnc-empty-mini">No NC part programs found.</div>
+            </div>
+          </aside>
+
+          <!-- Right: NC Program Editor -->
+          <main class="cnc-planner-main panel-scroll">
+            <div class="cnc-plan-form-header">
+              <h3 x-text="planEditor.planId ? 'Edit NC Program: ' + planEditor.planId : 'Create New NC Program'"></h3>
+              <div class="cnc-plan-actions-toolbar">
+                <button class="cnc-btn-action blue" @click="savePlanDraft()">SAVE DRAFT</button>
+                <button class="cnc-btn-action orange" :disabled="!planEditor.planId" @click="submitPlanReview()">SUBMIT CAM REVIEW</button>
+                <button class="cnc-btn-action green" :disabled="!planEditor.planId" @click="approvePlan()">APPROVE</button>
+                <button class="cnc-btn-action red" :disabled="!planEditor.planId" @click="rejectPlan()">REJECT</button>
+                <button class="cnc-btn-action green highlight" :disabled="!planEditor.planId" @click="launchPlan()">🚀 POST & LAUNCH</button>
+                <button class="cnc-btn-action blue" :disabled="!planEditor.planId" @click="clonePlan()">CLONE</button>
+                <button class="cnc-btn-action orange" :disabled="!planEditor.planId" @click="forkPlan()">FORK (v+1)</button>
+                <button class="cnc-btn-action red" :disabled="!planEditor.planId" @click="archivePlan()">ARCHIVE</button>
+              </div>
+            </div>
+
+            <div class="cnc-form-grid">
+              <div class="cnc-form-group full-width">
+                <label>Program Title</label>
+                <input type="text" x-model="planEditor.title" placeholder="NC Part Program Title..." class="cnc-text-input">
+              </div>
+
+              <div class="cnc-form-group">
+                <label>Target Machinists / Users</label>
+                <input type="text" x-model="planEditor.users" placeholder="e.g. machinists, operators..." class="cnc-text-input">
+              </div>
+
+              <div class="cnc-form-group">
+                <label>CAM Pipeline Architecture</label>
+                <select x-model="planEditor.pipelineType" class="cnc-select">
+                  <option value="classic">Classic Multi-Stage CAM (Spec -> DevPlan -> Spindle)</option>
+                  <option value="managed">Autonomous 5-Axis Managed Swarm</option>
+                </select>
+              </div>
+
+              <div class="cnc-form-group full-width">
+                <label>Machining Problem Spec</label>
+                <textarea x-model="planEditor.problem" rows="3" placeholder="Describe the part geometry, material tolerances, and objectives..." class="cnc-textarea"></textarea>
+              </div>
+
+              <div class="cnc-form-group full-width">
+                <label>Core Objectives (Comma or newline separated)</label>
+                <textarea x-model="planEditor.objectives" rows="3" placeholder="Core objectives to achieve..." class="cnc-textarea"></textarea>
+              </div>
+
+              <div class="cnc-form-group full-width">
+                <label>Stock Envelopes & Invariant Boundaries</label>
+                <input type="text" x-model="planEditor.scope" placeholder="Workpiece boundaries, tool clearances..." class="cnc-text-input">
+              </div>
+
+              <div class="cnc-form-group">
+                <label>Git Repository Path</label>
+                <input type="text" x-model="planEditor.repoPath" placeholder="/home/mojo/projects/..." class="cnc-text-input">
+              </div>
+
+              <div class="cnc-form-group">
+                <label>Base Reference / Branch</label>
+                <input type="text" x-model="planEditor.baseRef" placeholder="HEAD or main" class="cnc-text-input">
+              </div>
+            </div>
+          </main>
         </div>
       </div>
+    </div>
 
-      <!-- Isometric 3D Toolpath Canvas -->
-      <div class="cnc-toolpath-wrap">
-        <canvas id="toolpathCanvas" role="img" aria-label="Isometric 3D CNC Toolpath Simulation Viewport"></canvas>
-      </div>
-    </section>
+    <!-- Modal 5: Hermes CAM Copilot Intercom -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'copilot'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">🤖</span>
+            <b>HERMES CAM COPILOT & TOOLPATH ASSISTANT</b>
+            <span class="cnc-pill">ORCHESTRATOR AI PENDANT</span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
 
-    <!-- Right Half: G-Code Buffer & Hard-Key Console -->
-    <aside class="cnc-right-col" aria-label="G-Code Execution and Machine Controls">
-      <!-- Spindle & Feed Pacing -->
-      <div class="cnc-spindle-box">
-        <div>
-          <div style="font-size:9px;color:#64748b;">SPINDLE SPEED (M03)</div>
-          <div class="cnc-tach-val" id="spindleRpm">12,450 RPM</div>
+        <div class="cnc-copilot-layout">
+          <!-- Threads sidebar -->
+          <aside class="cnc-copilot-sidebar">
+            <div class="cnc-sidebar-head">
+              <b>CAM THREADS</b>
+              <div style="display:flex;gap:4px;">
+                <button class="cnc-btn-action green mini" @click="createAssistanceThread('classic')">+ CLASSIC</button>
+                <button class="cnc-btn-action blue mini" @click="createAssistanceThread('managed')">+ MANAGED</button>
+              </div>
+            </div>
+            <div class="cnc-copilot-threads panel-scroll">
+              <template x-for="th in snapshot.assistance" :key="th.id">
+                <div class="cnc-thread-item" :class="{ active: th.id === activeAssistanceId }" @click="selectAssistanceThread(th.id)">
+                  <b x-text="'#' + th.id.slice(0, 16)"></b>
+                  <div class="cnc-thread-meta">
+                    <span x-text="(th.pipelineType || 'classic') + ' • ' + (th.messageCount || 0) + ' msgs'"></span>
+                    <span x-show="th.hasProposal" class="cnc-pill status-approved">PROPOSAL READY</span>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!snapshot.assistance?.length" class="cnc-empty-mini">No active CAM copilot threads.</div>
+            </div>
+          </aside>
+
+          <!-- Main Chat & Proposal Inspector -->
+          <main class="cnc-copilot-main">
+            <!-- Messages Log -->
+            <div class="cnc-chat-log panel-scroll" id="copilotChatLog">
+              <template x-for="(msg, idx) in currentThreadMessages" :key="idx">
+                <div class="cnc-chat-bubble" :class="'role-' + (msg.role || 'assistant')">
+                  <div class="cnc-bubble-header">
+                    <b x-text="(msg.role || 'ASSISTANT').toUpperCase()"></b>
+                    <small x-text="formatTime(msg.timestamp || msg.ts)"></small>
+                  </div>
+                  <div class="cnc-bubble-body" x-text="msg.content || msg.message || msg.text"></div>
+                </div>
+              </template>
+              <div x-show="!currentThreadMessages.length" class="cnc-empty-state">
+                Consult Hermes CAM Copilot for toolpath optimization, spindle speeds, G-code macro generation, and scope review.
+              </div>
+            </div>
+
+            <!-- Proposal Banner -->
+            <div class="cnc-proposal-banner" x-show="activeAssistanceProposal">
+              <div class="cnc-proposal-header">
+                <b>💡 STRUCTURED NC PART PROGRAM PROPOSAL READY</b>
+                <button class="cnc-btn-action green highlight" @click="applyCopilotProposal()">
+                  APPLY PROPOSAL TO CAM PLANNER ➔
+                </button>
+              </div>
+              <pre class="cnc-proposal-preview" x-text="JSON.stringify(activeAssistanceProposal, null, 2)"></pre>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="cnc-chat-input-bar">
+              <textarea x-model="copilotInputMessage" @keydown.enter.prevent="sendCopilotMessage()" placeholder="Ask Hermes Copilot for machining advice (Press Enter to send)..." class="cnc-textarea" rows="2"></textarea>
+              <button class="cnc-btn-send" @click="sendCopilotMessage()">SEND</button>
+            </div>
+          </main>
         </div>
-        <div>
-          <div style="font-size:9px;color:#64748b;">FEED OVERRIDE (FRO)</div>
-          <div style="font-size:12px;font-weight:bold;color:var(--cnc-dro-green);" id="froVal">100% (1,200 mm/min)</div>
+      </div>
+    </div>
+
+    <!-- Modal 6: Tool Execution Inspector -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'toolInspector'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">🔍</span>
+            <b>G-CODE / TOOL EXECUTION INSPECTOR</b>
+            <span class="cnc-pill" x-text="selectedToolEvent?.data?.toolName || selectedToolEvent?.type"></span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-modal-body panel-scroll">
+          <div class="cnc-inspector-meta">
+            <div>AGENT TOOL: <b class="cnc-cyan-val" x-text="selectedToolEvent?.agentId || 'SYS'"></b></div>
+            <div>STATUS: <b class="cnc-green-val" x-text="selectedToolEvent?.data?.status || 'DONE'"></b></div>
+            <div>TIMESTAMP: <b x-text="formatTime(selectedToolEvent?.ts)"></b></div>
+          </div>
+
+          <div class="cnc-json-box" x-show="selectedToolEvent?.data?.sanitizedInput">
+            <div class="cnc-json-header">
+              <b>SANITIZED INPUT BLOCKS</b>
+              <button class="cnc-btn-mini" @click="copyText(JSON.stringify(selectedToolEvent.data.sanitizedInput, null, 2))">COPY</button>
+            </div>
+            <pre class="cnc-code-block" x-text="JSON.stringify(selectedToolEvent.data.sanitizedInput, null, 2)"></pre>
+          </div>
+
+          <div class="cnc-json-box" x-show="selectedToolEvent?.data?.sanitizedOutput">
+            <div class="cnc-json-header">
+              <b>SANITIZED OUTPUT RESULT</b>
+              <button class="cnc-btn-mini" @click="copyText(JSON.stringify(selectedToolEvent.data.sanitizedOutput, null, 2))">COPY</button>
+            </div>
+            <pre class="cnc-code-block" x-text="JSON.stringify(selectedToolEvent.data.sanitizedOutput, null, 2)"></pre>
+          </div>
+
+          <div class="cnc-json-box error" x-show="selectedToolEvent?.data?.error">
+            <div class="cnc-json-header">
+              <b style="color:#ef4444;">ALARM / EXCEPTION PAYLOAD</b>
+              <button class="cnc-btn-mini" @click="copyText(JSON.stringify(selectedToolEvent.data.error, null, 2))">COPY</button>
+            </div>
+            <pre class="cnc-code-block" x-text="JSON.stringify(selectedToolEvent.data.error, null, 2)"></pre>
+          </div>
         </div>
-        <div>
-          <div style="font-size:9px;color:#64748b;">ACTIVE TOOL</div>
-          <div style="font-size:11px;font-weight:bold;color:#f59e0b;" id="activeTool">T01 (ARCHITECT)</div>
+      </div>
+    </div>
+
+    <!-- Modal 7: Operator Manual & CNC Machinist's Handbook -->
+    <div class="cnc-modal-overlay" x-show="activeModal === 'help'" @click.self="closeModal()" x-cloak>
+      <div class="cnc-modal-dialog cnc-modal-wide">
+        <header class="cnc-modal-header">
+          <div class="cnc-modal-title">
+            <span class="cnc-icon">📖</span>
+            <b>OPERATOR MANUAL & 5-AXIS CNC MACHINIST'S HANDBOOK</b>
+            <span class="cnc-pill">FANUC 31i-B5 CNC ARCHITECTURE</span>
+          </div>
+          <button class="cnc-modal-close" @click="closeModal()">✕ CLOSE</button>
+        </header>
+
+        <div class="cnc-modal-body panel-scroll cnc-manual-body">
+          <section class="cnc-manual-section">
+            <h3>1. The Industrial 5-Axis CNC Machining Metaphor</h3>
+            <p>
+              Hermes SwarmBuilder formats software construction into the deterministic physical workflow of a 5-axis vertical machining center (VMC). Code generation, verification, and testing operate as subtractive cutting passes shaping raw project requirements into precision software artifacts according to G-Code kinematics.
+            </p>
+          </section>
+
+          <section class="cnc-manual-section">
+            <h3>2. Reading the 5-Axis Digital Readout (DRO)</h3>
+            <div class="cnc-manual-grid">
+              <div class="cnc-manual-card">
+                <b>Axis X (Linear Progress mm)</b>
+                <p>Represents total completed travel through the current phase or build cycle (0.000 to 100.000 mm).</p>
+              </div>
+              <div class="cnc-manual-card">
+                <b>Axis Y (Feature Generation mm)</b>
+                <p>Tracks active file generation steps, syntax assertions, and component passes.</p>
+              </div>
+              <div class="cnc-manual-card">
+                <b>Axis Z (Spindle Load / Depth mm)</b>
+                <p>Indicates active agent tool depth. Deeper values reflect concurrent agent workloads and multi-file refactors.</p>
+              </div>
+              <div class="cnc-manual-card">
+                <b>Axis A & B (Rotary Tilt / Table)</b>
+                <p>Axis A tilts the toolhead to align with Quality Gates; Axis B rotates the throughput table for continuous build delivery.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="cnc-manual-section">
+            <h3>3. Spindle Tachometer, FRO & ATC Tool Pockets</h3>
+            <ul>
+              <li><b>Spindle Tachometer</b>: Displays real-time token/action throughput (up to 24,000 RPM equivalent).</li>
+              <li><b>Feed Rate Override (FRO)</b>: Scale execution pacing from 10% to 150% to regulate agent step speeds.</li>
+              <li><b>Automatic Tool Changer (ATC)</b>: Pockets T01 (Architect), T02 (Coder), T03 (Tester/QA), T04 (Reviewer), T05 (Showcase), T06 (SysBus).</li>
+              <li><b>G-Code Execution Stream</b>: Standard ISO address words ($N, G, X, Y, Z, A, B, F, S, T, M$) representing agent actions.</li>
+            </ul>
+          </section>
+
+          <section class="cnc-manual-section">
+            <h3>4. Industrial Keyboard Shortcuts Reference</h3>
+            <table class="cnc-shortcut-table">
+              <thead>
+                <tr><th>Shortcut Key</th><th>Target Action</th><th>Context</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>Space</code></td><td>Cycle Start (Immediate Step / Run Now)</td><td>Global</td></tr>
+                <tr><td><code>H</code></td><td>Feed Hold (Pause Feeds)</td><td>Global</td></tr>
+                <tr><td><code>P</code></td><td>Open CAM Project Planner</td><td>Global</td></tr>
+                <tr><td><code>C</code></td><td>Open Machining Command Station</td><td>Global</td></tr>
+                <tr><td><code>T</code></td><td>Open DNC Telemetry & Tool Calls</td><td>Global</td></tr>
+                <tr><td><code>E</code></td><td>Open CMM Evidence & Artifacts</td><td>Global</td></tr>
+                <tr><td><code>A</code></td><td>Open Hermes CAM Copilot</td><td>Global</td></tr>
+                <tr><td><code>?</code></td><td>Open this Operator Handbook</td><td>Global</td></tr>
+                <tr><td><code>Escape</code></td><td>Close active modal or E-Stop latch</td><td>Global</td></tr>
+              </tbody>
+            </table>
+          </section>
         </div>
       </div>
+    </div>
 
-      <!-- G-Code Program Stream Buffer -->
-      <div class="cnc-gcode-pane" id="gcodeBuffer" aria-label="G-Code Block Execution Stream">
-        <div class="cnc-gcode-line"><span>N0010</span><span>G21 G90 G17 G54</span></div>
-        <div class="cnc-gcode-line"><span>N0020</span><span>T01 M06 (SELECT AGENT: ARCHITECT)</span></div>
-        <div class="cnc-gcode-line"><span>N0030</span><span>S12000 M03</span></div>
-        <div class="cnc-gcode-line active"><span>N0040</span><span>G01 X142.500 Y84.200 Z-4.000 F1200</span></div>
-        <div class="cnc-gcode-line"><span>N0050</span><span>M98 P2001 (CALL SUB: DEVPLAN_BUILD)</span></div>
-      </div>
-
-      <!-- NC Part Programs (Project Plans) -->
-      <div style="padding:6px;background:#090d12;border-top:1px solid var(--cnc-border);display:flex;justify-content:space-between;align-items:center;">
-        <b style="font-size:10px;color:var(--cnc-cyan);">NC PART PROGRAMS (PLANS)</b>
-        <button id="btnNewNcPlan" class="cnc-hardkey" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
-      </div>
-      <div id="ncPlansList" style="max-height:90px;overflow:auto;padding:6px;background:#06080b;display:grid;gap:4px;">
-        <!-- Rendered by Alpine / app.js -->
-      </div>
-
-      <!-- Industrial Hard-Keys -->
-      <div class="cnc-hardkeys">
-        <button id="btnCycleStart" class="cnc-hardkey start" type="button">CYCLE START</button>
-        <button id="btnFeedHold" class="cnc-hardkey hold" type="button">FEED HOLD</button>
-        <button id="btnEStop" class="cnc-hardkey estop" type="button">E-STOP</button>
-      </div>
-    </aside>
-  </main>
-
-  <div id="cncToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+    <!-- Toast Notification Banner -->
+    <div class="cnc-toast-container">
+      <template x-for="t in toasts" :key="t.id">
+        <div class="cnc-toast" :class="'toast-' + t.type">
+          <span x-text="t.msg"></span>
+        </div>
+      </template>
+    </div>
+  </div>
 
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>

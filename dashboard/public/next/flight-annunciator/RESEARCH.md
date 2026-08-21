@@ -1,7 +1,7 @@
 # Flight Annunciator Interface Research & Design Report
 
-**Client Route:** `/next/flight-annunciator/index.html`  
-**Architecture:** SolidJS Fine-Grained Reactive Signals (Zero Virtual DOM Reconciliation)  
+**Client Route:** `/next/flight-annunciator/index.html`
+**Architecture:** SolidJS Fine-Grained Reactive Signals (Zero Virtual DOM Reconciliation)
 **Design Archetype:** Aerospace Master Warning & Caution Annunciator Matrix, Overhead Tactile Split-Legend Korry Push-Button Switchboards, Guarded Mechanical Safety Flip-Covers, Synoptic System Vector Bus Schematics, and Electronic Checklist (ECL/QRH) Closed-Loop Execution.
 
 ---
@@ -19,16 +19,16 @@ Commercial and aerospace flight decks (Boeing 777/787 EICAS, Airbus A350/A380 EC
 
 ## 2. Authoritative Sources
 
-1. **FAA Advisory Circular AC 25.1322-1 (*Flightcrew Alerting*) & AC 25-11B (*Electronic Flight Displays*)**  
-   https://www.faa.gov/documentLibrary/media/Advisory_Circular/AC_25-11B.pdf  
+1. **FAA Advisory Circular AC 25.1322-1 (*Flightcrew Alerting*) & AC 25-11B (*Electronic Flight Displays*)**
+   https://www.faa.gov/documentLibrary/media/Advisory_Circular/AC_25-11B.pdf
    *Applied*: Establishes sensory alert triangulation (visual + auditory + tactile), nuisance alert suppression, and strict color coding (Red Warning, Amber Caution, Cyan Advisory, Green Normal).
 
-2. **NASA Space Flight Human-System Standard NASA-STD-3001, Vol. 2 (*Displays and Controls*)**  
-   https://standards.nasa.gov/standard/NASA/NASA-STD-3001-VOL-2  
+2. **NASA Space Flight Human-System Standard NASA-STD-3001, Vol. 2 (*Displays and Controls*)**
+   https://standards.nasa.gov/standard/NASA/NASA-STD-3001-VOL-2
    *Applied*: Mandates physical separation of guarded actuators for irreversible actions; high contrast dead-front legends ($> 7:1$ illuminated ratio); push-to-test lamp test functionality.
 
-3. **Airbus Flight Safety Briefing Notes (*Cockpit Philosophy & ECAM Handling*)**  
-   https://safetyfirst.airbus.com/  
+3. **Airbus Flight Safety Briefing Notes (*Cockpit Philosophy & ECAM Handling*)**
+   https://safetyfirst.airbus.com/
    *Applied*: Lights-Out baseline; closed-loop Electronic Checklist where items step from Cyan (pending) to Green (sensed compliance).
 
 ---

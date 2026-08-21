@@ -664,6 +664,7 @@ function readVariantArtifact(path:string, variantId:string){
 }
 function readEvaluationArtifact(path:string, variantId:string){
   const value=readRequiredJson(path), scoreNames=["objectiveFit","userValue","visualQuality","implementationQuality","accessibility","performance","total"];
+  if(Array.isArray(value.evidenceArtifacts)) value.evidenceArtifacts=value.evidenceArtifacts.map((item:any)=>typeof item==="string"?item:item?.path).filter((item:any)=>typeof item==="string"&&item.trim());
   if(value.schemaVersion!=="apb.evaluation.v1"||value.variantId!==variantId||!value.scores||!scoreNames.every(name=>typeof value.scores[name]==="number"&&Number.isFinite(value.scores[name])&&value.scores[name]>=0&&value.scores[name]<=100)||!Array.isArray(value.hardGateViolations)||!Array.isArray(value.evidenceArtifacts)||typeof value.rationale!=="string"||!value.rationale.trim()||!["accept","reject","partial"].includes(value.recommendation)) throw new Error(`malformed or non-finite evaluator artifact for ${variantId}: ${path}`);
   return value;
 }

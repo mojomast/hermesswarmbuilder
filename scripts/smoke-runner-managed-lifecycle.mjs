@@ -42,7 +42,7 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
   if(process.env.FAKE_SCENARIO==='stop') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.stop={requested:true,mode:'graceful',reason:'fixture stop'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
 } else if(agent.startsWith('evaluator-') && process.env.FAKE_SCENARIO!=='missing-evaluator'){
   const variant=(query.match(/evaluation-(variant-[0-9]+)\\.json/)||[])[1]||'variant-1';
-  fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'accept',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:['artifacts/variants/'+variant+'.json','artifacts/variants/'+variant+'.diff']},null,2));
+  fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'accept',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:[{path:'artifacts/variants/'+variant+'.json',description:'variant artifact'},{path:'artifacts/variants/'+variant+'.diff',description:'variant diff'}]},null,2));
 }
 `);
   chmodSync(fakeHermes, 0o755);

@@ -1,0 +1,208 @@
+/* Broadcast Switcher HMI Styling */
+:root {
+  --bs-bg: #090c10;
+  --bs-panel: #11161d;
+  --bs-border: #1e2632;
+  --bs-tally-pgm: #ef4444; /* On-Air Red */
+  --bs-tally-pvw: #10b981; /* Preview Green */
+  --bs-tally-aux: #f59e0b; /* Aux Amber */
+  --bs-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bs-bg);
+  color: #e2e8f0;
+  font-family: var(--bs-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Master Masthead */
+.bs-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #0d1218;
+  border-bottom: 1px solid var(--bs-border);
+  gap: 12px;
+}
+.bs-brand { font-weight: 800; color: #fff; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.bs-onair-badge {
+  background: var(--bs-tally-pgm);
+  color: #fff;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 900;
+  border-radius: 2px;
+  letter-spacing: 0.1em;
+  animation: onair-pulse 1s infinite alternate;
+}
+@keyframes onair-pulse {
+  0% { opacity: 0.8; }
+  100% { opacity: 1.0; }
+}
+
+/* Multiviewer Monitor Wall */
+.bs-multiviewer {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1fr;
+  grid-template-rows: 160px 140px;
+  gap: 6px;
+  padding: 8px;
+  background: #05070a;
+  border-bottom: 1px solid var(--bs-border);
+}
+
+.bs-monitor {
+  background: #090d12;
+  border: 2px solid #1a222d;
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.bs-monitor.tally-pgm { border-color: var(--bs-tally-pgm); box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+.bs-monitor.tally-pvw { border-color: var(--bs-tally-pvw); box-shadow: 0 0 10px rgba(16,185,129,0.4); }
+
+.bs-monitor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  background: #0d131a;
+  font-size: 9px;
+  font-weight: 700;
+  border-bottom: 1px solid #18202b;
+}
+.bs-monitor-body {
+  flex: 1;
+  padding: 6px;
+  overflow: auto;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+/* Lower Switcher Deck (Crosspoints & T-Bar) */
+.bs-switcher-deck {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--bs-panel);
+}
+
+/* Left Crosspoint Matrix */
+.bs-crosspoint-bay {
+  flex: 1;
+  padding: 10px;
+  border-right: 1px solid var(--bs-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.bs-bus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bs-bus-label {
+  width: 70px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.bs-bus-label.pgm { color: var(--bs-tally-pgm); }
+.bs-bus-label.pvw { color: var(--bs-tally-pvw); }
+
+.bs-bus-buttons {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.bs-btn-crosspoint {
+  flex: 1;
+  padding: 8px 4px;
+  background: #151b24;
+  border: 1px solid #283546;
+  border-radius: 3px;
+  color: #c5d1de;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+.bs-btn-crosspoint.active-pgm { background: #7f1d1d; border-color: var(--bs-tally-pgm); color: #fff; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+.bs-btn-crosspoint.active-pvw { background: #064e3b; border-color: var(--bs-tally-pvw); color: #fff; box-shadow: 0 0 8px rgba(16,185,129,0.6); }
+
+/* Center Transition Block & T-Bar */
+.bs-transition-block {
+  width: 220px;
+  padding: 10px;
+  border-right: 1px solid var(--bs-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.bs-tbar-assembly {
+  width: 60px;
+  height: 140px;
+  background: #090d12;
+  border: 1px solid #222d3b;
+  border-radius: 30px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.bs-tbar-handle {
+  width: 50px;
+  height: 24px;
+  background: #2a3749;
+  border: 2px solid #475569;
+  border-radius: 6px;
+  position: absolute;
+  top: 10px;
+  cursor: grab;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+}
+
+.bs-btn-take {
+  width: 100%;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #fff;
+}
+.bs-btn-take.cut { background: #7f1d1d; border-color: var(--bs-tally-pgm); }
+.bs-btn-take.auto { background: #064e3b; border-color: var(--bs-tally-pvw); }
+
+/* Right DSK & Planning Studio Dock */
+.bs-studio-dock {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bs-panel);
+}
+
+@media (max-width: 1024px) {
+  .bs-multiviewer { grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, 120px); }
+  .bs-switcher-deck { flex-direction: column; }
+  .bs-transition-block { width: 100%; flex-direction: row; }
+  .bs-studio-dock { width: 100%; height: 35vh; }
+}

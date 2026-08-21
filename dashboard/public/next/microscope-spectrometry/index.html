@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Microscope Spectrometry | Analytical SEM & EDX Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Top Masthead Rail -->
+  <header class="sem-masthead">
+    <div class="sem-brand">
+      <span>JEOL JSM-IT800 // ANALYTICAL SEM & EDX SPECTROMETER</span>
+    </div>
+    <div class="sem-status-rail" aria-live="polite">
+      <span>VACUUM: <b style="color:var(--sem-phosphor);">2.1e-5 Pa (HI-VAC)</b></span>
+      <span>GUN HV: <b style="color:var(--sem-cyan);">15.0 kV</b></span>
+      <span>DEAD TIME: <b id="deadTimeText">28% (NORMAL)</b></span>
+      <span>PHASE: <b id="semPhase" style="color:var(--sem-phosphor);">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnResyncSem" class="sem-btn" type="button">SYNC OPTICS</button>
+      <button id="btnBeamTrip" class="sem-btn danger" type="button">BEAM TRIP (E-STOP)</button>
+    </div>
+  </header>
+
+  <main class="sem-stage">
+    <!-- Left Column: Optics & Vacuum Interlock Deck -->
+    <aside class="sem-left-col" aria-label="Electron Optics and Vacuum Deck">
+      <!-- Beam Optics Column -->
+      <div class="sem-rack-box">
+        <div class="sem-box-title">ELECTRON BEAM COLUMN OPTICS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;">
+          <div>ACCEL VOLTAGE: <b>15.0 kV</b></div>
+          <div>PROBE CURRENT: <b>1.2 nA</b></div>
+          <div>SPOT SIZE: <b>INDEX 4</b></div>
+          <div>MAGNIFICATION: <b>2,500x</b></div>
+          <div>WORKING DIST: <b>10.0 mm</b></div>
+          <div>SCAN SPEED: <b style="color:var(--sem-cyan);">TV RATE</b></div>
+        </div>
+      </div>
+
+      <!-- Vacuum Interlocks -->
+      <div class="sem-rack-box">
+        <div class="sem-box-title">VACUUM SAFETY INTERLOCKS</div>
+        <div style="font-size:10px;margin-bottom:8px;">
+          <div>CHAMBER: <b style="color:var(--sem-phosphor);">HI-VAC LOCKED</b></div>
+          <div>GUN VALVE: <b>OPEN</b></div>
+          <div>INTERLOCK: <b id="interlockStatus" style="color:var(--sem-phosphor);">ENGAGED</b></div>
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button id="btnPauseBeam" class="sem-btn" style="flex:1;" type="button">BEAM PAUSE</button>
+          <button id="btnResumeBeam" class="sem-btn" style="flex:1;" type="button">RESUME</button>
+        </div>
+      </div>
+
+      <!-- Deblock & Steer Directives -->
+      <div class="sem-rack-box">
+        <div class="sem-box-title">CHAMBER RECOVERY & STEER</div>
+        <div style="display:flex;gap:4px;">
+          <button id="btnDeblockSem" class="sem-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
+          <button id="btnAdviceSem" class="sem-btn" style="flex:1;" type="button">ADVICE</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Viewport: CRT Raster & MCA Spectrum -->
+    <section class="sem-center-col" aria-label="P31 Phosphor CRT and MCA Spectrum">
+      <div class="sem-crt-wrap">
+        <canvas id="crtCanvas" role="img" aria-label="P31 Green Phosphor CRT Raster Scan"></canvas>
+      </div>
+
+      <div class="sem-mca-wrap">
+        <canvas id="mcaCanvas" role="img" aria-label="EDX Energy Dispersive Spectrum Histogram"></canvas>
+      </div>
+    </section>
+
+    <!-- Right Column: Evidence & Specimen Plans -->
+    <aside class="sem-right-col" aria-label="Evidence and Specimen Plans">
+      <div style="padding:6px;border-bottom:1px solid var(--sem-border);display:flex;justify-content:space-between;align-items:center;">
+        <b style="font-size:10px;color:var(--sem-cyan);">SPECIMEN PLANS (RECIPES)</b>
+        <button id="btnNewSpecimenPlan" class="sem-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+      </div>
+      <div id="specimenPlansList" style="flex:1;overflow:auto;padding:6px;display:grid;gap:4px;">
+        <!-- Rendered by Native Web Components / app.js -->
+      </div>
+      <div style="padding:6px;border-top:1px solid var(--sem-border);background:#0d1217;">
+        <button id="btnShowcaseScan" class="sem-btn primary" style="width:100%;" type="button">START 10-GEN SERIAL SCAN</button>
+      </div>
+    </aside>
+  </main>
+
+  <div id="semToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

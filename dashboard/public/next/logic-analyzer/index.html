@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Logic Analyzer | Hermes Swarm Instrumentation</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="la-masthead">
+    <div class="la-brand">
+      <span>LOGIC</span>ANALYZER // TLA7000
+    </div>
+    <div class="la-status-cluster" aria-live="polite">
+      <span id="connectionLamp" class="la-lamp active"></span>
+      <span id="connectionText">SSE_LOCKED</span>
+      <span id="sampleRateText">100 kS/s</span>
+      <span id="bufferDepthText">BUF: 0/5000</span>
+      <span id="phaseBadge" class="la-chip info">IDLE</span>
+    </div>
+    <div class="la-toolbar" aria-label="Acquisition and pattern controls">
+      <button id="btnRunStop" class="la-btn primary" type="button">RUN / STOP</button>
+      <button id="btnSingle" class="la-btn" type="button">SINGLE TRIG</button>
+      <button id="btnRefresh" class="la-btn" type="button">RESYNC</button>
+      <button id="btnCommands" class="la-btn" type="button">PATTERN GEN</button>
+      <button id="btnPlanning" class="la-btn" type="button">PLAN ROM</button>
+    </div>
+  </header>
+
+  <main class="la-workbench">
+    <section class="la-scope-stage" aria-label="Digital Timing Waveform Oscilloscope">
+      <div class="la-timing-canvas-wrap">
+        <canvas id="waveformCanvas" aria-label="Logic Waveform Diagram" role="img"></canvas>
+      </div>
+      <div class="la-cursor-hud" aria-label="Measurement Cursors">
+        <div class="la-cursor-val"><span class="la-c1">C1:</span> <span id="c1Val">T=0.000s</span></div>
+        <div class="la-cursor-val"><span class="la-c2">C2:</span> <span id="c2Val">T=0.000s</span></div>
+        <div class="la-cursor-val"><span class="la-delta">Δt:</span> <span id="deltaTVal">0.000s</span> (<span id="freqVal">0.0 Hz</span>)</div>
+        <div class="la-cursor-val"><span>ZOOM:</span> <span id="zoomVal">1.0s/div</span></div>
+      </div>
+      <div class="la-lower-deck">
+        <div class="la-listing-pane">
+          <div class="la-pane-header">
+            <span>SYNCHRONIZED STATE LISTING (BUS DISASSEMBLER)</span>
+            <span id="listingCount">0 SAMPLES</span>
+          </div>
+          <div class="la-listing-table-wrap">
+            <table class="la-table" role="grid" aria-label="State Listing Table">
+              <thead>
+                <tr>
+                  <th>SAMPLE #</th>
+                  <th>TIMESTAMP</th>
+                  <th>BUS / CHANNEL</th>
+                  <th>EVENT / ACTION</th>
+                  <th>PAYLOAD SUMMARY</th>
+                </tr>
+              </thead>
+              <tbody id="stateListingBody">
+                <tr><td colspan="5" style="text-align:center;color:#556;">Awaiting logic acquisition frames...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="la-inspector-deck" aria-label="Signal Inspector and ROM Programmer">
+      <div class="la-tabs" role="tablist" aria-label="Inspector Panels">
+        <button class="la-tab active" role="tab" aria-selected="true" data-tab="signals">SIGNALS</button>
+        <button class="la-tab" role="tab" aria-selected="false" data-tab="evidence">EVIDENCE</button>
+        <button class="la-tab" role="tab" aria-selected="false" data-tab="plans">PROJECT PLANS</button>
+        <button class="la-tab" role="tab" aria-selected="false" data-tab="assist">AI ASSIST</button>
+      </div>
+      <div id="inspectorContent" class="la-tab-content">
+        <!-- Rendered by Preact / app.js -->
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="patternGenDialog" class="la-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="font-size:12px;color:var(--la-cyan);">PATTERN GENERATOR & OPERATOR VECTOR TRANSMITTER</h3>
+      <button class="la-btn" type="button" id="btnClosePatternGen">X</button>
+    </div>
+    <div id="patternGenContent"></div>
+  </dialog>
+
+  <div id="statusToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:3px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

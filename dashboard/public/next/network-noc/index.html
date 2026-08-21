@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Network NOC | Global BGP-4 & Optical Transport Mesh</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Top NOC Header -->
+  <header class="noc-masthead">
+    <div class="noc-brand">
+      <span>TIER-1 GLOBAL NOC // BGP-4 & DWDM OPTICAL MESH</span>
+    </div>
+    <div class="noc-status-bar" aria-live="polite">
+      <span>BGP SESSIONS: <b style="color:var(--noc-green);">8/8 ESTABLISHED</b></span>
+      <span>DWDM OSNR: <b style="color:var(--noc-cyan);">32.4 dB</b></span>
+      <span>ACTIVE RUN: <b id="nocActiveRun">NONE</b></span>
+      <span>PHASE: <b id="nocPhase" style="color:var(--noc-green);">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnResyncNoc" class="noc-btn" type="button">SYNC BGP</button>
+      <button id="btnCutoverNoc" class="noc-btn danger" type="button">ISOLATE ASN (E-STOP)</button>
+    </div>
+  </header>
+
+  <main class="noc-stage">
+    <!-- Left Half: D3 Topology Mesh & DWDM Matrix -->
+    <section class="noc-left-col" aria-label="BGP Peering Topology and Optical Channels">
+      <div class="noc-topology-wrap">
+        <svg id="nocTopologySvg" role="img" aria-label="D3 BGP Autonomous System Topology Mesh Graph"></svg>
+      </div>
+
+      <!-- DWDM 16-Lambda Matrix -->
+      <div class="noc-dwdm-strip" id="dwdmStrip" aria-label="DWDM Optical Carrier Lambdas">
+        <!-- 16 Lambda cells rendered by D3 / app.js -->
+      </div>
+    </section>
+
+    <!-- Right Half: X.733 Alarm Triage & Maintenance Plans -->
+    <aside class="noc-right-col" aria-label="Alarm Triage and Maintenance Plans">
+      <!-- ITU-T X.733 Alarm Triage Table -->
+      <div class="noc-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+        <div class="noc-section-header">
+          <span>ITU-T X.733 ALARM TRIAGE WALL</span>
+          <button id="btnDeblockNoc" class="noc-btn" style="background:#78350f;padding:2px 6px;font-size:9px;" type="button">DEBLOCK PEER</button>
+        </div>
+        <div style="flex:1;overflow:auto;">
+          <table class="noc-table">
+            <thead>
+              <tr>
+                <th>SEV</th>
+                <th>ASN / NODE</th>
+                <th>CIRCUIT / FAULT</th>
+                <th>ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="alarmTableBody">
+              <tr><td colspan="4" style="text-align:center;color:#64748b;">No active critical alarms on backbone mesh.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Network Maintenance Windows (Project Plans) -->
+      <div class="noc-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+        <div class="noc-section-header">
+          <span>MAINTENANCE WINDOWS (PLANS)</span>
+          <button id="btnNewMaintPlan" class="noc-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+        </div>
+        <div id="maintPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
+          <!-- Rendered by D3 / app.js -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="nocToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

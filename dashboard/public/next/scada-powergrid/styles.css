@@ -1,0 +1,151 @@
+/* SCADA PowerGrid HMI Styling */
+:root {
+  --scada-bg: #0a0e14;
+  --scada-panel: #111720;
+  --scada-border: #1e293b;
+  --scada-bus-500: #00f0ff;
+  --scada-bus-230: #f59e0b;
+  --scada-dead: #475569;
+  --scada-closed: #10b981;
+  --scada-open: #64748b;
+  --scada-trip: #ef4444;
+  --scada-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--scada-bg);
+  color: #e2e8f0;
+  font-family: var(--scada-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header Masthead */
+.scada-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #0d121a;
+  border-bottom: 1px solid var(--scada-border);
+  gap: 12px;
+}
+.scada-title { font-weight: 800; color: var(--scada-bus-500); font-size: 13px; letter-spacing: 0.08em; }
+.scada-metrics { display: flex; gap: 16px; font-size: 11px; }
+.scada-btn {
+  background: #1e293b;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  padding: 4px 10px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.scada-btn:hover { background: #334155; border-color: var(--scada-bus-500); }
+.scada-btn.danger { background: #7f1d1d; border-color: #ef4444; }
+
+/* Annunciator Alarm Matrix */
+.scada-annunciator {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  padding: 6px 12px;
+  background: #080c10;
+  border-bottom: 1px solid var(--scada-border);
+}
+.ann-tile {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 2px;
+  padding: 4px;
+  text-align: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #64748b;
+}
+.ann-tile.active-green { background: #064e3b; color: #34d399; border-color: #10b981; }
+.ann-tile.active-amber { background: #78350f; color: #fbbf24; border-color: #f59e0b; }
+.ann-tile.active-red { background: #7f1d1d; color: #f87171; border-color: #ef4444; animation: flash-red 1s infinite alternate; }
+
+@keyframes flash-red {
+  0% { opacity: 0.6; }
+  100% { opacity: 1.0; }
+}
+
+/* Main Layout Stage */
+.scada-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.scada-sld-wrap {
+  flex: 1;
+  position: relative;
+  background: #05080c;
+  overflow: hidden;
+  border-right: 1px solid var(--scada-border);
+}
+svg#sldCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Right Bay Detail Dock */
+.scada-bay-dock {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: var(--scada-panel);
+}
+.scada-tabs {
+  display: flex;
+  background: #0d121a;
+  border-bottom: 1px solid var(--scada-border);
+}
+.scada-tab {
+  flex: 1;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.scada-tab.active { color: var(--scada-bus-500); border-bottom: 2px solid var(--scada-bus-500); background: #111827; }
+.scada-tab-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+}
+
+/* SBO Modal Dialog */
+dialog.scada-modal {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 2px solid #f59e0b;
+  border-radius: 4px;
+  padding: 16px;
+  max-width: 500px;
+  width: 90vw;
+  margin: auto;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+}
+dialog.scada-modal::backdrop { background: rgba(0,0,0,0.7); backdrop-filter: blur(2px); }
+
+@media (max-width: 1024px) {
+  .scada-stage { flex-direction: column; }
+  .scada-sld-wrap { height: 60vh; border-right: none; border-bottom: 1px solid var(--scada-border); }
+  .scada-bay-dock { width: 100%; height: 40vh; }
+  .scada-annunciator { grid-template-columns: repeat(4, 1fr); }
+}

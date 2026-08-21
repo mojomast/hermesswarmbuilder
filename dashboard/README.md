@@ -13,7 +13,7 @@ Live steering and observability system for Hermes autonomous project builder run
 
 ## Dynamic dashboard views
 
-The dashboard provides ten clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
+The dashboard provides twenty clean-slate clients, six full-control interface studies, and five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
 
 ### Clean-slate clients
 
@@ -29,6 +29,16 @@ These clients share only the DOM-free `headless-dashboard-client.js` API/SSE lay
 8. **Casefiles (`/next/casefiles/index.html`)**: evidence-focused case registry and authorization bureau.
 9. **Patchbay (`/next/patchbay/index.html`)**: modular signal-routing control surface.
 10. **Swarm Gallery (`/next/gallery/index.html`)**: room-based exhibition and curator workflow.
+11. **Logic Analyzer (`/next/logic-analyzer/index.html`)**: digital waveform timing, bus packet decoder, and measurement cursors.
+12. **SCADA PowerGrid (`/next/scada-powergrid/index.html`)**: high-voltage substation single-line diagram mimic and SBO switchgear.
+13. **Flight Annunciator (`/next/flight-annunciator/index.html`)**: aerospace master warning & caution annunciator and split-legend switchboard.
+14. **Broadcast Switcher (`/next/broadcast-switcher/index.html`)**: TV master control room multiviewer, PGM/PVW matrix, and T-bar fader.
+15. **Audio Mixer (`/next/audio-mixer/index.html`)**: large-format summing desk, 8-stage channel strips, EBU R68 VU meters, and motorized faders.
+16. **CNC Machining (`/next/cnc-machining/index.html`)**: 5-axis DRO coordinate readout, isometric 3D toolpath canvas, and G-code motion.
+17. **Robotics Teleop (`/next/robotics-teleop/index.html`)**: planetary rover 3D digital twin, 6-DOF kinematics, and staged DSN uplink.
+18. **Network NOC (`/next/network-noc/index.html`)**: global BGP-4 routing mesh, DWDM optical matrix, and ITU-T X.733 alarm triage.
+19. **Microscope Spectrometry (`/next/microscope-spectrometry/index.html`)**: analytical SEM P31 phosphor CRT raster scan and EDX histogram.
+20. **Reactor Core (`/next/reactor-core/index.html`)**: nuclear Class 1E safety console, 61-element hexagonal flux matrix, and armed SCRAM.
 
 Research sources and applied design decisions are stored in each client directory. See [`docs/CLEAN_SLATE_FRONTENDS.md`](../docs/CLEAN_SLATE_FRONTENDS.md) for architecture and parity details.
 

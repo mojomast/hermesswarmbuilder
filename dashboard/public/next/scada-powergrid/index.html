@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>SCADA PowerGrid | Substation Automation & Dispatch</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="scada-masthead">
+    <div class="scada-title">
+      SUBSTATION 500kV / 230kV // SCADA MIMIC (IEC 61850)
+    </div>
+    <div class="scada-metrics" aria-live="polite">
+      <span>GRID FREQ: <b id="gridFreq">60.00 Hz</b></span>
+      <span>SYSTEM LOAD: <b id="systemLoad">450 MW</b></span>
+      <span>CONN: <b id="connStatus" style="color:var(--scada-closed);">SSE_LINKED</b></span>
+      <span>PHASE: <b id="phaseDisplay" style="color:var(--scada-bus-500);">IDLE</b></span>
+    </div>
+    <div>
+      <button id="btnAckAlarms" class="scada-btn" type="button">ACK ALARMS</button>
+      <button id="btnRefresh" class="scada-btn" type="button">SYNC TELEMETRY</button>
+      <button id="btnEmergencyTrip" class="scada-btn danger" type="button">E-TRIP (SCRAM)</button>
+    </div>
+  </header>
+
+  <!-- 8-Tile Alarm Matrix -->
+  <section class="scada-annunciator" aria-label="ISA-18.2 Annunciator Tile Matrix">
+    <div class="ann-tile active-green" id="tileBusA">500kV BUS A: ENERGIZED</div>
+    <div class="ann-tile active-amber" id="tileBusB">230kV BUS B: SYNCHRONIZED</div>
+    <div class="ann-tile" id="tileTransformer">XFMR T1: 85% MVA</div>
+    <div class="ann-tile" id="tileBlocker">BLOCKER TRIP: NORMAL</div>
+    <div class="ann-tile active-green" id="tileGates">GATES: ARMED</div>
+    <div class="ann-tile" id="tileQueue">QUEUE: IDLE</div>
+    <div class="ann-tile" id="tileShowcase">SHOWCASE LOOP: READY</div>
+    <div class="ann-tile" id="tilePlanSync">PLAN ROM: SYNCED</div>
+  </section>
+
+  <main class="scada-stage">
+    <section class="scada-sld-wrap" aria-label="Substation Single-Line Diagram">
+      <svg id="sldCanvas" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Substation Vector Single-Line Diagram">
+        <!-- SVG content rendered by Lit / app.js -->
+      </svg>
+    </section>
+
+    <aside class="scada-bay-dock" aria-label="Bay Control and Disassembly">
+      <div class="scada-tabs" role="tablist">
+        <button class="scada-tab active" role="tab" aria-selected="true" data-tab="bays">BAY SWITCHGEAR</button>
+        <button class="scada-tab" role="tab" aria-selected="false" data-tab="evidence">RELAY EVIDENCE</button>
+        <button class="scada-tab" role="tab" aria-selected="false" data-tab="plans">GRID PLANS</button>
+        <button class="scada-tab" role="tab" aria-selected="false" data-tab="assist">DISPATCH ASSIST</button>
+      </div>
+      <div id="bayDockContent" class="scada-tab-body">
+        <!-- Rendered by Lit / app.js -->
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="sboDialog" class="scada-modal">
+    <h3 style="color:#f59e0b;font-size:12px;margin-bottom:8px;">SELECT-BEFORE-OPERATE (SBO) TRANSACTION INTERLOCK</h3>
+    <p id="sboDescription" style="margin-bottom:12px;font-size:11px;"></p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button id="btnCancelSbo" class="scada-btn" type="button">CANCEL / ABORT</button>
+      <button id="btnExecuteSbo" class="scada-btn" style="background:#047857;border-color:#10b981;" type="button">EXECUTE SWITCHING</button>
+    </div>
+  </dialog>
+
+  <div id="scadaToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

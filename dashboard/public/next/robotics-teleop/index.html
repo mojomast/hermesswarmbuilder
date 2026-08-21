@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Robotics Teleoperation Workstation | JPL GDS & MoveIt</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Top DSN Rail -->
+  <header class="rt-masthead">
+    <div class="rt-brand">
+      <span>NASA JPL // PERSEVERANCE GDS & MOVEIT 2</span>
+    </div>
+    <div class="rt-dsn-status" aria-live="polite">
+      <span>DSN STATION 14 (GOLDSTONE): <b style="color:var(--rt-hud-green);">UPLINK LOCKED</b></span>
+      <span>RTLT LATENCY: <b id="rtltLatency">14.2 ms</b></span>
+      <span>SOL: <b id="solDay">SOL 412</b></span>
+      <span>PHASE: <b id="roverPhase" style="color:var(--rt-hud-cyan);">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnResyncDsn" class="rt-btn" type="button">SYNC DSN</button>
+      <button id="btnEStopRover" class="rt-btn danger" type="button">EMERGENCY ALL-STOP</button>
+    </div>
+  </header>
+
+  <main class="rt-workbench">
+    <!-- 3D WebGL Kinematics Viewport -->
+    <section class="rt-viewport-wrap" aria-label="3D Rover Digital Twin and Terrain Costmap">
+      <canvas id="webglCanvas" role="img" aria-label="3D Rover Articulated Digital Twin Simulation"></canvas>
+
+      <!-- Heads-Up Display (HUD) -->
+      <div class="rt-hud-overlay" aria-label="Rover Subsystem HUD">
+        <div style="color:var(--rt-hud-cyan);font-weight:bold;">ROVER DIGITAL TWIN // 6-DOF TELEMETRY</div>
+        <div>RUN ID: <b id="hudRunId" style="color:#fff;">NONE</b></div>
+        <div>BATTERY: <b style="color:var(--rt-hud-green);">94.2% (720 Wh)</b></div>
+        <div>JOINT 1 (AZIMUTH): <span id="j1Val">+014.2°</span></div>
+        <div>JOINT 2 (ELEVATION): <span id="j2Val">-032.5°</span></div>
+        <div>JOINT 3 (WRIST): <span id="j3Val">+088.0°</span></div>
+        <div>OBSTACLE RISK: <b id="riskVal" style="color:var(--rt-hud-green);">LOW (0.04)</b></div>
+      </div>
+    </section>
+
+    <!-- Right Staged Uplink & Mission Planner Deck -->
+    <aside class="rt-teleop-deck" aria-label="Staged Uplink and Mission Planner">
+      <!-- Staged Uplink Sequencer -->
+      <div class="rt-section">
+        <div class="rt-section-header">STAGED UPLINK COMMAND SEQUENCER</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+          <button id="btnStagePause" class="rt-btn" type="button">STAGE PAUSE</button>
+          <button id="btnStageResume" class="rt-btn" type="button">STAGE RESUME</button>
+          <button id="btnStageWake" class="rt-btn primary" type="button">STAGE RUN NOW</button>
+          <button id="btnStageLoop" class="rt-btn" style="color:var(--rt-hud-amber);" type="button">STAGE SHOWCASE</button>
+        </div>
+        <button id="btnTransmitUplink" class="rt-btn primary" style="width:100%;" type="button">TRANSMIT UPLINK PASS (ARM & FIRE)</button>
+      </div>
+
+      <!-- Deblock & Steer Guidance -->
+      <div class="rt-section">
+        <div class="rt-section-header">HAZARD RECOVERY & STEERING</div>
+        <div style="display:flex;gap:6px;">
+          <button id="btnDeblockRover" class="rt-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
+          <button id="btnAdviceRover" class="rt-btn" style="flex:1;" type="button">QUERY ADVICE</button>
+        </div>
+      </div>
+
+      <!-- Mission Sequence Plans -->
+      <div class="rt-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div class="rt-section-header" style="margin-bottom:0;">MISSION PLANS</div>
+          <button id="btnNewMissionPlan" class="rt-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+        </div>
+        <div id="missionPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
+          <!-- Rendered by Three.js / app.js -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="rtToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

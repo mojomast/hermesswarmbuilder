@@ -1,0 +1,213 @@
+/* Audio Mixer Console Styling */
+:root {
+  --am-bg: #090c0f;
+  --am-panel: #11151a;
+  --am-border: #1e242c;
+  --am-meter-green: #10b981;
+  --am-meter-yellow: #f59e0b;
+  --am-meter-red: #ef4444;
+  --am-fader-cap: #e2e8f0;
+  --am-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--am-bg);
+  color: #cdd9e5;
+  font-family: var(--am-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Overhead Meter Bridge */
+.am-meterbridge {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #06080a;
+  border-bottom: 2px solid var(--am-border);
+  align-items: center;
+}
+.am-meter-unit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.am-meter-scale {
+  width: 16px;
+  height: 80px;
+  background: #0a0e13;
+  border: 1px solid #1a222c;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+}
+.am-meter-bar {
+  width: 100%;
+  height: var(--meter-level, 30%);
+  background: linear-gradient(to top, var(--am-meter-green) 60%, var(--am-meter-yellow) 85%, var(--am-meter-red) 100%);
+  transition: height 0.08s ease;
+}
+.am-meter-label { font-size: 8.5px; font-weight: 700; color: #64748b; }
+
+/* Main Console Deck */
+.am-console {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: var(--am-panel);
+}
+
+/* Left Channel Strip Bay */
+.am-channel-bay {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  border-right: 1px solid var(--am-border);
+}
+
+.am-channel-strip {
+  width: 110px;
+  min-width: 110px;
+  border-right: 1px solid var(--am-border);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 8px;
+  background: #0d1116;
+}
+
+.am-rotary-knob {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1e2632;
+  border: 1px solid #334155;
+  margin: 0 auto;
+  position: relative;
+  cursor: pointer;
+}
+.am-knob-indicator {
+  position: absolute;
+  top: 3px; left: 13px;
+  width: 2px; height: 10px;
+  background: #00f0ff;
+  border-radius: 1px;
+}
+
+/* Solo / Mute Switches */
+.am-strip-switches {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+.am-btn-switch {
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 8.5px;
+  font-weight: 800;
+  border-radius: 2px;
+  border: 1px solid #334155;
+  background: #161f2c;
+  color: #64748b;
+  cursor: pointer;
+}
+.am-btn-switch.solo.active { background: #78350f; color: #fbbf24; border-color: #f59e0b; }
+.am-btn-switch.cut.active { background: #7f1d1d; color: #f87171; border-color: #ef4444; }
+
+/* OLED Scribble Strip */
+.am-scribble {
+  background: #05070a;
+  border: 1px solid #1a222c;
+  border-radius: 2px;
+  padding: 4px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #00f0ff;
+}
+
+/* 100mm Motorized Fader Track */
+.am-fader-track {
+  flex: 1;
+  min-height: 120px;
+  position: relative;
+  background: #080b0e;
+  border: 1px solid #1a222c;
+  border-radius: 2px;
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+.am-fader-slot {
+  position: absolute;
+  top: 10px; bottom: 10px;
+  width: 2px;
+  background: #1e2632;
+}
+.am-fader-cap {
+  position: absolute;
+  bottom: var(--fader-pos, 50%);
+  width: 38px;
+  height: 22px;
+  background: #2b3748;
+  border: 2px solid #475569;
+  border-radius: 3px;
+  cursor: grab;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.am-fader-cap::after {
+  content: "";
+  width: 20px;
+  height: 2px;
+  background: #fff;
+}
+
+/* Master Center Section */
+.am-master-center {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: var(--am-panel);
+  padding: 10px;
+  gap: 12px;
+  overflow: auto;
+}
+
+.am-talkback-box {
+  background: #090d12;
+  border: 1px solid var(--am-border);
+  border-radius: 3px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.am-btn-ptt {
+  background: #0369a1;
+  color: #fff;
+  border: 1px solid #0284c7;
+  padding: 6px;
+  font-weight: 800;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.am-btn-ptt:active { background: #0284c7; }
+
+@media (max-width: 1024px) {
+  .am-console { flex-direction: column; }
+  .am-channel-bay { height: 50vh; border-right: none; border-bottom: 1px solid var(--am-border); }
+  .am-master-center { width: 100%; height: 50vh; }
+}

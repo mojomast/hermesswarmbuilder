@@ -22,11 +22,12 @@
       <strong id="objective">Locating the active objective...</strong>
     </div>
     <div class="stream-controls" aria-label="Stream controls">
-      <span id="connection" class="signal" role="status">OFFLINE</span>
+      <span id="connection" class="signal" role="status">OFFLINE</span><span id="freshness" class="freshness">NO SIGNAL</span>
       <button type="button" id="refresh">Refresh</button>
       <button type="button" id="pause-stream">Pause stream</button>
       <button type="button" id="resume-stream">Resume</button>
       <button type="button" id="toggle-connection">Disconnect</button>
+      <button type="button" id="open-help" class="help-button" aria-haspopup="dialog">Help</button>
     </div>
   </header>
 
@@ -59,8 +60,8 @@
       </figure>
 
       <section class="index-strip" aria-labelledby="index-title">
-        <div><p class="eyebrow">Keyboard route</p><h2 id="index-title">Node index</h2><p>Arrow keys move, Home/End jump, Enter opens detail.</p></div>
-        <div id="node-index" class="node-index" role="grid" aria-label="Constellation node index" aria-describedby="index-title"></div>
+        <div><p class="eyebrow">Keyboard route</p><h2 id="index-title">Node index</h2><p id="index-instructions">Arrow keys move, Home/End jump, Enter opens detail.</p></div>
+        <div id="node-index" class="node-index" aria-label="Constellation node index" aria-describedby="index-title index-instructions"></div>
       </section>
 
       <details id="semantic-network" class="semantic-network">
@@ -82,6 +83,7 @@
       <section id="inspect-panel" class="dock-panel" role="tabpanel" aria-labelledby="inspect-tab">
         <header class="panel-head"><div><p class="eyebrow">Selected object</p><h2 id="selection-title" tabindex="-1">Orchestrator</h2></div><span id="selection-status" class="status-token">idle</span></header>
         <div id="object-summary" class="object-summary"></div>
+        <div id="selection-context" class="selection-context"></div>
         <div id="resource-actions" class="resource-actions"></div>
         <details class="object-raw"><summary>Structured object inspector</summary><div id="object-inspector"></div></details>
       </section>
@@ -89,6 +91,7 @@
       <section id="navigate-panel" class="dock-panel" role="tabpanel" aria-labelledby="navigate-tab" hidden>
         <label class="search-label">Filter all objects <input id="object-filter" type="search" autocomplete="off" placeholder="agent, run, event, tool..."></label>
         <div class="nav-groups">
+          <details open><summary>Anomalies <span id="blocker-count"></span></summary><div id="blocker-list" class="object-list"></div></details>
           <details open><summary>Runs <span id="run-count"></span></summary><div id="run-list" class="object-list"></div></details>
           <details open><summary>Agents <span id="agent-count"></span></summary><div id="agent-list" class="object-list"></div></details>
           <details><summary>Iterations <span id="iteration-count"></span></summary><div id="iteration-list" class="object-list"></div></details>
@@ -100,7 +103,8 @@
 
       <section id="actions-panel" class="dock-panel" role="tabpanel" aria-labelledby="actions-tab" hidden>
         <div id="action-notice" class="notice" role="status" aria-live="polite">Actions are sent through the dashboard client.</div>
-        <details open><summary>Operational controls</summary><div class="button-grid">
+        <div id="control-state" class="control-state"></div>
+        <details id="operations-section" open><summary>Current-run operational controls</summary><div class="button-grid">
           <button data-command="run-now">Run now</button><button data-command="pause">Pause</button><button data-command="resume">Resume</button><button data-command="hold">Hold admission</button><button data-command="unhold">Unhold</button><button class="danger" data-command="stop">Graceful stop</button>
         </div></details>
         <details><summary>Showcase and next iteration</summary>
@@ -119,15 +123,15 @@
           <form data-command-form="steer" class="form-stack"><label>Directive <textarea name="text" required></textarea></label><label>Scope <select name="scope"><option value="next_run">Next run</option><option value="current_run">Current run</option><option value="queue">Queue</option></select></label><label>Priority <select name="priority"><option>required</option><option>preferred</option></select></label><button>Apply steering</button></form>
           <div id="steering-list" class="action-list"></div>
         </details>
-        <details><summary>Queue</summary>
-          <form data-command-form="add-queue-item" class="form-stack"><label>Title <input name="title" required></label><label>Objective <textarea name="objective" required></textarea></label><label>Context <textarea name="context"></textarea></label><label>Constraints, one per line <textarea name="constraints"></textarea></label><label>Priority <input name="priority" type="number" value="50"></label><label class="check"><input name="pin" type="checkbox"> Pin after adding</label><button>Add queue item</button></form>
+        <details id="queue-section"><summary>Queue</summary>
+          <form data-command-form="add-queue-item" class="form-stack"><label>Title <input name="title" required></label><label>Objective <textarea name="objective" required></textarea></label><label>Context <textarea name="context"></textarea></label><label>Constraints, one per line <textarea name="constraints"></textarea></label><label>Acceptance gate IDs, one per line <textarea name="acceptanceGateIds"></textarea></label><label>Preferred repository <input name="preferredRepo" placeholder="/absolute/git/root"></label><label>Priority <input name="priority" type="number" value="50"></label><label class="check"><input name="pin" type="checkbox"> Pin after adding</label><button>Add queue item</button></form>
           <div id="queue-actions" class="action-list"></div><button class="danger" data-command="clear-queue" data-confirm="Clear the queue and linked steering?">Clear queue</button>
         </details>
-        <details><summary>Gates and decisions</summary>
+        <details id="gates-section"><summary>Gates and decisions</summary>
           <form data-command-form="add-gate" class="form-stack"><label>Description <input name="description" required></label><label>Phase <input name="phase" value="final-audit"></label><label>Severity <select name="severity"><option>must</option><option>should</option></select></label><label>Required evidence, one per line <textarea name="requiredEvidence"></textarea></label><button>Add gate</button></form>
           <div id="gate-actions" class="action-list"></div>
         </details>
-        <details><summary>Continuation and fork</summary>
+        <details id="lineage-section"><summary>Continuation and fork</summary>
           <form data-special="lineage" class="form-stack"><label>Mode <select name="mode"><option value="continue-from-iteration">Continue</option><option value="fork-from-iteration">Fork</option><option value="use-as-next-direction">Use as next direction</option></select></label><label>Repository path <input name="repoPath" required></label><label>Base ref <input name="baseRef" value="HEAD" required></label><label>Objective <textarea name="objective" required></textarea></label><label>Bounded change <textarea name="changeText" required></textarea></label><button>Create iteration request</button></form>
         </details>
       </section>
@@ -136,10 +140,23 @@
         <div class="plan-toolbar"><button id="new-classic-plan">New classic</button><button id="new-managed-plan">New managed</button><button id="planning-assist">Planning assist</button></div>
         <div id="plan-list" class="object-list"></div>
         <div id="plan-workspace" class="plan-workspace"><p class="empty">Select or create a persisted plan.</p></div>
-        <details><summary>Planning assistance</summary><div id="assistance-workspace"></div></details>
+        <details id="assistance-section"><summary>Planning assistance</summary><div id="assistance-workspace"></div></details>
       </section>
     </aside>
   </main>
+
+  <dialog id="help-dialog" class="help-dialog" aria-labelledby="help-title">
+    <div class="help-head"><div><p class="eyebrow">Operator manual</p><h2 id="help-title">Using Constellation</h2></div><button type="button" id="close-help">Close</button></div>
+    <div class="help-body">
+      <section><h3>Read the operational sky</h3><p>The center body is the orchestrator. Circular bodies are agents, squares are runs and queue items, diamonds are gates, hexagons are iterations, and anomaly bodies identify reported blockers. A dashed red halo means blocked, failed, deblocking, or on hold. Select any body to open its operational dossier.</p><p>The orbital map is bounded for orientation. Navigate contains every retained run, agent, iteration, event, tool call, and audit record. The accessible network tables expose the same records without requiring interpretation of the graphic.</p></section>
+      <section><h3>Inspect agents and runs</h3><p>Select an agent to see its current phase and task, parent run, last message, last-seen time, recent events, tool calls, errors, artifact, and log path. Select a run to load its authoritative run record, artifacts, logs, SPEC, DEVPLAN, participating agents, and event history. Resource controls are always tied to the dossier's displayed run.</p></section>
+      <section><h3>Remediate a blocker</h3><p>Select a red-halo body or anomaly node. The anomaly track reports the affected run and agent, phase, reason, owner, first-seen time, suggested action, tool call, artifact/log location, pending recovery requests, and related error telemetry when available.</p><p>For the current run, <strong>Ask adviser</strong> requests non-executing recovery guidance and <strong>Prepare deblock</strong> opens a prompt that records steering for the live orchestrator. A terminal managed run is not resumed in place: inspect its handoff and failure evidence, then prepare a bounded continuation or fork. Historical runs intentionally cannot receive the current-run deblock command.</p></section>
+      <section><h3>Control builds</h3><p>Act shows the exact selected and current run targets plus requested versus observed control state. Pause and graceful stop take effect at safe runner checkpoints; they are not immediate process controls. Hold also closes run admission. Resume clears pause/stop intent. Run now requests the next runner tick. Accepted means the control intent was persisted, not that work has already reached the requested state.</p></section>
+      <section><h3>Steering, queue, gates, and iterations</h3><p>Steering changes current or future direction. Queue controls add, pin, archive, or clear candidate work. Gate controls record decisions and evidence references; they do not create required artifact files or override run-local validation. Showcase controls manage bounded generation loops. Continuation and fork requests require an absolute repository path, objective, base reference, bounded change, and source lineage.</p></section>
+      <section><h3>Plans and planning assistance</h3><p>Plans implements draft creation, revision updates, review, exact-revision approval or rejection, launch, clone, fork, and archive. Managed validation is runner-selected. Planning assistance is advisory: conversations and proposals do not mutate or execute plans until an operator explicitly creates and advances a draft.</p></section>
+      <section><h3>Connection and keyboard operation</h3><p>Refresh performs a full synchronization. Pause stream freezes this display and buffers incoming events; it does not pause the workflow. Resume stream applies buffered data and synchronizes. Disconnect stops transport. The header reports transport and signal age so stale controls are visible.</p><p>Tab reaches controls. In the node index, arrow keys move, Home and End jump, and Enter or Space inspects. In dock tabs, Left and Right move between views. Escape closes this manual. Reduced-motion and forced-color preferences are honored.</p></section>
+    </div>
+  </dialog>
 
   <div id="toast" class="toast" role="alert" aria-live="assertive" hidden></div>
   <script type="module" src="./constellation.js"></script>

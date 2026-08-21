@@ -36,6 +36,26 @@ Research captured 2026-08-21. The implementation has no remote runtime dependenc
    - Two-dimensional diagrams may retain their spatial layout, but surrounding content should reflow and equivalent functionality must remain available. Small-screen layouts should avoid fixed regions that obscure focus.
    - Applied: the SVG scales as a single two-dimensional figure; at mobile widths the inspector moves below it, controls stack, sticky positioning is removed, tables are isolated in their own scroll containers, and all diagram functionality remains in reflowing HTML.
 
+9. Google, Site Reliability Engineering, "Monitoring Distributed Systems": https://sre.google/sre-book/monitoring-distributed-systems/
+   - Operational interfaces should expose latency, traffic, errors, and saturation while distinguishing symptoms from causes.
+   - Applied: selected agents and runs expose correlated event/tool activity, durations, latest errors, current work, signal age, and control-plane request state instead of relying on status counts alone.
+
+10. Google, Site Reliability Engineering, "Managing Incidents": https://sre.google/sre-book/managing-incidents/
+    - Incident handling needs explicit impact, ownership, current state, mitigation, evidence, and a durable timeline.
+    - Applied: blocked selections open an anomaly dossier containing the affected run/agent, phase, reason, owner, first-seen time, tool/artifact/log location, pending requests, suggested action, telemetry, and recovery routes.
+
+11. OpenTelemetry, Traces: https://opentelemetry.io/docs/concepts/signals/traces/
+    - Correlation and parent context are required to understand work distributed across components.
+    - Applied: agent, run, event, tool, iteration, and blocker selections resolve to an owning run and a correlated telemetry track. Mutations include target and correlation identifiers.
+
+12. W3C WAI-ARIA Authoring Practices, Dialog Modal Pattern: https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/
+    - Modal help needs a programmatic label, contained keyboard interaction, a visible close control, and focus restoration.
+    - Applied: the persistent Help control opens a native modal operator manual covering map semantics, selection, recovery, controls, plans, connection behavior, and keyboard operation.
+
+13. Nielsen Norman Group, Ten Usability Heuristics: https://www.nngroup.com/articles/ten-usability-heuristics/
+    - Interfaces should keep system state visible, match domain language, prevent errors, support recovery, and provide help without requiring memorization.
+    - Applied: Constellation separates selected versus current targets, requested versus observed state, display freeze versus workflow pause, current versus historical recovery eligibility, and accepted intent versus completed execution.
+
 ## Interaction Principles
 
 - **Stable geography over simulation.** The orchestrator remains centered, agents occupy deterministic role orbits, recent runs form a left-side system belt, and queue/gate/plan clusters occupy fixed satellite zones. Data refreshes do not rearrange the whole sky.
@@ -45,6 +65,10 @@ Research captured 2026-08-21. The implementation has no remote runtime dependenc
 - **Motion is exceptional.** Only blocker anomaly halos pulse. `prefers-reduced-motion` replaces the pulse with a static heavy dashed halo.
 - **No color-only state.** Shape, labels, border/dash language, status notches, and textual tables duplicate color signals.
 - **Safe insertion.** API values are inserted with DOM `textContent`, form properties, or SVG DOM methods. Dynamic API data is never concatenated into `innerHTML`; URL segments are handled by the imported client.
+- **Selection owns resource context.** Artifact, log, and document requests always carry the selected object's resolved run ID. A historical run can never inherit buttons from another selected run.
+- **Recovery follows backend authority.** Current-run deblock controls record steering; managed terminal recovery uses a new continuation/fork; historical runs never receive a misleading direct deblock action; gate records are not described as creating evidence.
+- **Requested is not observed.** The control-plane readout presents persisted pause, stop, admission, run-now, next-run, and showcase-loop requests separately from the workflow's observed phase.
+- **Help is part of the instrument.** The operator manual is available from every state and explains controls, consequences, keyboard use, recovery limits, and data freshness in the same terminology used by the UI.
 
 ## Composition Targets
 

@@ -13,7 +13,7 @@ const clients = [
   ['operator-shell', 'operator-shell.js', ['id="commandInput"', 'class="buffers"']],
   ['control-table', 'control-table.js', ['role="grid"', 'class="formula-region"']],
   ['field-guide', 'field-guide.js', ['class="binder"', 'class="bottom-nav"']],
-  ['constellation', 'constellation.js', ['id="constellation"', 'id="semantic-network"']],
+  ['constellation', 'constellation.js', ['id="constellation"', 'id="semantic-network"', 'id="selection-context"', 'id="help-dialog"']],
   ['casefiles', 'casefiles.js', ['class="cabinet-layout"', 'class="folder-tabs"']],
   ['patchbay', 'patchbay.js', ['id="cableLayer"', 'class="patch-field"']],
   ['gallery', 'app.js', ['class="wayfinding"', 'id="curator-desk"']],

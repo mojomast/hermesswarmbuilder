@@ -46,6 +46,9 @@ async function waitReady() {
 }
 async function get(path) { const r = await fetch(base + path); if (!r.ok) throw new Error(`${path} ${r.status}: ${await r.text()}`); return r.json(); }
 async function post(type, payload) { const r = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, actor: 'smoke', payload }) }); if (!r.ok) throw new Error(`${type} ${r.status}: ${await r.text()}`); return r.json(); }
+async function reject(type, payload, status) { const r = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type, actor: 'smoke', payload }) }); const body = await r.json(); if (r.status !== status || !body.error) throw new Error(`${type} expected ${status}, received ${r.status}: ${JSON.stringify(body)}`); return body; }
+function acceptedCommandCount() { try { return readFileSync(join(state, 'commands.jsonl'), 'utf8').trim().split(/\n/).filter(Boolean).length; } catch { return 0; } }
+function acceptedAuditCount() { try { return readFileSync(join(state, 'audit.jsonl'), 'utf8').trim().split(/\n/).filter(Boolean).length; } catch { return 0; } }
 try {
   await waitReady();
   const events = await get('/api/events?after=missing&limit=2');
@@ -60,6 +63,37 @@ try {
   if (!detail.variants[0]._artifact?.path || !detail.evaluations[0]._artifact?.path) throw new Error('artifact metadata missing');
   const invalid = await fetch(base + '/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'start-next-iteration', payload: { repoPath: 'relative/repo', objective: '', changeText: '' } }) });
   if (invalid.status !== 400) throw new Error('malformed managed launch request was not rejected early');
+  const acceptedBeforeRejections = acceptedCommandCount();
+  const auditBeforeRejections = acceptedAuditCount();
+  await reject('steer', { text: '   ' }, 400);
+  await reject('set-current-objective', { objective: '' }, 400);
+  await reject('add-queue-item', { title: 'empty objective', objective: ' ' }, 400);
+  await reject('deblock', { runId: 'historical-run', prompt: 'retry' }, 409);
+  await reject('deblock-advice', { runId: 'historical-run', prompt: 'assess' }, 409);
+  writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'blocked', phase: 'blocked', block: { runId: 'other-run', reason: 'stale blocker' }, agents: {} }, null, 2));
+  await reject('deblock', { runId, prompt: 'retry stale blocker' }, 409);
+  writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'blocked', phase: 'blocked', agents: {} }, null, 2));
+  await reject('remove-steering', { id: 'missing-steering' }, 404);
+  await reject('gate-decision', { gateId: 'missing-gate', status: 'passed' }, 404);
+  await reject('attach-gate-evidence', { gateId: 'missing-gate', artifacts: ['artifact.json'] }, 404);
+  await reject('update-gate', { gateId: 'missing-gate', description: 'missing' }, 404);
+  await reject('pin-queue-item', { itemId: 'missing-queue-item' }, 404);
+  await reject('archive-queue-item', { itemId: 'missing-queue-item' }, 404);
+  writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'building', phase: 'building', agents: {} }, null, 2));
+  await reject('deblock', { runId, prompt: 'retry' }, 409);
+  writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: 'replacement-run', status: 'blocked', phase: 'blocked', agents: {} }, null, 2));
+  await reject('approve-deblock-advice', { adviceId: 'advice-fixture' }, 409);
+  writeFileSync(join(state, 'state.json'), JSON.stringify({ schemaVersion: 'apb.state.v1', currentRunId: runId, status: 'blocked', phase: 'blocked', agents: {} }, null, 2));
+  if (acceptedCommandCount() !== acceptedBeforeRejections) throw new Error('rejected zero-effect commands emitted accepted command records');
+  if (acceptedAuditCount() !== auditBeforeRejections) throw new Error('rejected zero-effect commands emitted accepted audit records');
+  const arrayGate = await post('add-gate', { id: 'gate-array', description: 'array evidence', requiredEvidence: ['artifacts/one.json', 'artifacts/two.json'] });
+  if (arrayGate.gate.requiredEvidence.join(',') !== 'artifacts/one.json,artifacts/two.json') throw new Error('add-gate corrupted array evidence');
+  const stringGate = await post('add-gate', { id: 'gate-lines', description: 'line evidence', requiredEvidence: 'artifacts/one.json\nartifacts/two.json' });
+  if (stringGate.gate.requiredEvidence.join(',') !== 'artifacts/one.json,artifacts/two.json') throw new Error('add-gate did not split newline evidence');
+  await reject('update-gate', { gateId: 'gate-lines', description: 'line evidence' }, 409);
+  const sourceLimits = { maxIterations: 1, maxVariantsPerIteration: 1, maxParallelVariants: 1, maxAcceptedFeatures: 1, maxVisualMotifChanges: 0, maxNewSections: 0, stopAfterNoImprovement: 1 };
+  await reject('continue-from-iteration', { sourceRunId: 'wrong-run', sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'invalid lineage', changeText: 'Do not accept.', limits: sourceLimits }, 400);
+  await reject('continue-from-iteration', { sourceRunId: runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'invalid limits', changeText: 'Do not accept.', limits: { ...sourceLimits, maxParallelVariants: 2 } }, 400);
   const approved = await post('approve-deblock-advice', { adviceId: 'advice-fixture' });
   if (approved.effective !== 'continuation queued') throw new Error('approved deblock advice did not queue a continuation');
   const approvedControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
@@ -67,7 +101,7 @@ try {
   if (approvedControl.nextRunRequest.limits?.maxNewSections !== 0 || approvedControl.nextRunRequest.limits?.maxVariantsPerIteration !== 1 || approvedControl.nextRunRequest.snapshottedAcceptanceGates?.[0]?.id !== 'fixture-gate') throw new Error('approved deblock advice did not preserve the source iteration contract');
   const deblockingState = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'));
   if (deblockingState.status !== 'deblocking') throw new Error('approved deblock advice did not leave blocked state for deblocking');
-  await post('continue-from-iteration', { runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture', changeText: 'Complete one bounded fixture change.' });
+  await post('continue-from-iteration', { sourceRunId: runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture', changeText: 'Complete one bounded fixture change.', acceptanceGateIds: ['fixture-gate'], snapshottedAcceptanceGates: [{ id: 'fixture-gate', description: 'fixture gate', severity: 'must', required: true, requiredEvidence: ['artifacts/variants/variant-1.json'] }], limits: sourceLimits });
   const control = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
   if (!control.nextRunRequest || !control.requestedRunNow) throw new Error('nextRunRequest not persisted');
   if (control.nextRunRequest.repoPath !== fixtureRepoPath || control.nextRunRequest.sourceIterationId !== `iter-${runId}` || control.nextRunRequest.sourceRunId !== runId) throw new Error('nextRunRequest source context not preserved');

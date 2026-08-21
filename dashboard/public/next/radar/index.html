@@ -4,25 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#03090b">
   <title>Radar | Hermes</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#scope">Skip radar workspace</a>
+  <a class="skip-link" href="#trackIndex">Skip to track index</a>
+  <a class="skip-link second" href="#scope">Skip to flight strip</a>
   <header class="masthead">
     <div class="identity"><span class="wordmark">HERMES</span><span class="divider"></span><h1>RADAR</h1></div>
-    <div class="system-line" aria-live="polite">
-      <span id="connectionLamp" class="lamp"></span>
-      <strong id="connectionText">OFFLINE</strong>
-      <span id="transportText">awaiting telemetry</span>
+    <div class="system-line">
+      <span id="connectionLamp" class="lamp"></span><strong id="connectionText">OFFLINE</strong>
+      <span id="transportText">awaiting telemetry</span><span id="freshnessText">NO FIX</span>
     </div>
-    <div class="transport" aria-label="Live data controls">
-      <button id="connectButton" type="button">Reconnect</button>
-      <button id="disconnectButton" type="button">Disconnect</button>
-      <button id="streamToggle" type="button">Freeze</button>
-      <button id="refreshButton" type="button">Refresh</button>
-      <button id="openPlanning" type="button">Planning</button>
-      <button id="openCommands" class="accent" type="button">Manage swarm</button>
+    <div id="connectionAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="transport" aria-label="Live data and workspace controls">
+      <button id="connectButton" type="button">Reconnect</button><button id="disconnectButton" type="button">Disconnect</button>
+      <button id="streamToggle" type="button">Freeze display</button><button id="refreshButton" type="button">Refresh</button>
+      <button id="openHelp" type="button" aria-haspopup="dialog">Help</button><button id="openPlanning" type="button">Flight plans</button>
+      <button id="openCommands" class="accent" type="button">Control</button>
     </div>
   </header>
 
@@ -30,67 +30,71 @@
     <section class="radar-column" aria-labelledby="airspaceTitle">
       <div class="scope-meta">
         <div><span class="kicker">SWARM AIRSPACE</span><h2 id="airspaceTitle">Operational picture</h2></div>
-        <div class="readouts"><span>RUNS <b id="runCount">0</b></span><span>AGENTS <b id="agentCount">0</b></span><span>ALERTS <b id="alertCount">0</b></span></div>
+        <div class="readouts"><span>RUNS <b id="runCount">0</b></span><span>AGENTS <b id="agentCount">0</b></span><span>ALERTS <b id="alertCount">0</b></span><span>EVENTS <b id="eventCount">0</b></span></div>
       </div>
       <div class="radar-frame">
         <svg id="radar" viewBox="0 0 1000 1000" role="group" aria-labelledby="radarTitle radarDesc">
-          <title id="radarTitle">Hermes run and agent radar</title>
-          <desc id="radarDesc">Runs are tracks and agents are selectable blips. Distance from center represents workflow progress. Use arrow keys to navigate targets.</desc>
-          <defs>
-            <radialGradient id="scopeGlow"><stop offset="0" stop-color="#174a4b" stop-opacity=".18"/><stop offset=".7" stop-color="#07191c" stop-opacity=".08"/><stop offset="1" stop-color="#02080a" stop-opacity="0"/></radialGradient>
-            <filter id="blipGlow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          </defs>
-          <g id="radarGrid" aria-hidden="true"></g>
-          <g id="radarTracks"></g>
-          <g id="radarAgents"></g>
+          <title id="radarTitle">Hermes operational radar</title>
+          <desc id="radarDesc">Runs are tracks, agents are blips, and blockers are alert triangles. Range indicates workflow progress, not time or severity. Arrow keys navigate visible targets; Enter or Space opens the flight strip.</desc>
+          <defs><radialGradient id="scopeGlow"><stop offset="0" stop-color="#174a4b" stop-opacity=".18"/><stop offset=".7" stop-color="#07191c" stop-opacity=".08"/><stop offset="1" stop-color="#02080a" stop-opacity="0"/></radialGradient><filter id="blipGlow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+          <g id="radarGrid" aria-hidden="true"></g><g id="radarTracks"></g><g id="radarAgents"></g><g id="radarAlerts"></g>
         </svg>
         <div class="bearing top">N / PUBLISHED</div><div class="bearing right">E</div><div class="bearing bottom">S / IDLE</div><div class="bearing left">W</div>
-        <div id="radarEmpty" class="radar-empty"><b>NO TRACKS ACQUIRED</b><span>Waiting for a Hermes snapshot</span></div>
-        <div class="sweep" aria-hidden="true"></div>
+        <div id="radarEmpty" class="radar-empty"><b>NO TRACKS ACQUIRED</b><span>Waiting for a Hermes snapshot</span></div><div class="sweep" aria-hidden="true"></div>
       </div>
-      <div class="radar-guide" aria-label="How to manage the swarm"><strong>MANAGE SWARM</strong><span>Select a track to inspect it at right. Use <b>MANAGE SWARM</b> for pause, resume, hold, stop, and recovery. Use <b>PLANNING</b> for project plans.</span></div>
       <div class="workflow-scale" id="workflowScale" aria-label="Workflow progression"></div>
+      <section class="track-index" aria-labelledby="trackIndexTitle">
+        <div class="index-head"><div><span class="kicker">FLIGHT DATA BOARD</span><h2 id="trackIndexTitle">Track index</h2></div><label>Filter <input id="trackFilter" type="search" autocomplete="off" placeholder="run, agent, event, gate..."></label></div>
+        <div id="trackIndex" class="index-groups" aria-label="All operational objects"></div>
+      </section>
     </section>
 
     <aside id="scope" class="target-scope" aria-labelledby="scopeTitle">
-      <header class="scope-head">
-        <div><span class="kicker" id="scopeKicker">TARGET SCOPE</span><h2 id="scopeTitle">No target</h2></div>
-        <span id="scopeStatus" class="status-tag">STANDBY</span>
-      </header>
-      <div class="scope-tabs" role="tablist" aria-label="Target scope sections">
-        <button role="tab" aria-selected="true" data-tab="target">Target</button>
-        <button role="tab" aria-selected="false" data-tab="traffic">Traffic</button>
-        <button role="tab" aria-selected="false" data-tab="evidence">Evidence</button>
+      <header class="scope-head"><div><span class="kicker" id="scopeKicker">FLIGHT STRIP</span><h2 id="scopeTitle" tabindex="-1">No target</h2><p id="scopeIdentity">UNIDENTIFIED</p></div><span id="scopeStatus" class="status-tag">STANDBY</span></header>
+      <div class="scope-tabs" role="tablist" aria-label="Flight strip sections">
+        <button role="tab" aria-selected="true" aria-controls="scopeContent" data-tab="dossier">Dossier</button>
+        <button role="tab" aria-selected="false" aria-controls="scopeContent" data-tab="telemetry" tabindex="-1">Telemetry</button>
+        <button role="tab" aria-selected="false" aria-controls="scopeContent" data-tab="resources" tabindex="-1">Evidence</button>
+        <button role="tab" aria-selected="false" aria-controls="scopeContent" data-tab="control" tabindex="-1">Authority</button>
       </div>
-      <div id="scopeContent" class="scope-content"></div>
+      <div id="scopeContent" class="scope-content" role="tabpanel"></div>
     </aside>
   </main>
 
   <footer class="flight-strip">
-    <div class="strip-state"><span class="kicker">CURRENT FLIGHT</span><strong id="currentRun">NO ACTIVE RUN</strong></div>
-    <div id="phaseStrip" class="phase-strip" aria-label="Workflow phases"></div>
-    <div class="quick-controls" aria-label="Run transport commands">
-      <button data-command="pause">Pause</button><button data-command="resume">Resume</button><button data-command="hold">Hold</button><button class="danger" data-command="stop">Stop</button>
-    </div>
+    <div class="strip-state"><span class="kicker">LIVE AUTHORITY</span><strong id="currentRun">NO ACTIVE RUN</strong><small id="observedState">observed idle</small></div>
+    <div id="phaseStrip" class="phase-strip" aria-label="Observed workflow phases"></div>
+    <div class="request-state"><span>REQUESTED</span><strong id="requestedState">NONE</strong></div>
+    <div class="quick-controls" aria-label="Current-run commands"><button data-command="run-now">Run now</button><button data-command="pause">Pause</button><button data-command="resume">Resume</button><button data-command="hold">Hold</button><button class="danger" data-command="stop">Stop</button></div>
   </footer>
 
-  <dialog id="commandTray" class="tray">
-    <form method="dialog" class="tray-bar"><div><span class="kicker">OPERATOR CONSOLE</span><h2>Command tray</h2></div><button value="close">Close</button></form>
-    <nav class="tray-tabs" aria-label="Command groups">
-      <button type="button" data-tray-tab="run" class="active">Run</button><button type="button" data-tray-tab="recovery">Recovery</button><button type="button" data-tray-tab="queue">Queue</button><button type="button" data-tray-tab="gates">Gates</button>
-    </nav>
+  <dialog id="commandTray" class="tray" aria-labelledby="commandTitle">
+    <form method="dialog" class="tray-bar"><div><span class="kicker">CONTROL POSITION</span><h2 id="commandTitle" tabindex="-1">Swarm clearance desk</h2></div><button value="close">Close</button></form>
+    <div id="commandLifecycle" class="command-lifecycle" role="status" aria-live="polite">No command submitted this session.</div>
+    <nav class="tray-tabs" aria-label="Command groups"><button type="button" data-tray-tab="run" class="active">Run</button><button type="button" data-tray-tab="recovery">Recovery</button><button type="button" data-tray-tab="queue">Queue</button><button type="button" data-tray-tab="gates">Gates</button></nav>
     <div id="commandContent" class="tray-content"></div>
   </dialog>
 
-  <dialog id="planningTray" class="tray planning-tray">
-    <form method="dialog" class="tray-bar"><div><span class="kicker">PROJECT FLIGHT PLANS</span><h2>Planning control</h2></div><button value="close">Close</button></form>
-    <nav class="tray-tabs" aria-label="Planning groups">
-      <button type="button" data-plan-tab="plans" class="active">Plans</button><button type="button" data-plan-tab="editor">Editor</button><button type="button" data-plan-tab="review">Review</button><button type="button" data-plan-tab="assist">Assistance</button>
-    </nav>
+  <dialog id="planningTray" class="tray planning-tray" aria-labelledby="planningTitle">
+    <form method="dialog" class="tray-bar"><div><span class="kicker">PROJECT FLIGHT PLANS</span><h2 id="planningTitle" tabindex="-1">Planning control</h2></div><button value="close">Close</button></form>
+    <nav class="tray-tabs" aria-label="Planning groups"><button type="button" data-plan-tab="plans" class="active">Plans</button><button type="button" data-plan-tab="editor">Editor</button><button type="button" data-plan-tab="review">Review</button><button type="button" data-plan-tab="assist">Assistance</button></nav>
     <div id="planningContent" class="tray-content"></div>
   </dialog>
 
-  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <dialog id="helpDialog" class="help-dialog" aria-labelledby="helpTitle">
+    <div class="tray-bar"><div><span class="kicker">POSITION MANUAL</span><h2 id="helpTitle" tabindex="-1">Operating Radar</h2></div><button id="closeHelp" type="button">Close</button></div>
+    <div class="help-body">
+      <section><h3>Scope and flight strips</h3><p>The scope is an orientation view. Range is deterministic workflow progress and bearing only separates marks. Select a track, blip, alert, or any flight-data-board row to open its authoritative strip. The strip identity never changes merely because another run becomes current.</p></section>
+      <section><h3>Targets and evidence</h3><p>Every run, agent, event, tool call, gate, queue item, iteration, plan, and blocker resolves to its owning run when one is reported. Evidence buttons carry that run explicitly. A missing run is shown as not reported rather than borrowing the current or previously selected run.</p></section>
+      <section><h3>Recovery authority</h3><p>Direct deblock and recovery advice apply only to the current run while it still reports a blocker. Historical or terminal work must continue through a new bounded continuation or fork using preserved lineage and evidence. Gate decisions record references; they do not create evidence artifacts.</p></section>
+      <section><h3>Requested and observed state</h3><p>Accepted commands are persisted control intent, not proof of completion. Pause and graceful stop normally take effect at a runner checkpoint. The footer and Authority strip keep requested state separate from observed workflow state. Destructive or broad commands require confirmation.</p></section>
+      <section><h3>Live telemetry</h3><p>Freeze display buffers stream data without pausing work. Unfreeze applies buffered events and performs a full synchronization. SSE automatically falls back to polling and reconnects. Signal age, last message, last refresh, transport, and errors are exposed so stale data is visible.</p></section>
+      <section><h3>Plans and assistance</h3><p>Flight plans support draft creation, immutable revisions, review, exact-revision approval or rejection, launch, clone, fork, and archive. Planning assistance is advisory and may use the configured inference provider; a proposal does nothing until an operator creates and advances a plan.</p></section>
+      <section><h3>Keyboard and display</h3><p>Tab reaches every control. Arrow keys, Home, and End move within the radar and tab strips; Enter or Space activates the focused mark. Escape closes dialogs. Mobile and zoomed layouts stack into one reading direction, while the scope remains a bounded two-dimensional figure. Reduced motion removes the sweep.</p></section>
+    </div>
+  </dialog>
+
+  <div id="notice" class="notice" role="alert" aria-live="assertive"></div>
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>
 </body>

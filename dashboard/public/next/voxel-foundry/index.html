@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Voxel Foundry | Hermes Fabrication Cell</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#semanticCell">Skip 3D cell</a>
+  <header class="masthead">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">VF</span>
+      <div><h1>VOXEL FOUNDRY</h1><p>Hermes additive swarm fabrication cell</p></div>
+    </div>
+    <div class="status-rack" aria-label="Live connection status">
+      <span id="connectionBadge" class="badge">DISCONNECTED</span>
+      <span id="transportBadge" class="readout">TRANSPORT --</span>
+      <span id="freshnessBadge" class="readout">NO SAMPLE</span>
+      <span id="phaseBadge" class="badge phase">IDLE</span>
+    </div>
+    <nav class="top-actions" aria-label="Foundry workstations">
+      <button data-open="operations">Operations</button>
+      <button data-open="planner">Plans</button>
+      <button data-open="evidence">Resources</button>
+      <button data-open="help">Help <kbd>?</kbd></button>
+    </nav>
+  </header>
+
+  <main class="foundry-grid">
+    <section class="cell panel" aria-labelledby="cellTitle">
+      <div class="panel-head">
+        <div><p class="eyebrow">CELL 04 / DIGITAL TWIN</p><h2 id="cellTitle">Live fabrication floor</h2></div>
+        <div class="cell-tools">
+          <button id="freezeVisual">Freeze motion <kbd>F</kbd></button>
+          <button id="freezeData">Freeze data</button>
+          <button id="resetView">Reset view <kbd>0</kbd></button>
+        </div>
+      </div>
+      <div class="viewport-wrap">
+        <canvas id="foundryCanvas" tabindex="0" aria-labelledby="cellTitle" aria-describedby="cellDescription"></canvas>
+        <div class="viewport-hud" aria-hidden="true">
+          <span>INSTANCED VOXELS</span><span id="gpuStatus">WEBGL2 STARTING</span><span id="frameStatus">0 ENTITIES</span>
+        </div>
+        <div id="contextNotice" class="context-notice" hidden>Graphics context unavailable. The semantic cell remains authoritative.</div>
+      </div>
+      <p id="cellDescription" class="sr-only">Interactive 3D fabrication cell. Runs are voxel workpieces, agents are robotic toolheads, gates are inspection gantries, queue items are feedstock, events are sparks, and blockers are red quarantine volumes. Use the semantic cell below for equivalent details and selection.</p>
+      <div class="phase-rail" id="phaseRail" role="list" aria-label="Workflow phases"></div>
+    </section>
+
+    <aside class="side-stack" aria-label="Authoritative telemetry">
+      <section class="panel control-state">
+        <div class="panel-head"><div><p class="eyebrow">CONTROL AUTHORITY</p><h2>Requested / observed</h2></div></div>
+        <div id="controlComparison" class="comparison"></div>
+      </section>
+      <section class="panel entity-detail">
+        <div class="panel-head"><div><p class="eyebrow">GPU PICK / LIST SELECT</p><h2>Selected entity</h2></div></div>
+        <div id="entityDetail" class="detail-body"><p class="empty">Select an object in the cell or semantic inventory.</p></div>
+      </section>
+      <section class="panel event-panel">
+        <div class="panel-head"><div><p class="eyebrow">CHIP CONVEYOR</p><h2>Events</h2></div><span id="eventCount" class="counter">0</span></div>
+        <label class="search">Filter events <input id="eventFilter" type="search" placeholder="agent, tool, error..."></label>
+        <ol id="eventList" class="event-list" reversed></ol>
+      </section>
+    </aside>
+
+    <section id="semanticCell" class="panel semantic" aria-labelledby="semanticTitle">
+      <div class="panel-head"><div><p class="eyebrow">NON-VISUAL EQUIVALENT</p><h2 id="semanticTitle">Cell inventory</h2></div><span class="hint">Arrow keys move; Enter selects</span></div>
+      <div id="entityTabs" class="tabs" role="tablist" aria-label="Entity types"></div>
+      <div id="entityList" class="entity-list" role="listbox" tabindex="0" aria-label="Fabrication cell entities"></div>
+    </section>
+
+    <section class="panel recovery" aria-labelledby="recoveryTitle">
+      <div class="panel-head"><div><p class="eyebrow">QUARANTINE / INCIDENT DESK</p><h2 id="recoveryTitle">Blocker recovery</h2></div><button id="openRecovery">Open recovery</button></div>
+      <div id="blockerSummary"></div>
+      <details><summary>Historical recovery and audit</summary><ol id="auditList" class="audit-list"></ol></details>
+    </section>
+  </main>
+
+  <dialog id="workspaceDialog" class="workspace-dialog" aria-labelledby="dialogTitle">
+    <header><div><p class="eyebrow" id="dialogEyebrow">WORKSTATION</p><h2 id="dialogTitle">Operations</h2></div><button class="close" data-close aria-label="Close dialog">Close <kbd>Esc</kbd></button></header>
+    <div id="dialogBody" class="dialog-body"></div>
+  </dialog>
+
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle">
+    <form method="dialog">
+      <p class="eyebrow">COMMAND REVIEW</p><h2 id="confirmTitle">Confirm operation</h2>
+      <p id="confirmSummary"></p><pre id="confirmPayload"></pre>
+      <div class="dialog-actions"><button value="cancel">Cancel</button><button id="confirmExecute" value="default" class="danger">Issue command</button></div>
+    </form>
+  </dialog>
+
+  <section class="command-log" aria-label="Command lifecycle">
+    <button id="toggleCommandLog" aria-expanded="false">Command lifecycle <span id="commandCount">0</span></button>
+    <ol id="commandLog" hidden></ol>
+  </section>
+  <div id="liveStatus" class="sr-only" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

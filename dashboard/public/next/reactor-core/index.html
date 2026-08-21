@@ -4,33 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Nuclear Reactor Core Safety &amp; SPDS Console | Hermes SwarmBuilder</title>
+  <title>Reactor Core Operations Console | Hermes SwarmBuilder</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <!-- Master Class 1E Safety Masthead Rail -->
+  <!-- Reactor-console operations masthead -->
   <header class="rc-masthead" role="banner">
     <div class="rc-brand">
-      <span class="rc-badge-1e">CLASS 1E</span>
+      <span class="rc-badge-1e">SIMULATION UI</span>
       <div class="rc-title-block">
-        <span class="rc-brand-text">WESTINGHOUSE AP1000 // CORE SAFETY CONSOLE</span>
-        <span class="rc-sub-brand">NUCLEAR STEAM SUPPLY &amp; SPDS SUPERVISORY WORKSTATION</span>
+        <span class="rc-brand-text">SWARMBUILDER // REACTOR CORE OPERATIONS CONSOLE</span>
+        <span class="rc-sub-brand">SOFTWARE WORKFLOW METAPHOR // NOT A PHYSICAL SAFETY SYSTEM</span>
       </div>
     </div>
 
     <!-- Safety Parameter Display Strip -->
-    <div class="rc-telemetry-strip" aria-live="polite">
+    <div class="rc-telemetry-strip">
       <div class="rc-stat-item">
-        <span class="rc-stat-label">THERMAL POWER</span>
-        <span class="rc-stat-val" id="thermalPower">3,400 MWth (100%)</span>
+        <span class="rc-stat-label">OBSERVED WORKFLOW</span>
+        <span class="rc-stat-val" id="thermalPower">IDLE</span>
       </div>
       <div class="rc-stat-item">
-        <span class="rc-stat-label">CORE ΔT</span>
-        <span class="rc-stat-val" id="coreDeltaT">+34.2 °C</span>
+        <span class="rc-stat-label">DATA FRESHNESS</span>
+        <span class="rc-stat-val" id="coreDeltaT">NO READING</span>
       </div>
       <div class="rc-stat-item">
-        <span class="rc-stat-label">RPS INTERLOCK</span>
-        <span class="rc-stat-val" id="rpsTripStatus">ARMED / NORMAL</span>
+        <span class="rc-stat-label">REQUESTED CONTROL</span>
+        <span class="rc-stat-val" id="rpsTripStatus">NONE</span>
       </div>
       <div class="rc-stat-item">
         <span class="rc-stat-label">LINK</span>
@@ -38,15 +38,16 @@
       </div>
     </div>
 
-    <!-- Action & SCRAM Control Strip -->
+    <!-- Transport and workflow control strip -->
     <div class="rc-masthead-actions">
       <button id="btnStreamToggle" class="rc-btn" type="button" title="Pause or resume live telemetry stream">PAUSE STREAM</button>
-      <button id="btnResyncCore" class="rc-btn" type="button" title="Resynchronize Reactor Protection System">RESYNC RPS</button>
+      <button id="btnConnectionToggle" class="rc-btn" type="button">DISCONNECT</button>
+      <button id="btnResyncCore" class="rc-btn" type="button" title="Refresh all dashboard projections">REFRESH ALL</button>
       <button id="btnOpenCommand" class="rc-btn primary" type="button" title="Open Operator Command Station [C]">COMMAND STATION</button>
       <button id="btnOpenPlanner" class="rc-btn primary" type="button" title="Open Fuel Load &amp; Project Planner [P]">PLANNER</button>
-      <button id="btnOpenEvidence" class="rc-btn" type="button" title="Inspect Nuclear Safety Evidence [E]">EVIDENCE</button>
-      <button id="btnOpenHelp" class="rc-btn" type="button" title="Open Nuclear Operations Manual [H]">HELP &amp; MANUAL</button>
-      <button id="btnManualScram" class="rc-btn-scram" type="button" title="Emergency Reactor SCRAM: Gravity Drop All Rod Banks">EMERGENCY SCRAM</button>
+      <button id="btnOpenEvidence" class="rc-btn" type="button" title="Inspect run evidence [E]">EVIDENCE</button>
+      <button id="btnOpenHelp" class="rc-btn" type="button" title="Open operator help [H]">HELP &amp; MANUAL</button>
+      <button id="btnManualScram" class="rc-btn-scram" type="button" title="Request graceful software runner stop at its next checkpoint">RUNNER ALL-STOP</button>
     </div>
   </header>
 
@@ -61,7 +62,7 @@
       <!-- 16 phases rendered by app.js -->
     </div>
     <div class="rc-blocker-banner" id="rcBlockerBanner" hidden>
-      <span class="rc-blocker-icon">☢️</span>
+      <span class="rc-blocker-icon" aria-hidden="true">!</span>
       <span class="rc-blocker-text" id="rcBlockerText">RPS TRIP INTERLOCK ACTIVE</span>
       <button id="btnQuickDeblock" class="rc-btn danger" type="button">DEBLOCK TRIP</button>
     </div>
@@ -72,54 +73,21 @@
     <!-- Left Column: 61-Hexagonal Core Flux Matrix & Control Rod Deck -->
     <section class="rc-left-col" aria-label="Hexagonal Fuel Matrix and Control Rods">
       <!-- 61-Element Hex Core Lattice -->
-      <div class="rc-core-wrap" aria-label="61-Element Hexagonal Nuclear Core Lattice">
+      <div class="rc-core-wrap" aria-label="61-channel hexagonal operations topology">
         <div class="rc-core-header">
-          <span class="rc-core-title">61-ELEMENT HEXAGONAL CORE AXIAL FLUX MATRIX</span>
+          <span class="rc-core-title">61-CHANNEL HEXAGONAL OPERATIONS MATRIX</span>
           <div class="rc-core-hud">
-            <span>SELECTED ASSEMBLY: <b id="lblSelectedFa">FA-01 (CENTER)</b></span>
-            <span>AVG FLUX: <b id="lblAvgFlux" style="color:var(--rc-flux-cyan);">0.94</b></span>
+            <span>SELECTED CHANNEL: <b id="lblSelectedFa">CH-01</b></span>
+            <span>POPULATED: <b id="lblAvgFlux" style="color:var(--rc-flux-cyan);">0 / 61</b></span>
           </div>
         </div>
         <div class="rc-svg-holder">
-          <svg id="hexCoreSvg" viewBox="0 0 600 550" role="img" aria-label="61-Element Hexagonal Nuclear Core Lattice"></svg>
+          <svg id="hexCoreSvg" viewBox="0 0 600 550" role="group" aria-label="61-channel SwarmBuilder operations topology"></svg>
         </div>
       </div>
 
       <!-- Control Rod Drive Mechanism (CRDM) Servos Deck -->
-      <div class="rc-rod-deck" aria-label="Control Rod Drive Mechanism Servos">
-        <div class="rc-rod-unit" id="rodBankA">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:15%;"></div></div>
-          <span class="rc-rod-label">BANK A (15%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankB">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:25%;"></div></div>
-          <span class="rc-rod-label">BANK B (25%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankC">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:40%;"></div></div>
-          <span class="rc-rod-label">BANK C (40%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankD">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:60%;"></div></div>
-          <span class="rc-rod-label">BANK D (60%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankSD1">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S1 (0%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankSD2">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S2 (0%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankSD3">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S3 (0%)</span>
-        </div>
-        <div class="rc-rod-unit" id="rodBankSD4">
-          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
-          <span class="rc-rod-label" style="color:var(--rc-flux-green);">S4 (0%)</span>
-        </div>
-      </div>
+      <div class="rc-rod-deck" id="rodDeck" aria-label="Selectable agent control rods"></div>
     </section>
 
     <!-- Center Column: Safety Parameter Display System (SPDS) & Assembly Details -->
@@ -127,27 +95,28 @@
       <!-- 8-Parameter SPDS Polygon -->
       <div class="rc-spds-wrap">
         <div class="rc-spds-header">
-          <span class="rc-spds-title">NUREG-0700 SAFETY PARAMETER DISPLAY SYSTEM (SPDS)</span>
-          <span class="rc-badge success" id="spdsStatusBadge">CLASS 1E NORMAL</span>
+          <span class="rc-spds-title">SWARM PARAMETER OVERVIEW // SERVER-BACKED COUNTS</span>
+          <span class="rc-badge success" id="spdsStatusBadge">NO BLOCKER</span>
         </div>
         <div class="rc-spds-canvas-holder">
-          <canvas id="spdsCanvas" role="img" aria-label="8-Axis Nuclear Safety Parameter Display Polygon"></canvas>
+          <canvas id="spdsCanvas" role="img" aria-describedby="spdsSemantic" aria-label="Eight-axis summary of server-reported SwarmBuilder state"></canvas>
+          <dl id="spdsSemantic" class="rc-sr-only"></dl>
         </div>
       </div>
 
-      <!-- Fuel Assembly Telemetry & Reactivity Deck -->
+      <!-- Selected software channel summary -->
       <div class="rc-assembly-meta-wrap">
         <div class="rc-section-header">
-          <span>FUEL ASSEMBLY TELEMETRY (<span id="faIdDisplay">FA-01</span>)</span>
-          <button id="btnTrimBoration" class="rc-btn tiny primary" type="button">BORON TRIM</button>
+          <span>SELECTED CHANNEL SUMMARY (<span id="faIdDisplay">CH-01</span>)</span>
+          <button id="btnInspectSelection" class="rc-btn tiny primary" type="button">OPEN DOSSIER</button>
         </div>
         <div class="rc-param-grid">
-          <div><label>ZONE / RING:</label> <b id="lblFaRing">RING 0 (CORE CENTER)</b></div>
-          <div><label>PEAK LINEAR POWER:</label> <b id="lblFaPower">38.4 kW/m</b></div>
-          <div><label>BURNUP STATUS:</label> <b id="lblFaBurnup">14,250 MWd/MTU</b></div>
-          <div><label>CLADDING TEMP:</label> <b id="lblFaTemp">318.4 °C (SAFE)</b></div>
-          <div><label>DNBR MARGIN:</label> <b id="lblFaDnbr" style="color:var(--rc-flux-green);">2.42 (&gt;1.30 LIM)</b></div>
-          <div><label>QPTR TILT:</label> <b id="lblFaQptr">1.008 (&lt;1.02 LIM)</b></div>
+          <div><label>TYPE / LOCATION:</label> <b id="lblFaRing">UNASSIGNED CHANNEL</b></div>
+          <div><label>OWNER:</label> <b id="lblFaPower">NOT REPORTED</b></div>
+          <div><label>CURRENT WORK:</label> <b id="lblFaBurnup">NONE</b></div>
+          <div><label>OBSERVED STATUS:</label> <b id="lblFaTemp">EMPTY</b></div>
+          <div><label>CORRELATED EVENTS:</label> <b id="lblFaDnbr">0</b></div>
+          <div><label>RECOVERY:</label> <b id="lblFaQptr">INSPECT DOSSIER</b></div>
         </div>
       </div>
 
@@ -198,7 +167,7 @@
             <label class="rc-check-label"><input id="chkAutoScroll" type="checkbox" checked> AUTO</label>
           </div>
         </div>
-        <div class="rc-telemetry-list" id="telemetryList" role="log" aria-live="polite">
+        <div class="rc-telemetry-list" id="telemetryList" aria-label="Retained telemetry history">
           <!-- Rendered by app.js -->
         </div>
       </section>
@@ -206,7 +175,7 @@
       <!-- Quick Acceptance Gates -->
       <section class="rc-section" aria-label="Acceptance Gates">
         <div class="rc-section-header">
-          <span>CLASS 1E ACCEPTANCE GATES</span>
+          <span>ACCEPTANCE GATES</span>
           <button id="btnOpenCommandGates" class="rc-btn tiny" type="button">MANAGE</button>
         </div>
         <div class="rc-gates-quick-list" id="gatesQuickList">
@@ -223,24 +192,36 @@
     <div class="rc-dialog-pane wide">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">🎛️</span>
-          <h2 id="cmdModalTitle">CLASS 1E OPERATOR COMMAND STATION // RUN AUTHORITY</h2>
+          <span class="rc-icon" aria-hidden="true">CMD</span>
+          <h2 id="cmdModalTitle">OPERATOR COMMAND STATION // RUN AUTHORITY</h2>
         </div>
-        <button id="btnCloseCommand" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnCloseCommand" class="rc-btn small" type="button">CLOSE X</button>
       </header>
 
-      <nav class="rc-modal-tabs">
-        <button class="rc-tab-btn active" data-cmd-tab="runctrl" type="button">RUN CONTROLS</button>
-        <button class="rc-tab-btn" data-cmd-tab="showcase" type="button">SHOWCASE LOOP</button>
-        <button class="rc-tab-btn" data-cmd-tab="deblock" type="button">DEBLOCK &amp; RECOVERY</button>
-        <button class="rc-tab-btn" data-cmd-tab="steering" type="button">STEERING DIRECTIVES</button>
-        <button class="rc-tab-btn" data-cmd-tab="queue" type="button">TASK QUEUE</button>
-        <button class="rc-tab-btn" data-cmd-tab="gates" type="button">ACCEPTANCE GATES</button>
+      <nav class="rc-modal-tabs" role="tablist" aria-label="Command station sections">
+        <button id="cmdTabRunctrl" class="rc-tab-btn active" data-cmd-tab="runctrl" type="button" role="tab" aria-selected="true" aria-controls="cmdTabContent" tabindex="0">RUN CONTROLS</button>
+        <button id="cmdTabShowcase" class="rc-tab-btn" data-cmd-tab="showcase" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">SHOWCASE LOOP</button>
+        <button id="cmdTabDeblock" class="rc-tab-btn" data-cmd-tab="deblock" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">DEBLOCK &amp; RECOVERY</button>
+        <button id="cmdTabSteering" class="rc-tab-btn" data-cmd-tab="steering" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">STEERING DIRECTIVES</button>
+        <button id="cmdTabQueue" class="rc-tab-btn" data-cmd-tab="queue" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">TASK QUEUE</button>
+        <button id="cmdTabGates" class="rc-tab-btn" data-cmd-tab="gates" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">ACCEPTANCE GATES</button>
+        <button id="cmdTabLineage" class="rc-tab-btn" data-cmd-tab="lineage" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">ITERATION / LINEAGE</button>
+        <button id="cmdTabProtocol" class="rc-tab-btn" data-cmd-tab="protocol" type="button" role="tab" aria-selected="false" aria-controls="cmdTabContent" tabindex="-1">ALL COMMANDS</button>
       </nav>
 
-      <div class="rc-dialog-body" id="cmdTabContent">
+      <div class="rc-dialog-body" id="cmdTabContent" role="tabpanel" aria-labelledby="cmdTabRunctrl" tabindex="0">
         <!-- Rendered dynamically by app.js -->
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="dossierModal" class="rc-dialog" aria-labelledby="dossierModalTitle">
+    <div class="rc-dialog-pane wide">
+      <header class="rc-dialog-header">
+        <div class="rc-dialog-title-group"><span class="rc-icon" aria-hidden="true">#</span><h2 id="dossierModalTitle" tabindex="-1">AUTHORITATIVE OBJECT DOSSIER</h2></div>
+        <button id="btnCloseDossier" class="rc-btn small" type="button">CLOSE</button>
+      </header>
+      <div class="rc-dialog-body" id="dossierModalContent"></div>
     </div>
   </dialog>
 
@@ -249,20 +230,20 @@
     <div class="rc-dialog-pane ultra-wide">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">📐</span>
+          <span class="rc-icon" aria-hidden="true">PLAN</span>
           <h2 id="plannerModalTitle">PROJECT PLANNING WORKSTATION // CORE FUEL RELOAD RECIPES</h2>
         </div>
-        <button id="btnClosePlanner" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnClosePlanner" class="rc-btn small" type="button">CLOSE X</button>
       </header>
 
-      <nav class="rc-modal-tabs">
-        <button class="rc-tab-btn active" data-plan-tab="list" type="button">SAVED PLANS</button>
-        <button class="rc-tab-btn" data-plan-tab="editor" type="button">PLAN EDITOR</button>
-        <button class="rc-tab-btn" data-plan-tab="review" type="button">REVIEW &amp; LAUNCH</button>
-        <button class="rc-tab-btn" data-plan-tab="copilot" type="button">PLANNING COPILOT</button>
+      <nav class="rc-modal-tabs" role="tablist" aria-label="Planning workstation sections">
+        <button id="planTabList" class="rc-tab-btn active" data-plan-tab="list" type="button" role="tab" aria-selected="true" aria-controls="plannerTabContent" tabindex="0">SAVED PLANS</button>
+        <button id="planTabEditor" class="rc-tab-btn" data-plan-tab="editor" type="button" role="tab" aria-selected="false" aria-controls="plannerTabContent" tabindex="-1">PLAN EDITOR</button>
+        <button id="planTabReview" class="rc-tab-btn" data-plan-tab="review" type="button" role="tab" aria-selected="false" aria-controls="plannerTabContent" tabindex="-1">REVIEW &amp; LAUNCH</button>
+        <button id="planTabCopilot" class="rc-tab-btn" data-plan-tab="copilot" type="button" role="tab" aria-selected="false" aria-controls="plannerTabContent" tabindex="-1">PLANNING COPILOT</button>
       </nav>
 
-      <div class="rc-dialog-body" id="plannerTabContent">
+      <div class="rc-dialog-body" id="plannerTabContent" role="tabpanel" aria-labelledby="planTabList" tabindex="0">
         <!-- Rendered dynamically by app.js -->
       </div>
     </div>
@@ -273,23 +254,23 @@
     <div class="rc-dialog-pane wide">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">📦</span>
-          <h2 id="evidenceModalTitle">EVIDENCE &amp; ARTIFACTS VAULT // NUCLEAR SAFETY DOSSIER</h2>
+          <span class="rc-icon" aria-hidden="true">EVD</span>
+          <h2 id="evidenceModalTitle">EVIDENCE &amp; ARTIFACTS VAULT // RUN DOSSIER</h2>
         </div>
-        <button id="btnCloseEvidence" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnCloseEvidence" class="rc-btn small" type="button">CLOSE X</button>
       </header>
 
-      <nav class="rc-modal-tabs">
-        <button class="rc-tab-btn active" data-evidence-tab="spec" type="button">SPEC.MD</button>
-        <button class="rc-tab-btn" data-evidence-tab="devplan" type="button">DEVPLAN.MD</button>
-        <button class="rc-tab-btn" data-evidence-tab="run" type="button">RUN JSON</button>
-        <button class="rc-tab-btn" data-evidence-tab="artifacts" type="button">ARTIFACTS</button>
-        <button class="rc-tab-btn" data-evidence-tab="logs" type="button">LOGS TAIL</button>
-        <button class="rc-tab-btn" data-evidence-tab="iterations" type="button">ITERATION SCORECARD</button>
-        <button class="rc-tab-btn" data-evidence-tab="audit" type="button">AUDIT TRAIL</button>
+      <nav class="rc-modal-tabs" role="tablist" aria-label="Evidence vault sections">
+        <button id="evidenceTabSpec" class="rc-tab-btn active" data-evidence-tab="spec" type="button" role="tab" aria-selected="true" aria-controls="evidenceTabContent" tabindex="0">SPEC.MD</button>
+        <button id="evidenceTabDevplan" class="rc-tab-btn" data-evidence-tab="devplan" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">DEVPLAN.MD</button>
+        <button id="evidenceTabRun" class="rc-tab-btn" data-evidence-tab="run" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">RUN JSON</button>
+        <button id="evidenceTabArtifacts" class="rc-tab-btn" data-evidence-tab="artifacts" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">ARTIFACTS</button>
+        <button id="evidenceTabLogs" class="rc-tab-btn" data-evidence-tab="logs" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">LOGS TAIL</button>
+        <button id="evidenceTabIterations" class="rc-tab-btn" data-evidence-tab="iterations" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">ITERATION SCORECARD</button>
+        <button id="evidenceTabAudit" class="rc-tab-btn" data-evidence-tab="audit" type="button" role="tab" aria-selected="false" aria-controls="evidenceTabContent" tabindex="-1">AUDIT TRAIL</button>
       </nav>
 
-      <div class="rc-dialog-body" id="evidenceTabContent">
+      <div class="rc-dialog-body" id="evidenceTabContent" role="tabpanel" aria-labelledby="evidenceTabSpec" tabindex="0">
         <!-- Rendered dynamically by app.js -->
       </div>
     </div>
@@ -300,10 +281,10 @@
     <div class="rc-dialog-pane">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">🔍</span>
+          <span class="rc-icon" aria-hidden="true">EVT</span>
           <h2 id="toolModalTitle">TOOL CALL DISPATCH INSPECTOR</h2>
         </div>
-        <button id="btnCloseTool" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnCloseTool" class="rc-btn small" type="button">CLOSE X</button>
       </header>
       <div class="rc-dialog-body" id="toolModalContent">
         <!-- Tool call JSON details rendered dynamically -->
@@ -316,10 +297,10 @@
     <div class="rc-dialog-pane large">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">📄</span>
+          <span class="rc-icon" aria-hidden="true">FILE</span>
           <h2 id="fileViewerTitle">ARTIFACT PREVIEW</h2>
         </div>
-        <button id="btnCloseFileViewer" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnCloseFileViewer" class="rc-btn small" type="button">CLOSE X</button>
       </header>
       <div class="rc-dialog-body">
         <pre class="rc-code-block" id="fileViewerContent">Loading artifact...</pre>
@@ -327,15 +308,15 @@
     </div>
   </dialog>
 
-  <!-- NUCLEAR OPERATIONS HELP & MANUAL MODAL -->
+  <!-- Operations help modal -->
   <dialog id="helpModal" class="rc-dialog" aria-labelledby="helpModalTitle">
     <div class="rc-dialog-pane wide">
       <header class="rc-dialog-header">
         <div class="rc-dialog-title-group">
-          <span class="rc-icon">📖</span>
-          <h2 id="helpModalTitle">CLASS 1E NUCLEAR OPERATIONS MANUAL // REACTOR SAFETY &amp; SPDS</h2>
+          <span class="rc-icon" aria-hidden="true">HELP</span>
+          <h2 id="helpModalTitle">REACTOR CORE // SWARMBUILDER OPERATOR HELP</h2>
         </div>
-        <button id="btnCloseHelp" class="rc-btn small" type="button">CLOSE ✕</button>
+        <button id="btnCloseHelp" class="rc-btn small" type="button">CLOSE X</button>
       </header>
       <div class="rc-dialog-body" id="helpModalContent">
         <!-- Rendered in app.js -->
@@ -345,8 +326,8 @@
 
   <!-- TOAST NOTIFICATION HUB -->
   <div id="rcToast" class="rc-toast" role="status" aria-live="polite" hidden></div>
+  <div id="rcLiveStatus" class="rc-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 
-  <!-- Shared Global Dashboard Directory Navigation Bar -->
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>
 </body>

@@ -7,70 +7,280 @@
   <link rel="stylesheet" href="spatial-topology.css">
 </head>
 <body>
-  <!-- Top Spatial HUD (Spec §6.2, §6.4) -->
+  <!-- Top Spatial HUD (Spec §6.2, §6.3, §6.4, §7) -->
   <header class="spatial-hud-top" role="banner">
     <div class="hud-bar-main">
-      <div style="font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-        <span>HERMES 3D SPATIAL TOPOLOGY</span>
-        <span id="hud-status" class="hud-pill active">INITIALIZING</span>
+      <div class="hud-brand-group">
+        <a href="../" class="hud-back-link" title="Return to Control Planes Directory" aria-label="Back to Control Planes Directory">‹ Hub</a>
+        <div class="hud-title-wrap">
+          <span class="hud-app-title">HERMES 3D SPATIAL TOPOLOGY</span>
+          <span class="hud-subtitle">Spatial Operations &amp; Authority Plane</span>
+        </div>
+        <span id="hud-status" class="hud-pill active" aria-live="polite">INITIALIZING</span>
       </div>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
-        <span id="hud-admission" class="hud-pill active">Admission: ENABLED</span>
-        <span id="hud-attention" class="hud-pill error">Attention: 0</span>
+
+      <div class="hud-metrics-group">
+        <div class="hud-item" title="Active Runner Execution ID">
+          <span class="hud-label">Run:</span>
+          <span id="hud-run" class="hud-value mono">--</span>
+        </div>
+        <div class="hud-item" title="Current Swarm Pipeline Phase">
+          <span class="hud-label">Phase:</span>
+          <span id="hud-phase" class="hud-value">Execution</span>
+        </div>
+        <div class="hud-item" title="Run Admission Controller Mode">
+          <span class="hud-label">Admission:</span>
+          <span id="hud-admission" class="hud-pill active">ENABLED</span>
+        </div>
+        <div class="hud-item" title="Active Blockers and Incidents Requiring Operator Action">
+          <button id="btn-attention" class="hud-pill attention-btn ok" aria-label="Operator Attention Queue">
+            <span class="pulse-dot"></span>
+            <span id="hud-attention-text">0 Incidents</span>
+          </button>
+        </div>
+        <div class="hud-item" title="Stream Connection & Telemetry Freshness">
+          <span id="hud-sse" class="hud-badge-sse live">● LIVE SSE</span>
+          <span id="hud-freshness" class="hud-freshness-text">0s ago</span>
+        </div>
+        <div class="hud-item rbac-wrap">
+          <label for="hud-role-select" class="sr-only">Active RBAC Role</label>
+          <select id="hud-role-select" class="hud-select" title="Simulate Active RBAC Role">
+            <option value="Administrator">Admin</option>
+            <option value="Operator">Operator</option>
+            <option value="Approver">Approver</option>
+            <option value="Author">Author</option>
+            <option value="Auditor">Auditor</option>
+            <option value="Viewer">Viewer</option>
+          </select>
+        </div>
+        <div class="hud-controls-group">
+          <button id="btn-hud-hold" class="hud-btn" title="Hold Admission at Checkpoint">:hold</button>
+          <button id="btn-hud-pause" class="hud-btn" title="Pause Active Managed Run">:pause</button>
+          <button id="btn-hud-stop" class="hud-btn danger" title="Graceful Stop at Checkpoint">:stop</button>
+          <button id="btn-hud-resume" class="hud-btn primary" title="Resume Admission">:resume</button>
+          <button id="btn-hud-run-now" class="hud-btn accent" title="Request Run Admission Immediately">:run-now</button>
+        </div>
       </div>
     </div>
-    <div id="hud-identity" class="hud-identity-bar" aria-label="Identity Lineage Strip">
-      <!-- Dynamic Breadcrumb -->
+
+    <!-- Cross-Resource Identity Strip (Spec §6.4) -->
+    <div id="hud-identity" class="hud-identity-bar" aria-label="Cross-Resource Identity Lineage Strip">
+      <div class="identity-step"><span class="id-tag">Plan</span> <span id="id-plan" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Rev</span> <span id="id-rev" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Approval</span> <span id="id-approval" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Launch</span> <span id="id-launch" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Request</span> <span id="id-req" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Run</span> <span id="id-run" class="mono">--</span></div>
+      <span class="id-sep">➔</span>
+      <div class="identity-step"><span class="id-tag">Iteration</span> <span id="id-iter" class="mono">--</span></div>
     </div>
   </header>
 
   <!-- Main 3D Spatial Operations Workspace (WCAG 2.2 AA) -->
   <main role="main" aria-label="3D Spatial Operations Workspace">
     <!-- 3D WebGPU / WebGL2 Canvas -->
-    <canvas id="spatial-canvas" aria-hidden="true"></canvas>
+    <canvas id="spatial-canvas" aria-label="3D Swarm Topology Interactive Viewport" tabindex="0"></canvas>
 
-    <!-- Left Accessible Semantic Treegrid Overlay (WCAG 2.2 AA) -->
-    <aside class="semantic-sidebar" aria-label="3D Swarm Topology Navigation">
+    <!-- Floating 3D Hover Tooltip -->
+    <div id="spatial-tooltip" class="spatial-tooltip" aria-hidden="true">
+      <div id="tooltip-title" class="tooltip-title">Node</div>
+      <div id="tooltip-meta" class="tooltip-meta">Zone | Status</div>
+      <div id="tooltip-desc" class="tooltip-desc">Task description</div>
+    </div>
+
+    <!-- Left Accessible Semantic Treegrid Overlay (WCAG 2.2 AA, Spec §6, §11, §14, §18) -->
+    <aside class="semantic-sidebar" id="semantic-sidebar" aria-label="Swarm Spatial Topology Hierarchy">
       <div class="sidebar-header">
-        <span>Swarm Topology Hierarchy</span>
-        <span style="font-size: 10px; color: var(--text-muted);">Tab/Arrow Keys</span>
+        <div class="sidebar-title-row">
+          <span class="sidebar-title">Topology Hierarchy</span>
+          <div class="sidebar-actions">
+            <button id="btn-tree-expand" class="btn-icon" title="Expand All Nodes" aria-label="Expand All Nodes">⊞</button>
+            <button id="btn-tree-collapse" class="btn-icon" title="Collapse All Nodes" aria-label="Collapse All Nodes">⊟</button>
+            <button id="btn-toggle-sidebar" class="btn-icon" title="Toggle Sidebar" aria-label="Toggle Hierarchy Sidebar">◀</button>
+          </div>
+        </div>
+        <div class="sidebar-search-row">
+          <input type="search" id="tree-search" class="tree-search-input" placeholder="Filter agents, gates, zones..." aria-label="Filter Topology Hierarchy">
+        </div>
+        <div class="sidebar-help-text">
+          <span>Nav: <kbd>↑</kbd><kbd>↓</kbd> | Expand: <kbd>→</kbd><kbd>←</kbd> | Select: <kbd>Enter</kbd> | Frame: <kbd>F</kbd></span>
+        </div>
       </div>
-      <div class="treegrid-container">
-        <table class="tree-table" role="treegrid" aria-label="Agent Nodes and Zones">
+
+      <div class="treegrid-container" tabindex="-1">
+        <table class="tree-table" role="treegrid" aria-label="Operational Zones, Agents, Gates, and Infrastructure Hierarchy">
           <thead>
             <tr>
-              <th scope="col">Entity</th>
-              <th scope="col">Zone</th>
-              <th scope="col">Status</th>
+              <th scope="col" style="width: 50%;">Entity / Node</th>
+              <th scope="col" style="width: 25%;">Layer / Zone</th>
+              <th scope="col" style="width: 25%;">Status / Metric</th>
             </tr>
           </thead>
           <tbody id="tree-table-body">
-            <!-- Dynamic Semantic Tree Rows -->
+            <!-- Dynamically populated semantic tree rows with full ARIA attributes -->
           </tbody>
         </table>
       </div>
     </aside>
 
-    <!-- Right Contextual Inspector Drawer -->
-    <section class="node-inspector" aria-label="Selected Node Detail">
-      <div id="inspector-header" class="inspector-header">
-        <span>Node Inspector</span>
+    <!-- Right Contextual Multi-Tab Inspector Drawer (Spec §6, §11, §14, §23) -->
+    <section class="node-inspector" id="node-inspector" aria-label="Selected Entity Inspector Drawer">
+      <div class="inspector-header">
+        <div class="inspector-title-wrap">
+          <span id="inspector-type-badge" class="inspector-pill">AGENT</span>
+          <span id="inspector-header-title" class="inspector-title">Node Inspector</span>
+        </div>
+        <div class="inspector-header-actions">
+          <button id="btn-frame-inspector-node" class="btn-icon" title="Frame 3D Camera on this Node (F)" aria-label="Frame Camera">🎯</button>
+          <button id="btn-close-inspector" class="btn-icon" title="Close Inspector" aria-label="Close Inspector">✕</button>
+        </div>
       </div>
-      <div id="inspector-content" class="inspector-body">
-        <div style="color: var(--text-muted); font-size: 11px;">Click a 3D agent polyhedra or select a row in the treegrid to inspect telemetry.</div>
+
+      <!-- Inspector Sub-Tabs -->
+      <nav class="inspector-tabs" role="tablist" aria-label="Inspector Panels">
+        <button class="insp-tab active" role="tab" id="tab-overview" aria-selected="true" aria-controls="panel-overview" data-panel="overview">Overview</button>
+        <button class="insp-tab" role="tab" id="tab-logs" aria-selected="false" aria-controls="panel-logs" data-panel="logs">Live Logs</button>
+        <button class="insp-tab" role="tab" id="tab-diffs" aria-selected="false" aria-controls="panel-diffs" data-panel="diffs">JSON Diffs</button>
+        <button class="insp-tab" role="tab" id="tab-evidence" aria-selected="false" aria-controls="panel-evidence" data-panel="evidence">Gate Evidence</button>
+        <button class="insp-tab" role="tab" id="tab-controls" aria-selected="false" aria-controls="panel-controls" data-panel="controls">Steer &amp; Control</button>
+      </nav>
+
+      <div class="inspector-body">
+        <!-- Panel 1: Overview -->
+        <div id="panel-overview" class="insp-panel active" role="tabpanel" aria-labelledby="tab-overview">
+          <div id="inspector-overview-content">
+            <div class="inspector-empty-state">Select an operational zone, agent polyhedron, authority record, or gate fence in the 3D scene or hierarchy tree.</div>
+          </div>
+        </div>
+
+        <!-- Panel 2: Live Logs -->
+        <div id="panel-logs" class="insp-panel" role="tabpanel" aria-labelledby="tab-logs">
+          <div class="log-toolbar">
+            <input type="search" id="log-search-input" class="log-search" placeholder="Filter logs..." aria-label="Filter logs">
+            <select id="log-level-select" class="log-select" aria-label="Filter log severity">
+              <option value="all">ALL</option>
+              <option value="info">INFO</option>
+              <option value="warn">WARN</option>
+              <option value="error">ERROR</option>
+            </select>
+            <label class="log-follow-label">
+              <input type="checkbox" id="chk-log-autoscroll" checked> Auto-scroll
+            </label>
+            <button id="btn-copy-logs" class="btn-mini" title="Copy Logs to Clipboard">Copy</button>
+          </div>
+          <div id="inspector-log-terminal" class="log-terminal" role="log" aria-live="polite" aria-atomic="false">
+            <!-- Streaming ANSI colorized log lines -->
+          </div>
+        </div>
+
+        <!-- Panel 3: JSON Diffs -->
+        <div id="panel-diffs" class="insp-panel" role="tabpanel" aria-labelledby="tab-diffs">
+          <div class="diff-header-bar">
+            <span id="diff-comparison-label" class="diff-label">Revision Diff: Rev #2 ➔ Rev #3</span>
+            <div class="diff-stats">
+              <span class="diff-add-count" id="diff-additions">+0</span>
+              <span class="diff-del-count" id="diff-deletions">-0</span>
+            </div>
+          </div>
+          <div id="inspector-diff-container" class="diff-container mono">
+            <!-- Line-by-line diff content -->
+          </div>
+        </div>
+
+        <!-- Panel 4: Gate Evidence -->
+        <div id="panel-evidence" class="insp-panel" role="tabpanel" aria-labelledby="tab-evidence">
+          <div id="inspector-evidence-content">
+            <!-- Gate evidence records, digests, and assurance levels -->
+          </div>
+        </div>
+
+        <!-- Panel 5: Steer & Control -->
+        <div id="panel-controls" class="insp-panel" role="tabpanel" aria-labelledby="tab-controls">
+          <div class="control-panel-wrap">
+            <div class="control-group">
+              <label for="steer-input" class="control-label">Live Steering Directive (Active Run):</label>
+              <textarea id="steer-input" class="control-textarea" rows="3" placeholder="Enter directive for active swarm agents (e.g. prioritize test coverage on auth module)..."></textarea>
+              <div class="control-btn-row">
+                <button id="btn-inject-steer" class="hud-btn primary">:steer Inject</button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label">Operator Checkpoint Actions:</div>
+              <div class="control-actions-grid">
+                <button id="btn-action-hold" class="action-card-btn">
+                  <strong>:hold Admission</strong>
+                  <span>Stop admitting new queue candidates</span>
+                </button>
+                <button id="btn-action-pause" class="action-card-btn">
+                  <strong>:pause Run</strong>
+                  <span>Request pause at next variant checkpoint</span>
+                </button>
+                <button id="btn-action-stop" class="action-card-btn danger">
+                  <strong>:stop Run</strong>
+                  <span>Graceful stop at checkpoint boundary</span>
+                </button>
+                <button id="btn-action-deblock" class="action-card-btn accent">
+                  <strong>:deblock</strong>
+                  <span>Clear blocked task with resolution prompt</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-label">Manual Gate Override (Approver/Admin):</div>
+              <div class="gate-override-row">
+                <select id="gate-override-select" class="hud-select" style="flex: 1;">
+                  <option value="gate-admission">Gate 1: Ingestion &amp; Admission</option>
+                  <option value="gate-plan-review">Gate 2: Plan Revision Review</option>
+                  <option value="gate-test-eval">Gate 3: Variant Test &amp; Eval</option>
+                  <option value="gate-release-closeout">Gate 4: Release Closeout</option>
+                </select>
+                <button id="btn-pass-gate" class="hud-btn primary">Record PASS</button>
+                <button id="btn-block-gate" class="hud-btn danger">Record BLOCK</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
 
-  <!-- Bottom Camera Dock & Bookmarks -->
-  <nav class="camera-dock" role="navigation" aria-label="Camera Bookmarks">
-    <button id="btn-reset-cam" class="btn-cam" aria-keyshortcuts="Home R">Reset View (R)</button>
-    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '1'}))" title="Zone 1: Ingestion">1: Admission</button>
-    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '2'}))" title="Zone 2: Planning">2: Reasoning</button>
-    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '3'}))" title="Zone 3: Worktrees">3: CodeGen</button>
-    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '4'}))" title="Zone 4: Validation">4: Testing</button>
-    <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '5'}))" title="Zone 5: Release">5: Release</button>
+  <!-- Bottom Camera Dock & Bookmarks (Spec §6, §23) -->
+  <nav class="camera-dock" role="navigation" aria-label="3D Spatial Camera Bookmarks &amp; View Controls">
+    <div class="camera-dock-group">
+      <span class="dock-label">Zones:</span>
+      <button id="btn-cam-zone1" class="btn-cam" title="Zone 1: Ingestion & Admission (Hotkey: 1)" data-zone="admission"><span class="badge-num">1</span> Admission</button>
+      <button id="btn-cam-zone2" class="btn-cam" title="Zone 2: Reasoning & Planning (Hotkey: 2)" data-zone="reasoning"><span class="badge-num">2</span> Reasoning</button>
+      <button id="btn-cam-zone3" class="btn-cam" title="Zone 3: Code Generation & Worktrees (Hotkey: 3)" data-zone="codegen"><span class="badge-num">3</span> CodeGen</button>
+      <button id="btn-cam-zone4" class="btn-cam" title="Zone 4: Verification & Gate Testing (Hotkey: 4)" data-zone="testing"><span class="badge-num">4</span> Testing</button>
+      <button id="btn-cam-zone5" class="btn-cam" title="Zone 5: Release & Handoff (Hotkey: 5)" data-zone="release"><span class="badge-num">5</span> Release</button>
+    </div>
+
+    <div class="camera-dock-divider"></div>
+
+    <div class="camera-dock-group">
+      <span class="dock-label">Layers:</span>
+      <button id="btn-cam-top" class="btn-cam" title="Top Authority Plane (Hotkey: T)" data-layer="authority"><span class="badge-letter">T</span> Authority (Y=+80)</button>
+      <button id="btn-cam-infra" class="btn-cam" title="Bottom Infrastructure Gauges (Hotkey: I)" data-layer="infra"><span class="badge-letter">I</span> Infra (Y=-50)</button>
+      <button id="btn-cam-frame" class="btn-cam accent" title="Frame Selected Entity (Hotkey: F)" aria-keyshortcuts="F"><span class="badge-letter">F</span> Frame Selected</button>
+      <button id="btn-reset-cam" class="btn-cam" title="Reset View (Hotkey: R or Home)" aria-keyshortcuts="Home R"><span class="badge-letter">R</span> Reset View</button>
+    </div>
+
+    <div class="camera-dock-divider"></div>
+
+    <div class="camera-dock-group">
+      <button id="btn-toggle-motion" class="btn-cam toggle-btn" title="Toggle Motion and Animations (Respects prefers-reduced-motion)">
+        <span id="motion-status-icon">▶</span>
+        <span id="motion-status-text">Motion: ON</span>
+      </button>
+      <button id="btn-toggle-hud" class="btn-cam" title="Toggle HUD Overlays for Clean 3D View">Toggle HUD</button>
+    </div>
   </nav>
 
   <script type="module" src="spatial-topology.js"></script>

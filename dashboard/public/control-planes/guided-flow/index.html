@@ -7,190 +7,638 @@
   <link rel="stylesheet" href="guided-flow.css">
 </head>
 <body>
+  <!-- Accessibility Skip Link -->
+  <a href="#main-content" class="sr-only focus:not-sr-only">Skip to main content</a>
+
   <!-- Global Header (Spec §6.2) -->
   <header class="app-header" role="banner">
-    <div class="brand-title">
-      <span>HERMES CONTROL PLANE</span>
-      <span class="authority-pill">GOVERNED WORKSPACE</span>
+    <div class="header-brand-group">
+      <div class="brand-title">
+        <span class="brand-icon">⬡</span>
+        <span class="brand-text">HERMES CONTROL PLANE</span>
+      </div>
+      <span class="authority-pill">2D GUIDED WORKSPACE</span>
+      <span class="authority-pill authority-digest" title="Strict Cryptographic Digest Authority">EXACT DIGEST AUTHORITY</span>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <button id="btn-ai-assist" class="btn-secondary" style="min-height: 36px; padding: 4px 10px; font-size: 11px;">
-        💬 Planning Assistant
+
+    <div class="header-status-group">
+      <div id="quick-status-pill" class="status-pill status-nominal" title="System Operational Status">
+        <span class="status-dot"></span>
+        <span id="quick-status-text">NOMINAL</span>
+      </div>
+      <div id="admission-status-pill" class="status-pill status-admission" title="Runner Admission State">
+        <span class="status-icon">⚡</span>
+        <span id="admission-status-text">ADMISSION: ACTIVE</span>
+      </div>
+      <div id="connection-status-pill" class="status-pill status-live" title="Real-Time Telemetry Stream">
+        <span class="status-pulse"></span>
+        <span id="connection-status-text">LIVE SSE</span>
+      </div>
+    </div>
+
+    <div class="header-actions-group">
+      <button id="btn-ai-assist" class="btn-assistant" aria-label="Open Autonomous Planning Assistant" title="AI Pre-Draft Planning Assistant">
+        <span class="assistant-sparkle">✨</span>
+        <span>Planning Assistant</span>
       </button>
-      <select id="role-select" class="form-select" style="min-height: 36px; padding: 4px 8px; width: auto; font-size: 11px;" aria-label="Simulated RBAC Role">
-        <option value="Administrator">Role: Administrator</option>
-        <option value="Author">Role: Author</option>
-        <option value="Approver">Role: Approver</option>
-        <option value="Operator">Role: Operator</option>
-        <option value="Viewer">Role: Viewer</option>
-        <option value="Auditor">Role: Auditor</option>
-      </select>
+      <div class="role-selector-wrapper">
+        <label for="role-select" class="sr-only">Simulated RBAC Role</label>
+        <select id="role-select" class="form-select role-select" aria-label="Simulated RBAC Role">
+          <option value="Administrator">Role: Administrator</option>
+          <option value="Author">Role: Author</option>
+          <option value="Approver">Role: Approver</option>
+          <option value="Operator">Role: Operator</option>
+          <option value="Viewer">Role: Viewer</option>
+          <option value="Auditor">Role: Auditor</option>
+        </select>
+      </div>
     </div>
   </header>
 
-  <!-- Cross-Resource Identity Breadcrumb (Spec §6.4) -->
-  <div id="identity-breadcrumb" class="identity-breadcrumb" aria-label="Resource Lineage Breadcrumb"></div>
+  <!-- Cross-Resource Identity Strip Breadcrumb (Spec §6.4) -->
+  <div id="identity-breadcrumb" class="identity-breadcrumb" aria-label="Cross-Resource Lineage Identity Strip" role="navigation">
+    <!-- Populated dynamically: Plan -> Rev -> Approval -> Launch -> Request -> Run -> Iteration -->
+  </div>
 
-  <!-- Stepper Navigation Bar (9 Workspaces) -->
-  <nav id="stepper-nav" class="stepper-nav" aria-label="Lifecycle Workflow Steps">
-    <ul class="stepper-list">
-      <li class="step-item active" data-step="plans" tabindex="0" role="button">
+  <!-- Stepper Navigation Bar (9 Workspaces, Spec §6, §8, §9, §13, §14, §15, §18) -->
+  <nav id="stepper-nav" class="stepper-nav" aria-label="Stepped Governance Flow (9 Workspaces)">
+    <ul class="stepper-list" role="tablist">
+      <li class="step-item active" data-step="plans" role="tab" aria-selected="true" tabindex="0" id="step-tab-plans">
         <span class="step-num">1</span>
-        <span>Plans & Authoring</span>
+        <span class="step-label">Plans & Authoring</span>
       </li>
-      <li class="step-item" data-step="review" tabindex="0" role="button">
+      <li class="step-item" data-step="review" role="tab" aria-selected="false" tabindex="0" id="step-tab-review">
         <span class="step-num">2</span>
-        <span>Revision Review</span>
+        <span class="step-label">Revision Review</span>
       </li>
-      <li class="step-item" data-step="approval" tabindex="0" role="button">
+      <li class="step-item" data-step="approval" role="tab" aria-selected="false" tabindex="0" id="step-tab-approval">
         <span class="step-num">3</span>
-        <span>Approval & Launch</span>
+        <span class="step-label">Approval & Launch</span>
       </li>
-      <li class="step-item" data-step="iterations" tabindex="0" role="button">
+      <li class="step-item" data-step="iterations" role="tab" aria-selected="false" tabindex="0" id="step-tab-iterations">
         <span class="step-num">4</span>
-        <span>Managed Iterations</span>
+        <span class="step-label">Managed Iterations</span>
       </li>
-      <li class="step-item" data-step="synthesis" tabindex="0" role="button">
+      <li class="step-item" data-step="synthesis" role="tab" aria-selected="false" tabindex="0" id="step-tab-synthesis">
         <span class="step-num">5</span>
-        <span>Synthesis</span>
+        <span class="step-label">Synthesis & Cherry-Pick</span>
       </li>
-      <li class="step-item" data-step="gates" tabindex="0" role="button">
+      <li class="step-item" data-step="gates" role="tab" aria-selected="false" tabindex="0" id="step-tab-gates">
         <span class="step-num">6</span>
-        <span>Acceptance Gates</span>
+        <span class="step-label">Quality Gates & Audit</span>
       </li>
-      <li class="step-item" data-step="handoff" tabindex="0" role="button">
+      <li class="step-item" data-step="handoff" role="tab" aria-selected="false" tabindex="0" id="step-tab-handoff">
         <span class="step-num">7</span>
-        <span>Terminal Handoff</span>
+        <span class="step-label">Terminal Handoff</span>
       </li>
-      <li class="step-item" data-step="queue" tabindex="0" role="button">
+      <li class="step-item" data-step="queue" role="tab" aria-selected="false" tabindex="0" id="step-tab-queue">
         <span class="step-num">8</span>
-        <span>Candidate Queue</span>
+        <span class="step-label">Candidate Queue</span>
       </li>
-      <li class="step-item" data-step="system" tabindex="0" role="button">
+      <li class="step-item" data-step="system" role="tab" aria-selected="false" tabindex="0" id="step-tab-system">
         <span class="step-num">9</span>
-        <span>System & Health</span>
+        <span class="step-label">System Health</span>
       </li>
     </ul>
   </nav>
 
   <!-- Main Guided Workspace Container -->
-  <main class="guided-container" role="main">
-    <!-- View 1: Plans List & Authoring -->
-    <section id="view-plans" class="view-panel active" aria-label="Governed Project Plans">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h2>Governed Project Plans</h2>
-        <button id="btn-new-plan" class="btn-primary">+ Author New Plan</button>
+  <main id="main-content" class="guided-container" role="main">
+    
+    <!-- WORKSPACE 1: PLANS & AUTHORING (Spec §8) -->
+    <section id="view-plans" class="view-panel active" aria-labelledby="heading-plans" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-plans" class="workspace-title">Governed Project Plans</h2>
+          <p class="workspace-desc">Author and manage exact-revision authority plans for classic new projects and managed repository improvements.</p>
+        </div>
+        <button id="btn-new-plan" class="btn-primary" aria-label="Author New Governed Plan">
+          <span class="btn-icon">＋</span> Author New Governed Plan
+        </button>
       </div>
 
-      <!-- New Plan Card (Collapsible) -->
-      <div id="plan-form-card" class="guided-card" style="display: none;">
-        <div class="card-title">Author Governed Project Plan</div>
-        <form id="plan-form">
-          <div class="form-group">
-            <label class="form-label" for="plan-title">Project Title</label>
-            <input type="text" id="plan-title" class="form-input" placeholder="e.g. Accessible Swarm Control Plane" required>
+      <!-- Plan Creation Mode Choice Modal / Card -->
+      <div id="plan-choice-modal" class="guided-card choice-card" style="display: none;">
+        <div class="card-header">
+          <h3 class="card-title">Choose Project Governance Pipeline</h3>
+          <button id="btn-close-choice" class="btn-close" aria-label="Close pipeline selection">✕</button>
+        </div>
+        <p class="card-subtitle">Select the execution pipeline type. Plans are cryptographically immutable once submitted for review.</p>
+        <div class="pipeline-choice-grid">
+          <div class="pipeline-choice-option" id="choice-classic" tabindex="0" role="button">
+            <div class="choice-icon">🚀</div>
+            <div class="choice-title">Build a New Project (Classic Pipeline)</div>
+            <div class="choice-desc">Routes to classic execution. Creates repository from scratch via inventory scanning, specification drafting, plan generation, and multi-agent implementation.</div>
+            <div class="choice-badge">Zero Existing Repo Required</div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="plan-pipeline">Execution Pipeline</label>
-            <select id="plan-pipeline" class="form-select">
-              <option value="classic">Classic Pipeline (Build new project from scratch)</option>
-              <option value="managed">Managed Pipeline (Improve existing Git repository)</option>
-            </select>
+          <div class="pipeline-choice-option" id="choice-managed" tabindex="0" role="button">
+            <div class="choice-icon">🔬</div>
+            <div class="choice-title">Improve Existing Repository (Managed Pipeline)</div>
+            <div class="choice-desc">Routes to managed execution. Isolates variants in git worktrees, evaluates against 11 criteria, executes runner-selected validations, and synthesizes into golden branch.</div>
+            <div class="choice-badge">Requires Git Repo & Base Commit</div>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="plan-repo-path">Target Repository Path (Managed only)</label>
-            <input type="text" id="plan-repo-path" class="form-input" placeholder="/home/mojo/projects/target-repo">
-            <div class="form-hint">Must be an absolute path with clean working tree.</div>
+        </div>
+      </div>
+
+      <!-- 13-Section Structured Plan Authoring Card -->
+      <div id="plan-form-card" class="guided-card form-card" style="display: none;">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title" id="form-card-title">Author Governed Project Plan (Revision #1 Draft)</h3>
+            <span id="selected-pipeline-badge" class="authority-pill">PIPELINE: MANAGED</span>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="plan-objective">Bounded Objective & Acceptance Scope</label>
-            <textarea id="plan-objective" class="form-textarea" placeholder="Define exact requirements, constraints, and acceptance criteria..." required></textarea>
+          <button id="btn-close-plan-form" class="btn-close" aria-label="Close Plan Authoring Form">✕</button>
+        </div>
+
+        <div class="plan-editor-notice">
+          <strong>Governance Notice:</strong> No arbitrary shell commands, scripts, arguments, or environment variables are permitted. Validation is runner-selected and policy-governed.
+        </div>
+
+        <form id="plan-form" novalidate>
+          <input type="hidden" id="plan-pipeline-type" value="managed">
+          <input type="hidden" id="plan-lineage-mode" value="new">
+          <input type="hidden" id="plan-source-plan-id" value="">
+
+          <!-- Accordion / Structured 13 Sections -->
+          <div class="form-sections-container">
+
+            <!-- Section 1: Intent & Title -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">1</span> Intent & Project Title</legend>
+              <div class="form-group">
+                <label class="form-label" for="plan-title">Project Title <span class="required-star">*</span></label>
+                <input type="text" id="plan-title" class="form-input" placeholder="e.g. Accessible Swarm Control Plane v2" required>
+                <div class="form-hint">A clear, unambiguous project title identifying the governed effort.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="plan-intent">High-Level Intent</label>
+                <input type="text" id="plan-intent" class="form-input" placeholder="e.g. Provide a WCAG 2.2 AA compliant 2D guided workflow for swarm governance">
+              </div>
+            </fieldset>
+
+            <!-- Section 2: Problem & Users -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">2</span> Problem & Intended Users</legend>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label class="form-label" for="plan-problem">Problem Statement <span class="required-star">*</span></label>
+                  <textarea id="plan-problem" class="form-textarea" placeholder="Describe the deficiency, opportunity, or architectural requirement..." required></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-users">Intended Users & Personas <span class="required-star">*</span></label>
+                  <textarea id="plan-users" class="form-textarea" placeholder="e.g. System Operators, Plan Authors, Approvers, Forensics Auditors..." required></textarea>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 3: Objective & Bounded Scope -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">3</span> Objective & Bounded Scope</legend>
+              <div class="form-group">
+                <label class="form-label" for="plan-objective">Objective & Bounded Scope Narrative <span class="required-star">*</span></label>
+                <textarea id="plan-objective" class="form-textarea" placeholder="Define the strict objective boundaries and acceptable solution domain..." required></textarea>
+                <div class="form-hint">Managed executions strictly limit changes to this bounded objective.</div>
+              </div>
+            </fieldset>
+
+            <!-- Section 4: Requirements (Multi-Item) -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">4</span> Requirements (Multi-Item Add)</legend>
+              <div id="requirements-list-builder" class="dynamic-list-builder"></div>
+              <div class="dynamic-add-row">
+                <input type="text" id="new-req-input" class="form-input" placeholder="Add specific functional or architectural requirement...">
+                <select id="new-req-priority" class="form-select dynamic-select" aria-label="Requirement Priority">
+                  <option value="Critical">Critical</option>
+                  <option value="Standard" selected>Standard</option>
+                  <option value="Optional">Optional</option>
+                </select>
+                <button type="button" id="btn-add-req" class="btn-secondary btn-touch-add">+ Add Requirement</button>
+              </div>
+            </fieldset>
+
+            <!-- Section 5: Non-Goals -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">5</span> Non-Goals & Explicit Exclusions</legend>
+              <div id="nongoals-list-builder" class="dynamic-list-builder"></div>
+              <div class="dynamic-add-row">
+                <input type="text" id="new-nongoal-input" class="form-input" placeholder="Specify out-of-scope refactoring or forbidden modifications...">
+                <button type="button" id="btn-add-nongoal" class="btn-secondary btn-touch-add">+ Add Non-Goal</button>
+              </div>
+            </fieldset>
+
+            <!-- Section 6: Constraints & Risks -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">6</span> Constraints & Risk Invariants</legend>
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label class="form-label" for="plan-constraints">Runtime & Policy Constraints</label>
+                  <textarea id="plan-constraints" class="form-textarea" placeholder="e.g. Preserve backward compatibility, no external dependencies..."></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-risks">Known Risks & Failure Modes</label>
+                  <textarea id="plan-risks" class="form-textarea" placeholder="e.g. Concurrency deadlocks, timeout exhaustion, UI layout regression..."></textarea>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 7: Repository Binding (Managed Only) -->
+            <fieldset class="form-section" id="section-repo-binding">
+              <legend class="section-legend"><span class="section-idx">7</span> Repository Binding & Base Commit Freeze</legend>
+              <div class="form-row-3">
+                <div class="form-group">
+                  <label class="form-label" for="plan-repo-path">Repository Root Path</label>
+                  <input type="text" id="plan-repo-path" class="form-input" placeholder="/home/mojo/projects/target-repo">
+                  <div class="form-hint">Absolute path to git repository root.</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-base-ref">Base Ref</label>
+                  <input type="text" id="plan-base-ref" class="form-input" value="main" placeholder="main">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-base-commit">Base Commit (Frozen at Approval)</label>
+                  <input type="text" id="plan-base-commit" class="form-input font-mono" placeholder="Resolves on save (e.g. 7f3a9b2c...)">
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 8: Acceptance Gates -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">8</span> Acceptance Gates (Evidence & Severity)</legend>
+              <div id="gates-list-builder" class="dynamic-gates-builder"></div>
+              <div class="gate-add-grid">
+                <input type="text" id="new-gate-id" class="form-input font-mono" placeholder="Gate ID (e.g. gate-test-pass)">
+                <input type="text" id="new-gate-desc" class="form-input" placeholder="Acceptance condition description">
+                <select id="new-gate-severity" class="form-select" aria-label="Gate Severity">
+                  <option value="must">Severity: Must (Hard Gate)</option>
+                  <option value="should">Severity: Should (Advisory)</option>
+                </select>
+                <input type="text" id="new-gate-evidence" class="form-input font-mono" placeholder="Safe evidence path (e.g. artifacts/test-results.json)">
+                <button type="button" id="btn-add-gate" class="btn-secondary btn-touch-add">+ Add Gate</button>
+              </div>
+            </fieldset>
+
+            <!-- Section 9: Validation Policy -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">9</span> Validation Policy</legend>
+              <div class="form-group">
+                <label class="form-label" for="plan-validation-policy">Runner Validation Policy ID</label>
+                <input type="text" id="plan-validation-policy" class="form-input font-mono" value="apb.runner-selected.v1" readonly>
+                <div class="form-hint">Runner selects and executes repo-native validation commands. Client arbitrary validation command entry is prohibited by spec §3.3 & §8.3.</div>
+              </div>
+            </fieldset>
+
+            <!-- Section 10: Milestones -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">10</span> Key Milestones</legend>
+              <div id="milestones-list-builder" class="dynamic-list-builder"></div>
+              <div class="dynamic-add-row">
+                <input type="text" id="new-milestone-input" class="form-input" placeholder="e.g. Milestone 1: Core Architecture & Invariant Review">
+                <button type="button" id="btn-add-milestone" class="btn-secondary btn-touch-add">+ Add Milestone</button>
+              </div>
+            </fieldset>
+
+            <!-- Section 11: Iteration & Scope Limits -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">11</span> Iteration & Scope Limits (Hard Bounds)</legend>
+              <div class="form-row-4">
+                <div class="form-group">
+                  <label class="form-label" for="plan-limit-iters">Max Iterations (1-10)</label>
+                  <input type="number" id="plan-limit-iters" class="form-input" min="1" max="10" value="3">
+                  <div class="form-hint">Runner bounded passes</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-limit-vars">Max Variants (1-5)</label>
+                  <input type="number" id="plan-limit-vars" class="form-input" min="1" max="5" value="3">
+                  <div class="form-hint">Divergent branches</div>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-limit-features">Max Accepted Features (1-4)</label>
+                  <input type="number" id="plan-limit-features" class="form-input" min="1" max="4" value="3">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="plan-limit-visual">Max Visual Motif Changes (0-1)</label>
+                  <input type="number" id="plan-limit-visual" class="form-input" min="0" max="1" value="1">
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Section 12: Lineage -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">12</span> Lineage & Origin</legend>
+              <div class="lineage-display-box">
+                <div><strong>Lineage Mode:</strong> <span id="lineage-mode-label">New Root Plan</span></div>
+                <div><strong>Source Lineage:</strong> <span id="lineage-source-label">None (Root Draft)</span></div>
+              </div>
+            </fieldset>
+
+            <!-- Section 13: Review Readiness -->
+            <fieldset class="form-section">
+              <legend class="section-legend"><span class="section-idx">13</span> Review Readiness Checklist</legend>
+              <div class="readiness-checklist">
+                <div class="readiness-item"><span class="check-icon">✓</span> 13 Structured sections defined without executable injection</div>
+                <div class="readiness-item"><span class="check-icon">✓</span> Acceptance gates bound to relative, safe evidence paths</div>
+                <div class="readiness-item"><span class="check-icon">✓</span> Repository binding verified clean and ready for base commit freeze</div>
+              </div>
+            </fieldset>
+
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-            <div class="form-group">
-              <label class="form-label" for="plan-max-iters">Max Iterations (1 - 10)</label>
-              <input type="number" id="plan-max-iters" class="form-input" min="1" max="10" value="3">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="plan-max-variants">Max Variants / Iteration (1 - 5)</label>
-              <input type="number" id="plan-max-variants" class="form-input" min="1" max="5" value="3">
-            </div>
-          </div>
-          <div class="btn-deck">
-            <button type="submit" class="btn-primary">Save Initial Draft (Revision #1)</button>
-            <button type="button" class="btn-secondary" onclick="document.getElementById('plan-form-card').style.display='none'">Cancel</button>
+
+          <div class="btn-deck form-actions-deck">
+            <button type="submit" id="btn-save-draft" class="btn-primary">
+              💾 Save Draft (Create Revision #1)
+            </button>
+            <button type="button" id="btn-cancel-draft" class="btn-secondary">
+              Cancel Draft
+            </button>
           </div>
         </form>
       </div>
 
-      <div id="plan-list-container"></div>
+      <!-- Plans Catalog Filters -->
+      <div class="catalog-filter-bar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="plan-search-input" class="form-input search-input" placeholder="Search plans by title, ID, or repository...">
+        </div>
+        <div class="filters-group">
+          <select id="filter-state" class="form-select filter-select" aria-label="Filter by state">
+            <option value="all">State: All</option>
+            <option value="draft">Draft</option>
+            <option value="review">Under Review</option>
+            <option value="approved">Approved</option>
+            <option value="launched">Active Launch</option>
+            <option value="archived">Archived</option>
+          </select>
+          <select id="filter-pipeline" class="form-select filter-select" aria-label="Filter by pipeline">
+            <option value="all">Pipeline: All</option>
+            <option value="classic">Classic Pipeline</option>
+            <option value="managed">Managed Pipeline</option>
+          </select>
+          <select id="filter-approval" class="form-select filter-select" aria-label="Filter by approval">
+            <option value="all">Approval: All</option>
+            <option value="approved">Approved Only</option>
+            <option value="unapproved">Unapproved Only</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Governed Plans Catalog List Container -->
+      <div id="plan-list-container" class="plans-grid">
+        <!-- Rendered dynamically -->
+      </div>
     </section>
 
-    <!-- View 2: Revision Review -->
-    <section id="view-review" class="view-panel" aria-label="Plan Revision Review">
-      <h2>Immutable Revision Review</h2>
-      <div id="review-container"></div>
+    <!-- WORKSPACE 2: REVISION REVIEW & VERIFICATION (Spec §8.6) -->
+    <section id="view-review" class="view-panel" aria-labelledby="heading-review" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-review" class="workspace-title">Revision Review & Integrity Verification</h2>
+          <p class="workspace-desc">Inspect immutable revisions, cryptographic SHA-256 digests, side-by-side diffs, and base commit freeze status.</p>
+        </div>
+        <div class="header-actions">
+          <div id="review-revision-selector" class="revision-pills-list" aria-label="Revisions List"></div>
+        </div>
+      </div>
+
+      <div id="review-container">
+        <!-- Dynamic Review Content -->
+      </div>
     </section>
 
-    <!-- View 3: Approval & Launch -->
-    <section id="view-approval" class="view-panel" aria-label="Approval Authority">
-      <h2>Approval Authority & Launch Gate</h2>
-      <div id="approval-container"></div>
+    <!-- WORKSPACE 3: APPROVAL AUTHORITY & LAUNCH (Spec §8.7) -->
+    <section id="view-approval" class="view-panel" aria-labelledby="heading-approval" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-approval" class="workspace-title">Approval Authority & Launch Transaction</h2>
+          <p class="workspace-desc">Formal cryptographic sign-off and single-active-launch ticket registration with lock conflict checks.</p>
+        </div>
+      </div>
+
+      <div id="approval-container">
+        <!-- Dynamic Approval Content -->
+      </div>
     </section>
 
-    <!-- View 4: Managed Iterations -->
-    <section id="view-iterations" class="view-panel" aria-label="Managed Iterations">
-      <h2>Managed Iteration Workspace</h2>
-      <div id="iteration-container"></div>
+    <!-- WORKSPACE 4: MANAGED ITERATIONS & SCORECARDS (Spec §13) -->
+    <section id="view-iterations" class="view-panel" aria-labelledby="heading-iterations" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-iterations" class="workspace-title">Managed Iterations & 11-Criterion Multi-Variant Scorecards</h2>
+          <p class="workspace-desc">Compare isolated worktree variants across 11 standardized criteria with aligned score bars and hard gate enforcement.</p>
+        </div>
+      </div>
+
+      <div id="iteration-container">
+        <!-- Dynamic Iteration Content -->
+      </div>
     </section>
 
-    <!-- View 5: Synthesis -->
-    <section id="view-synthesis" class="view-panel" aria-label="Synthesis Selection">
-      <h2>Synthesis & Integration</h2>
-      <div id="synthesis-container"></div>
+    <!-- WORKSPACE 5: WINNER SELECTION & SYNTHESIS (Spec §13.5) -->
+    <section id="view-synthesis" class="view-panel" aria-labelledby="heading-synthesis" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-synthesis" class="workspace-title">Winner Selection & Cherry-Pick Synthesis</h2>
+          <p class="workspace-desc">Inspect winner selection rationale, cherry-pick merge verification, and source branch integrity confirmation.</p>
+        </div>
+      </div>
+
+      <div id="synthesis-container">
+        <!-- Dynamic Synthesis Content -->
+      </div>
     </section>
 
-    <!-- View 6: Acceptance Gates -->
-    <section id="view-gates" class="view-panel" aria-label="Acceptance Gates">
-      <h2>Quality Gates & Evidence Audit</h2>
-      <div id="gates-container"></div>
-      <div id="traceability-container" style="margin-top: 16px;"></div>
+    <!-- WORKSPACE 6: ACCEPTANCE GATES & AUDIT (Spec §14) -->
+    <section id="view-gates" class="view-panel" aria-labelledby="heading-gates" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-gates" class="workspace-title">Quality Gates & Evidence Traceability Audit</h2>
+          <p class="workspace-desc">Path-level evidence non-empty verification, assurance provenance badges, and end-to-end requirement traceability.</p>
+        </div>
+      </div>
+
+      <div id="gates-container">
+        <!-- Dynamic Gates Content -->
+      </div>
+      <div id="traceability-container" class="traceability-section">
+        <!-- Dynamic Traceability Matrix -->
+      </div>
     </section>
 
-    <!-- View 7: Terminal Handoff -->
-    <section id="view-handoff" class="view-panel" aria-label="Terminal Handoff">
-      <h2>Handoff & Operator Continuity</h2>
-      <div id="handoff-container"></div>
+    <!-- WORKSPACE 7: TERMINAL HANDOFF & CONTINUITY (Spec §15) -->
+    <section id="view-handoff" class="view-panel" aria-labelledby="heading-handoff" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-handoff" class="workspace-title">Terminal Handoff & Operator Continuity</h2>
+          <p class="workspace-desc">Terminal state handoffs for Completed, Blocked, or Paused runs with rollback instructions and continuation drafting.</p>
+        </div>
+        <div class="handoff-state-tabs" id="handoff-state-tabs">
+          <button class="tab-btn active" data-handoff-state="completed">✓ Completed Handoff</button>
+          <button class="tab-btn" data-handoff-state="blocked">⚠️ Blocked (Deblock Flow)</button>
+          <button class="tab-btn" data-handoff-state="paused">⏸ Paused / Stopped</button>
+        </div>
+      </div>
+
+      <div id="handoff-container">
+        <!-- Dynamic Handoff Content -->
+      </div>
     </section>
 
-    <!-- View 8: Candidate Queue -->
-    <section id="view-queue" class="view-panel" aria-label="Candidate Queue">
-      <h2>Candidate Ideas Queue</h2>
-      <div id="queue-container"></div>
+    <!-- WORKSPACE 8: CANDIDATE QUEUE & STEERING (Spec §9) -->
+    <section id="view-queue" class="view-panel" aria-labelledby="heading-queue" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-queue" class="workspace-title">Candidate Ideas Queue & Steering Directives</h2>
+          <p class="workspace-desc">Manage unapproved candidate backlog, convert ideas to governed plans, and inject runtime steering directives.</p>
+        </div>
+        <div class="header-actions">
+          <button id="btn-add-queue-item" class="btn-primary">+ Add Candidate Idea</button>
+          <button id="btn-clear-queue-modal-trigger" class="btn-secondary btn-danger-outline">⚠️ Clear Queue...</button>
+        </div>
+      </div>
+
+      <!-- Add Queue Item Form Card -->
+      <div id="queue-form-card" class="guided-card" style="display: none;">
+        <div class="card-header">
+          <h3 class="card-title">Add Candidate Idea to Backlog</h3>
+          <button id="btn-close-queue-form" class="btn-close" aria-label="Close Idea Form">✕</button>
+        </div>
+        <form id="queue-form">
+          <div class="form-group">
+            <label class="form-label" for="queue-item-title">Title / Summary</label>
+            <input type="text" id="queue-item-title" class="form-input" placeholder="e.g. Implement real-time monotonic event sequence cursors" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="queue-item-objective">Objective Narrative</label>
+            <textarea id="queue-item-objective" class="form-textarea" placeholder="Detailed candidate description and acceptance goals..."></textarea>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="queue-item-priority">Priority</label>
+              <select id="queue-item-priority" class="form-select">
+                <option value="high">High Priority</option>
+                <option value="standard" selected>Standard Priority</option>
+                <option value="low">Low Priority</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="queue-item-repo">Target Repository (Optional)</label>
+              <input type="text" id="queue-item-repo" class="form-input" placeholder="/home/mojo/projects/target-repo">
+            </div>
+          </div>
+          <div class="btn-deck">
+            <button type="submit" class="btn-primary">Add Candidate Idea</button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('queue-form-card').style.display='none'">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="queue-container">
+        <!-- Dynamic Queue Content -->
+      </div>
+
+      <div id="steering-container" class="steering-section" style="margin-top: 24px;">
+        <!-- Dynamic Steering Directives -->
+      </div>
     </section>
 
-    <!-- View 9: System Health -->
-    <section id="view-system" class="view-panel" aria-label="System Health">
-      <h2>System Administration & Integrity</h2>
-      <div id="system-container"></div>
+    <!-- WORKSPACE 9: SYSTEM HEALTH & AUDIT (Spec §18) -->
+    <section id="view-system" class="view-panel" aria-labelledby="heading-system" role="tabpanel">
+      <div class="workspace-header">
+        <div>
+          <h2 id="heading-system" class="workspace-title">System Health & Tamper-Evident Audit Ledger</h2>
+          <p class="workspace-desc">7 independent subsystem health checks, runner process lock inspector, and verifiable audit event history.</p>
+        </div>
+      </div>
+
+      <div id="system-container">
+        <!-- Dynamic System Health & Audit Content -->
+      </div>
     </section>
+
   </main>
 
-  <!-- Planning Assistant Modal -->
-  <div id="assistance-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 1000;">
-    <div style="background: var(--bg-card); width: 620px; max-width: 90%; border-radius: 12px; padding: 20px; border: 1px solid var(--border-subtle); display: flex; flex-direction: column; max-height: 80vh;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; font-size: 15px;">Autonomous Planning Assistant</h3>
-        <button id="btn-close-assist" style="background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer;">✕</button>
+  <!-- Planning Assistant Modal (Spec §8.8) -->
+  <div id="assistance-modal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="assist-modal-title">
+    <div class="modal-card assist-modal-card">
+      <div class="modal-header">
+        <div class="assist-title-group">
+          <span class="assistant-sparkle-lg">✨</span>
+          <div>
+            <h3 id="assist-modal-title" class="modal-title">Autonomous Planning Assistant (Pre-Draft)</h3>
+            <span class="assist-subtitle">Interactive AI planning conversation with Hermes structured proposal generation.</span>
+          </div>
+        </div>
+        <button id="btn-close-assist" class="btn-close" aria-label="Close Planning Assistant">✕</button>
       </div>
-      <div id="assistance-messages" style="flex: 1; overflow-y: auto; background: var(--bg-input); padding: 12px; border-radius: 6px; min-height: 260px; font-size: 13px;"></div>
-      <div style="display: flex; gap: 8px; margin-top: 12px;">
-        <input type="text" id="assistance-input" class="form-input" placeholder="Ask planning questions or describe ideas...">
-        <button id="btn-assistance-send" class="btn-primary" style="min-height: 44px;">Send</button>
+
+      <div class="assist-privacy-notice">
+        <span class="notice-icon">⚠️</span>
+        <span><strong>Privacy Disclosure:</strong> Messages are sent to the configured inference provider. Do not disclose credentials or confidential keys. Assistant has no approval or launch authority.</span>
+      </div>
+
+      <div id="assistance-messages" class="assist-messages-stream" role="log" aria-live="polite">
+        <!-- Messages rendered dynamically -->
+      </div>
+
+      <div class="assist-input-bar">
+        <input type="text" id="assistance-input" class="form-input assist-input" placeholder="Describe software requirements, constraints, or ask planning questions..." aria-label="Planning message input">
+        <button id="btn-assistance-send" class="btn-primary btn-touch-send">
+          Send ➔
+        </button>
       </div>
     </div>
   </div>
 
+  <!-- Launch Confirmation Modal (Spec §8.7) -->
+  <div id="launch-modal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="launch-modal-title">
+    <div class="modal-card launch-modal-card">
+      <div class="modal-header">
+        <h3 id="launch-modal-title" class="modal-title">Confirm Governed Launch Transaction</h3>
+        <button id="btn-close-launch-modal" class="btn-close" aria-label="Close Launch Modal">✕</button>
+      </div>
+      <div id="launch-modal-body" class="launch-modal-body">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Clear Queue Blast-Radius Modal (Spec §9.1) -->
+  <div id="clear-queue-modal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="clear-queue-title">
+    <div class="modal-card blast-radius-card">
+      <div class="modal-header">
+        <h3 id="clear-queue-title" class="modal-title text-danger">⚠️ Candidate Queue Clear: Blast Radius Impact</h3>
+        <button id="btn-close-clear-modal" class="btn-close" aria-label="Close Blast Radius Modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="warning-text">Clearing the candidate queue causes broad side-effects across admission state. The following resources will be purged or reset:</p>
+        <ul class="blast-radius-list">
+          <li><strong>1. All Candidate Ideas:</strong> All unpinned and pending backlog items are removed.</li>
+          <li><strong>2. Active Objective Pin:</strong> The currently pinned objective is cleared.</li>
+          <li><strong>3. Next-Run Request:</strong> Any pending tick admission flag is reset to false.</li>
+          <li><strong>4. Linked Steering Directives:</strong> Queue-derived runtime steering instructions are cancelled.</li>
+        </ul>
+        <div class="confirmation-checkbox-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-confirm-blast-radius">
+            <span>I acknowledge and confirm the complete blast radius of clearing the candidate queue.</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer btn-deck">
+        <button id="btn-confirm-clear-queue" class="btn-danger" disabled>
+          Confirm & Execute Full Queue Wipe
+        </button>
+        <button id="btn-cancel-clear-queue" class="btn-secondary">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen Reader / Live Announcement Region -->
+  <div id="live-announcer" class="sr-only" role="status" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- Application Controller Module -->
   <script type="module" src="guided-flow.js"></script>
 </body>
 </html>

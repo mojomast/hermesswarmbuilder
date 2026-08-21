@@ -13,19 +13,22 @@
   <!-- Persistent Global Header (Spec §6.2) -->
   <header class="ops-header" role="banner">
     <div class="header-left">
-      <span style="font-weight: 700; color: #fff; letter-spacing: 0.5px;">HERMES OPS CONSOLE</span>
-      <span id="header-status" class="system-badge badge-neutral">INITIALIZING</span>
-      <span id="header-run" style="color: var(--text-secondary);">Run: --</span>
+      <span class="brand-title">HERMES OPS CONSOLE</span>
+      <span id="header-status" class="system-badge badge-active" title="Overall System Disposition">
+        <span class="badge-dot">●</span> <span id="header-status-text">INITIALIZING</span>
+      </span>
+      <span id="header-run" class="header-meta-item" title="Active Runner Execution ID">Run: --</span>
     </div>
     <div class="header-center">
-      <span id="header-admission" class="system-badge badge-active">Admission: ENABLED</span>
-      <span id="header-pending-cmds" class="system-badge badge-neutral">Pending: 0</span>
-      <span id="header-tick" class="system-badge badge-neutral">Tick: ~:00m</span>
-      <span id="header-sse" class="system-badge badge-neutral">SSE: CONNECTING</span>
-      <span id="header-attention" class="system-badge badge-warning">Attention: 0</span>
+      <span id="header-admission" class="system-badge badge-active" title="Admission Control Mode">Admission: ENABLED</span>
+      <span id="header-pending-cmds" class="system-badge badge-neutral" title="Pending Server Commands">Pending: 0</span>
+      <span id="header-tick" class="system-badge badge-neutral" title="Projected Next Hourly Tick (Non-Authoritative)">Tick: ~:00m (est)</span>
+      <span id="header-sse" class="system-badge badge-neutral" title="Real-Time Server-Sent Events Stream">SSE: CONNECTING</span>
+      <span id="header-attention" class="system-badge badge-neutral" title="Operator Attention Incidents">Attention: 0</span>
     </div>
     <div class="header-right">
-      <select id="header-role-select" class="ops-select" style="width: auto; padding: 2px 6px; font-size: 10px;" aria-label="Simulated RBAC Role">
+      <label for="header-role-select" class="sr-only">Simulated RBAC Role</label>
+      <select id="header-role-select" class="ops-select role-select" aria-label="Simulated RBAC Role">
         <option value="Administrator">Role: Admin</option>
         <option value="Operator">Role: Operator</option>
         <option value="Approver">Role: Approver</option>
@@ -33,87 +36,108 @@
         <option value="Viewer">Role: Viewer</option>
         <option value="Auditor">Role: Auditor</option>
       </select>
-      <button id="btn-cmd-palette" class="btn-ops" style="padding: 2px 8px; font-size: 10px;" aria-keyshortcuts="Control+K Meta+K :">Ctrl+K / : Commands</button>
+      <button id="btn-shortcuts-help" class="btn-ops btn-sm" title="Keyboard Shortcuts Cheat Sheet (?)">?</button>
+      <button id="btn-cmd-palette" class="btn-ops btn-sm" aria-keyshortcuts="Control+K Meta+K :" title="Open Command Palette (Ctrl+K or :)">Ctrl+K / : Commands</button>
     </div>
   </header>
 
-  <!-- Cross-Resource Identity Strip (Spec §6.4) -->
+  <!-- Persistent Cross-Resource Identity Strip (Spec §6.4) -->
   <div id="identity-strip" class="identity-strip" aria-label="Active Resource Lineage Strip">
-    <!-- Dynamic Identity Breadcrumb -->
+    <!-- Dynamic Identity Breadcrumbs -->
   </div>
 
   <!-- Primary Top Navigation Bar (Spec §6.1) -->
   <nav class="ops-nav" role="navigation" aria-label="Console Views">
-    <button class="nav-tab active" data-view="overview">⚡ Overview & Attention</button>
-    <button class="nav-tab" data-view="plans">📋 Work & Plans</button>
-    <button class="nav-tab" data-view="runs">🚀 Runs Console</button>
-    <button class="nav-tab" data-view="iterations">🔬 Managed Iterations</button>
-    <button class="nav-tab" data-view="evidence">🛡️ Evidence Center</button>
-    <button class="nav-tab" data-view="system">⚙️ System & Health</button>
+    <button class="nav-tab active" data-view="overview" id="tab-nav-overview">
+      <span class="nav-icon">⚡</span> Overview &amp; Attention
+    </button>
+    <button class="nav-tab" data-view="plans" id="tab-nav-plans">
+      <span class="nav-icon">📋</span> Work &amp; Plans
+    </button>
+    <button class="nav-tab" data-view="runs" id="tab-nav-runs">
+      <span class="nav-icon">🚀</span> Runs Console
+    </button>
+    <button class="nav-tab" data-view="iterations" id="tab-nav-iterations">
+      <span class="nav-icon">🔬</span> Managed Iterations
+    </button>
+    <button class="nav-tab" data-view="evidence" id="tab-nav-evidence">
+      <span class="nav-icon">🛡️</span> Evidence Center
+    </button>
+    <button class="nav-tab" data-view="system" id="tab-nav-system">
+      <span class="nav-icon">⚙️</span> System &amp; Health
+    </button>
   </nav>
 
   <!-- Main Multi-View Workspace Container -->
   <main class="ops-main" role="main">
     
+    <!-- ========================================================================= -->
     <!-- VIEW 1: OVERVIEW & ATTENTION (Spec §7) -->
+    <!-- ========================================================================= -->
     <section id="view-overview" class="view-section active" aria-label="Overview and Incident Bay">
       <div class="overview-grid">
         <!-- Left Pane: Current Work & Attention Queue -->
-        <section class="pane" aria-label="Active Work and Incidents">
+        <section class="pane pane-overview-left" aria-label="Active Work and Attention Queue">
           <div class="pane-header">
-            <span>Active Work & Pipeline</span>
-            <span>Live Context</span>
+            <span>Active Work &amp; Pipeline Context</span>
+            <span class="pane-tag">Live Context</span>
           </div>
-          <div id="current-work-panel" class="pane-content" style="max-height: 42%;">
-            <!-- Dynamic Active Work Card -->
+          <div id="current-work-panel" class="pane-content current-work-container">
+            <!-- Dynamic Current Work Card -->
           </div>
-          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+
+          <div class="pane-header header-divider">
             <span>Prioritized Attention Queue</span>
-            <span>P0 - P3</span>
+            <span class="pane-tag" id="attention-tier-summary">P0-P3 Active</span>
           </div>
-          <div id="attention-queue" class="pane-content">
+          <div id="attention-queue" class="pane-content attention-queue-container" role="feed" aria-label="Operator Attention Queue">
             <!-- 9-Tier Attention Cards -->
           </div>
         </section>
 
         <!-- Center Pane: Pipeline Stepper, Logs & Correlated Tools -->
-        <section class="pane" aria-label="Pipeline Stages and Log Stream">
+        <section class="pane pane-overview-center" aria-label="Pipeline Stages and Streaming Telemetry">
           <!-- Stage Progression -->
-          <div style="background: var(--bg-secondary); border-bottom: 1px solid var(--border-subtle); padding: 4px 10px;">
-            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">PIPELINE PROGRESSION</div>
-            <div id="pipeline-stepper" class="pipeline-stepper">
+          <div class="pipeline-stepper-bar">
+            <div class="stepper-meta">
+              <span id="pipeline-type-label">PIPELINE PROGRESSION</span>
+              <span id="pipeline-elapsed-label" class="stepper-timer">Elapsed: --</span>
+            </div>
+            <div id="pipeline-stepper" class="pipeline-stepper" role="list" aria-label="Pipeline Execution Stages">
               <!-- Dynamic Stage Pills -->
             </div>
           </div>
 
           <!-- Streaming Terminal -->
-          <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+          <div class="terminal-wrapper">
             <div class="pane-header">
-              <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="header-tools-left">
                 <span>Live Terminal Stream</span>
-                <span id="log-count" style="color: var(--text-muted);">[0 / 0]</span>
+                <span id="log-count" class="badge-count">[0 / 0]</span>
               </div>
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <input type="text" id="log-search" placeholder="Filter logs..." class="ops-input" style="width: 140px; padding: 2px 6px;">
-                <select id="log-level" class="ops-select" style="width: auto; padding: 2px 6px;">
+              <div class="header-tools-right">
+                <input type="text" id="log-search" placeholder="Filter logs..." class="ops-input log-search-input" aria-label="Filter execution logs">
+                <select id="log-level" class="ops-select log-level-select" aria-label="Filter log severity">
                   <option value="all">Level: ALL</option>
-                  <option value="error">Errors</option>
-                  <option value="warn">Warnings</option>
+                  <option value="error">Errors Only</option>
+                  <option value="warn">Warnings &amp; Errors</option>
                   <option value="info">Info</option>
                 </select>
-                <button id="btn-follow-logs" class="btn-ops" style="padding: 2px 6px; color: var(--color-active);">Follow: ON</button>
+                <button id="btn-wrap-logs" class="btn-ops btn-sm" title="Toggle Line Wrap">Wrap: OFF</button>
+                <button id="btn-follow-logs" class="btn-ops btn-sm active" title="Toggle Auto-Scroll">Follow: ON</button>
+                <button id="btn-download-logs" class="btn-ops btn-sm" title="Download Log Output">⬇ Log</button>
               </div>
             </div>
-            <div id="log-terminal" class="log-terminal" role="log" aria-label="Live swarm execution log"></div>
+            <div id="log-terminal" class="log-terminal" role="log" aria-label="Live swarm execution log" tabindex="0"></div>
           </div>
 
           <!-- Tool Lifecycles -->
-          <div style="height: 180px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column;">
+          <div class="tool-lifecycle-panel">
             <div class="pane-header">
               <span>Correlated Tool Lifecycles</span>
-              <span>Telemetry</span>
+              <span class="pane-tag">Telemetry Correlated</span>
             </div>
-            <div style="flex: 1; overflow-y: auto;">
+            <div class="tool-table-scroll">
               <table class="ops-table" role="grid" aria-label="Tool execution records">
                 <thead>
                   <tr><th>Tool Call ID</th><th>Action / Tool</th><th>Status</th><th>Duration</th><th>Agent</th></tr>
@@ -126,28 +150,28 @@
           </div>
         </section>
 
-        <!-- Right Pane: Agent Manifest, Evidence Inspector & Control Deck -->
-        <section class="pane" aria-label="Agent Manifest and Checkpoint Controls">
+        <!-- Right Pane: Agent Manifest, Evidence Inspector & Checkpoint Controls -->
+        <section class="pane pane-overview-right" aria-label="Agent Manifest and Checkpoint Controls">
           <div class="pane-header">
             <span>Agent Manifest</span>
-            <span>Workers</span>
+            <span id="agent-count-badge" class="pane-tag">0 Active</span>
           </div>
-          <div id="agent-manifest" class="pane-content" style="max-height: 35%;">
+          <div id="agent-manifest" class="pane-content agent-manifest-container">
             <!-- Dynamic Agent Cards -->
           </div>
 
-          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-            <span>Inspected Evidence / Diffs</span>
-            <span>Provenance</span>
+          <div class="pane-header header-divider">
+            <span>Inspected Evidence &amp; Diffs</span>
+            <span class="pane-tag">Provenance</span>
           </div>
-          <div id="evidence-viewer" class="pane-content" style="flex: 1; font-family: var(--font-mono); font-size: 10px;">
-            <div style="color: var(--text-muted);">Select a tool call or attention incident to inspect raw evidence.</div>
+          <div id="evidence-viewer" class="pane-content evidence-preview-box">
+            <div class="empty-hint">Select a tool call or attention incident to inspect raw evidence and payloads.</div>
           </div>
 
           <!-- Checkpoint Control Deck -->
           <div class="control-deck" role="toolbar" aria-label="Checkpoint Execution Controls">
             <button id="btn-hold" class="btn-ops btn-warning" title="Hold future admission and pause active managed work">
-              <span>⏸️</span> Hold & Pause
+              <span>⏸️</span> Hold &amp; Pause
             </button>
             <button id="btn-pause" class="btn-ops btn-warning" title="Request checkpoint pause at next boundary">
               <span>⏹️</span> Pause Checkpoint
@@ -155,10 +179,10 @@
             <button id="btn-stop" class="btn-ops btn-danger" title="Request graceful stop preserving worktrees">
               <span>🛑</span> Graceful Stop
             </button>
-            <button id="btn-resume" class="btn-ops" title="Resume admission and clear hold/stop intents">
+            <button id="btn-resume" class="btn-ops btn-success" title="Resume admission and clear hold/stop intents">
               <span>▶️</span> Resume
             </button>
-            <button id="btn-run-now" class="btn-ops" style="grid-column: span 2; border-color: var(--color-active); color: var(--color-active);" title="Request runner tick admission immediately">
+            <button id="btn-run-now" class="btn-ops btn-primary span-2" title="Request runner tick admission immediately">
               <span>⚡</span> Request Run Now
             </button>
           </div>
@@ -166,19 +190,53 @@
       </div>
     </section>
 
-    <!-- VIEW 2: WORK & PLANS (Spec §8) -->
-    <section id="view-plans" class="view-section" aria-label="Governed Project Plans and Queue">
+    <!-- ========================================================================= -->
+    <!-- VIEW 2: WORK & PLANS (Spec §8, §9) -->
+    <!-- ========================================================================= -->
+    <section id="view-plans" class="view-section" aria-label="Governed Project Plans and Candidate Queue">
       <div class="full-view-layout">
-        <!-- Left Column: Plans Table & Queue Table -->
-        <div class="pane">
+        <!-- Left Column: Governed Plans Ledger & Candidate Queue -->
+        <div class="pane pane-left-split">
           <div class="pane-header">
-            <span>Governed Plans Ledger</span>
-            <button id="btn-create-plan-trigger" class="btn-ops" style="padding: 2px 8px; font-size: 10px;">+ New Plan</button>
+            <div class="header-tools-left">
+              <span>Governed Plans Ledger</span>
+              <span id="plan-count-badge" class="badge-count">[0]</span>
+            </div>
+            <button id="btn-create-plan-trigger" class="btn-ops btn-sm btn-primary">+ New Plan</button>
           </div>
-          <div style="flex: 1; overflow-y: auto;">
-            <table class="ops-table">
+          
+          <!-- Plan Filter Bar -->
+          <div class="filter-strip">
+            <input type="text" id="plan-search" placeholder="Search plans..." class="ops-input filter-input">
+            <select id="plan-filter-state" class="ops-select filter-select">
+              <option value="all">All States</option>
+              <option value="draft">Draft</option>
+              <option value="ready-for-review">Ready for Review</option>
+              <option value="approved">Approved</option>
+              <option value="launch-requested">Launch Requested</option>
+              <option value="launched">Launched</option>
+              <option value="rejected">Rejected</option>
+              <option value="archived">Archived</option>
+            </select>
+            <select id="plan-filter-pipeline" class="ops-select filter-select">
+              <option value="all">All Pipelines</option>
+              <option value="classic">Classic</option>
+              <option value="managed">Managed</option>
+            </select>
+          </div>
+
+          <div class="table-scroll-container">
+            <table class="ops-table" aria-label="Governed Plans Table">
               <thead>
-                <tr><th>Title</th><th>Pipeline</th><th>State</th><th>Rev</th><th>Digest</th><th>Action</th></tr>
+                <tr>
+                  <th>Title</th>
+                  <th>Pipeline</th>
+                  <th>State</th>
+                  <th>Rev</th>
+                  <th>Digest</th>
+                  <th>Approval</th>
+                  <th>Actions</th>
+                </tr>
               </thead>
               <tbody id="plan-list-body">
                 <!-- Dynamic Plans -->
@@ -186,143 +244,316 @@
             </table>
           </div>
 
-          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-            <span>Candidate Ideas Queue</span>
-            <span>Priority Order</span>
+          <!-- Candidate Queue Section -->
+          <div class="pane-header header-divider">
+            <div class="header-tools-left">
+              <span>Candidate Ideas Queue</span>
+              <span id="queue-count-badge" class="badge-count">[0]</span>
+            </div>
+            <div class="header-tools-right">
+              <button id="btn-add-idea-trigger" class="btn-ops btn-sm">+ Add Idea</button>
+              <button id="btn-clear-queue-trigger" class="btn-ops btn-sm btn-danger" title="Clear Queue Blast Radius">Clear Queue</button>
+            </div>
           </div>
-          <div style="height: 180px; overflow-y: auto;">
-            <table class="ops-table">
-              <thead><tr><th>Rank</th><th>Objective</th><th>Pri</th><th>State</th><th>Convert</th></tr></thead>
-              <tbody id="queue-table-body"></tbody>
+          <div class="queue-scroll-container">
+            <table class="ops-table" aria-label="Candidate Queue Table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Objective</th>
+                  <th>Pri</th>
+                  <th>State</th>
+                  <th>Pin</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="queue-table-body">
+                <!-- Dynamic Queue Rows -->
+              </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Right Column: Plan Detail & Steering -->
-        <div class="pane">
+        <!-- Right Column: Plan Detail & Steering Directives -->
+        <div class="pane pane-right-split">
           <div class="pane-header">
-            <span>Plan Review & Launch Authority</span>
-            <span>Immutable Spec</span>
+            <span>Plan Review &amp; Launch Authority</span>
+            <span id="selected-plan-digest-label" class="pane-tag">Immutable Authority</span>
           </div>
-          <div id="plan-detail-container" class="pane-content">
-            <div style="color: var(--text-muted);">Select a plan from the ledger to inspect immutable revisions and launch authority.</div>
+          <div id="plan-detail-container" class="pane-content plan-detail-box">
+            <div class="empty-hint">Select a plan from the ledger to inspect immutable revisions, JSON diffs, baseline verification, and launch authority.</div>
           </div>
-          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-            <span>Active Operator Steering</span>
-            <span>Directives</span>
+
+          <!-- Steering Directives -->
+          <div class="pane-header header-divider">
+            <div class="header-tools-left">
+              <span>Active Operator Steering Directives</span>
+              <span id="steering-count-badge" class="badge-count">[0]</span>
+            </div>
+            <button id="btn-add-steering-trigger" class="btn-ops btn-sm">+ Add Directive</button>
           </div>
-          <div id="steering-list" class="pane-content" style="max-height: 140px;">
+          <div id="steering-list" class="pane-content steering-deck-container">
             <!-- Dynamic Steering Directives -->
           </div>
         </div>
       </div>
     </section>
 
-    <!-- VIEW 3: RUNS CONSOLE (Spec §10) -->
-    <section id="view-runs" class="view-section" aria-label="Runs History and Detail Console">
+    <!-- ========================================================================= -->
+    <!-- VIEW 3: RUNS CONSOLE (Spec §10, §11, §12) -->
+    <!-- ========================================================================= -->
+    <section id="view-runs" class="view-section" aria-label="Execution Runs History and 10-Tab Detail Console">
       <div class="full-view-layout">
-        <!-- Left: Runs List -->
-        <div class="pane">
+        <!-- Left Column: Runs List Table -->
+        <div class="pane pane-left-split">
           <div class="pane-header">
-            <span>Execution Runs History</span>
-            <span>SQLite Records</span>
+            <div class="header-tools-left">
+              <span>Execution Runs History</span>
+              <span id="runs-count-badge" class="badge-count">[0]</span>
+            </div>
+            <span class="pane-tag">SQLite Persisted</span>
           </div>
-          <div style="flex: 1; overflow-y: auto;">
-            <table class="ops-table">
-              <thead><tr><th>Run ID</th><th>Pipeline</th><th>Status</th><th>Phase</th><th>Elapsed</th></tr></thead>
-              <tbody id="runs-list-body"></tbody>
+
+          <!-- Runs Filter Strip -->
+          <div class="filter-strip">
+            <input type="text" id="run-search" placeholder="Search runs..." class="ops-input filter-input">
+            <select id="run-filter-status" class="ops-select filter-select">
+              <option value="all">All Dispositions</option>
+              <option value="running">Running</option>
+              <option value="completed">Completed</option>
+              <option value="blocked">Blocked</option>
+              <option value="paused">Paused</option>
+              <option value="stopped">Stopped</option>
+              <option value="timed-out">Timed Out</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <select id="run-filter-pipeline" class="ops-select filter-select">
+              <option value="all">All Pipelines</option>
+              <option value="classic">Classic</option>
+              <option value="managed">Managed</option>
+            </select>
+          </div>
+
+          <div class="table-scroll-container">
+            <table class="ops-table" aria-label="Runs List Table">
+              <thead>
+                <tr>
+                  <th>Run ID</th>
+                  <th>Pipeline</th>
+                  <th>Disposition</th>
+                  <th>Phase</th>
+                  <th>Duration</th>
+                  <th>Gates</th>
+                </tr>
+              </thead>
+              <tbody id="runs-list-body">
+                <!-- Dynamic Run Rows -->
+              </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Right: 10-Tab Run Inspector -->
-        <div class="pane">
-          <div class="tab-bar-secondary">
-            <button class="sub-tab run-sub-tab active" data-tab="overview">Overview</button>
-            <button class="sub-tab run-sub-tab" data-tab="pipeline">Pipeline</button>
-            <button class="sub-tab run-sub-tab" data-tab="agents">Agents</button>
-            <button class="sub-tab run-sub-tab" data-tab="activity">Activity</button>
-            <button class="sub-tab run-sub-tab" data-tab="evidence">Evidence</button>
-            <button class="sub-tab run-sub-tab" data-tab="artifacts">Artifacts</button>
-            <button class="sub-tab run-sub-tab" data-tab="logs">Logs</button>
-            <button class="sub-tab run-sub-tab" data-tab="resources">Resources</button>
-            <button class="sub-tab run-sub-tab" data-tab="handoff">Handoff</button>
-            <button class="sub-tab run-sub-tab" data-tab="raw">Raw JSON</button>
+        <!-- Right Column: 10-Tab Run Inspector -->
+        <div class="pane pane-right-split">
+          <!-- 10-Tab Header Bar -->
+          <div class="tab-bar-secondary" role="tablist" aria-label="Run Detail Inspector Tabs">
+            <button class="sub-tab run-sub-tab active" data-tab="overview" role="tab" aria-selected="true" id="run-tab-btn-overview">1. Overview</button>
+            <button class="sub-tab run-sub-tab" data-tab="pipeline" role="tab" aria-selected="false" id="run-tab-btn-pipeline">2. Pipeline</button>
+            <button class="sub-tab run-sub-tab" data-tab="agents" role="tab" aria-selected="false" id="run-tab-btn-agents">3. Agents</button>
+            <button class="sub-tab run-sub-tab" data-tab="activity" role="tab" aria-selected="false" id="run-tab-btn-activity">4. Activity</button>
+            <button class="sub-tab run-sub-tab" data-tab="evidence" role="tab" aria-selected="false" id="run-tab-btn-evidence">5. Evidence</button>
+            <button class="sub-tab run-sub-tab" data-tab="artifacts" role="tab" aria-selected="false" id="run-tab-btn-artifacts">6. Artifacts</button>
+            <button class="sub-tab run-sub-tab" data-tab="logs" role="tab" aria-selected="false" id="run-tab-btn-logs">7. Logs</button>
+            <button class="sub-tab run-sub-tab" data-tab="resources" role="tab" aria-selected="false" id="run-tab-btn-resources">8. Resources</button>
+            <button class="sub-tab run-sub-tab" data-tab="handoff" role="tab" aria-selected="false" id="run-tab-btn-handoff">9. Handoff</button>
+            <button class="sub-tab run-sub-tab" data-tab="raw" role="tab" aria-selected="false" id="run-tab-btn-raw">10. Raw JSON</button>
           </div>
-          <div id="run-tab-content" class="pane-content">
+          
+          <div id="run-tab-content" class="pane-content run-inspector-container" role="tabpanel">
             <!-- Dynamic 10-Tab Content -->
           </div>
         </div>
       </div>
     </section>
 
-    <!-- VIEW 4: MANAGED ITERATIONS (Spec §13) -->
-    <section id="view-iterations" class="view-section" aria-label="Managed Iterations and Scorecards">
+    <!-- ========================================================================= -->
+    <!-- VIEW 4: MANAGED ITERATIONS WORKSPACE (Spec §13) -->
+    <!-- ========================================================================= -->
+    <section id="view-iterations" class="view-section" aria-label="Managed Iterations, Multi-Variant Scorecards and Synthesis">
       <div class="full-view-layout">
-        <!-- Left: Iterations List -->
-        <div class="pane">
+        <!-- Left Column: Iterations List -->
+        <div class="pane pane-left-split">
           <div class="pane-header">
-            <span>Managed Iterations</span>
-            <span>Generations</span>
+            <span>Managed Iterations &amp; Generations</span>
+            <span id="iter-count-badge" class="badge-count">[0]</span>
           </div>
-          <div style="flex: 1; overflow-y: auto;">
-            <table class="ops-table">
-              <thead><tr><th>Iteration ID</th><th>Gen</th><th>Status</th><th>Variants</th></tr></thead>
-              <tbody id="iter-list-body"></tbody>
+          <div class="table-scroll-container">
+            <table class="ops-table" aria-label="Iterations List Table">
+              <thead>
+                <tr>
+                  <th>Iteration ID</th>
+                  <th>Gen</th>
+                  <th>Status</th>
+                  <th>Winner</th>
+                  <th>Score</th>
+                  <th>Gates</th>
+                </tr>
+              </thead>
+              <tbody id="iter-list-body">
+                <!-- Dynamic Iteration Rows -->
+              </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Right: Scorecard Matrix & Synthesis -->
-        <div class="pane">
-          <div id="scorecard-container" class="pane-content" style="max-height: 55%;"></div>
-          <div id="synthesis-container" class="pane-content" style="border-top: 1px solid var(--border-subtle);"></div>
+        <!-- Right Column: 11-Criterion Scorecard Matrix & Cherry-Pick Synthesis -->
+        <div class="pane pane-right-split">
+          <div class="pane-header">
+            <span>11-Criterion Multi-Variant Scorecard Matrix</span>
+            <span class="system-badge badge-success">Runner-verified</span>
+          </div>
+          <div id="scorecard-container" class="pane-content scorecard-matrix-box">
+            <!-- Dynamic 11-Criterion Matrix -->
+          </div>
+
+          <div class="pane-header header-divider">
+            <span>Winner Selection &amp; Cherry-Pick Synthesis Strategy</span>
+            <span class="pane-tag">Single-Variant Cherry-Pick</span>
+          </div>
+          <div id="synthesis-container" class="pane-content synthesis-box">
+            <!-- Dynamic Synthesis Card & Feature Breakdown -->
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- VIEW 5: EVIDENCE CENTER (Spec §14) -->
-    <section id="view-evidence" class="view-section" aria-label="Evidence Center and Traceability">
-      <div class="pane" style="flex: 1;">
-        <div class="pane-header">
-          <span>Acceptance Gates & Verification Assurance Ledger</span>
-          <span class="system-badge badge-success">Runner-verified</span>
-        </div>
-        <div class="pane-content">
-          <table class="ops-table">
-            <thead><tr><th>Gate ID</th><th>Description</th><th>Severity</th><th>Status</th><th>Required Evidence Path</th></tr></thead>
-            <tbody id="evidence-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- VIEW 6: SYSTEM & HEALTH (Spec §18) -->
-    <section id="view-system" class="view-section" aria-label="System Administration and Audit">
+    <!-- ========================================================================= -->
+    <!-- VIEW 5: EVIDENCE CENTER & TRACEABILITY (Spec §14) -->
+    <!-- ========================================================================= -->
+    <section id="view-evidence" class="view-section" aria-label="Evidence Center, Acceptance Gates and End-to-End Traceability">
       <div class="full-view-layout">
-        <div class="pane">
+        <!-- Left Column: Acceptance Gates Ledger & Runner Validations -->
+        <div class="pane pane-left-split">
           <div class="pane-header">
-            <span>System Health Checks (7/7)</span>
-            <span class="system-badge badge-success">All Passing</span>
+            <span>Governed Acceptance Gates Ledger</span>
+            <span class="system-badge badge-success">Runner-verified</span>
           </div>
-          <div id="system-health-checks" class="pane-content" style="max-height: 50%;"></div>
-          
-          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-            <span>Process & Mutex Lock Status</span>
-            <span>Runner State</span>
+          <div class="table-scroll-container half-height">
+            <table class="ops-table" aria-label="Acceptance Gates Table">
+              <thead>
+                <tr>
+                  <th>Gate ID</th>
+                  <th>Description</th>
+                  <th>Severity</th>
+                  <th>Decision</th>
+                  <th>Required Evidence Path</th>
+                  <th>Assurance</th>
+                </tr>
+              </thead>
+              <tbody id="evidence-table-body">
+                <!-- Dynamic Gate Rows -->
+              </tbody>
+            </table>
           </div>
-          <div id="process-lock-info" class="pane-content"></div>
+
+          <div class="pane-header header-divider">
+            <span>Runner-Selected Validation Command Execution History</span>
+            <span class="pane-tag">Independent Runner Checks</span>
+          </div>
+          <div class="table-scroll-container half-height">
+            <table class="ops-table" aria-label="Validation History Table">
+              <thead>
+                <tr>
+                  <th>Command Arguments</th>
+                  <th>Exit</th>
+                  <th>Duration</th>
+                  <th>Result</th>
+                  <th>Assurance</th>
+                </tr>
+              </thead>
+              <tbody id="validation-table-body">
+                <!-- Dynamic Validation History Rows -->
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div class="pane">
+        <!-- Right Column: End-to-End Traceability Matrix -->
+        <div class="pane pane-right-split">
           <div class="pane-header">
-            <span>Tamper-Evident Audit Ledger</span>
-            <span>Last 10 Actions</span>
+            <span>End-to-End Governance Traceability Matrix</span>
+            <span class="pane-tag">Requirement ➔ Handoff</span>
           </div>
-          <div class="pane-content">
-            <table class="ops-table">
-              <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Payload Summary</th></tr></thead>
-              <tbody id="audit-table-body"></tbody>
+          <div id="traceability-container" class="pane-content traceability-box">
+            <!-- Dynamic Traceability Matrix & Assurance Legend -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 6: SYSTEM & HEALTH (Spec §18) -->
+    <!-- ========================================================================= -->
+    <section id="view-system" class="view-section" aria-label="System Administration, Health Checks, Mutex Locks and Audit Ledger">
+      <div class="full-view-layout">
+        <!-- Left Column: 7 System Health Checks & Mutex Locks -->
+        <div class="pane pane-left-split">
+          <div class="pane-header">
+            <span>System Health Checks (7 Independent Subsystems)</span>
+            <span id="health-overall-badge" class="system-badge badge-success">7/7 Healthy</span>
+          </div>
+          <div id="system-health-checks" class="pane-content health-checks-box">
+            <!-- Dynamic 7 Health Checks -->
+          </div>
+          
+          <div class="pane-header header-divider">
+            <span>Process &amp; Mutex Lock Inspector</span>
+            <span class="pane-tag">Process Safety</span>
+          </div>
+          <div id="process-lock-info" class="pane-content lock-info-box">
+            <!-- Dynamic Mutex Lock & Process Group Status -->
+          </div>
+
+          <div class="pane-header header-divider">
+            <span>Storage &amp; Retention Accounting</span>
+            <span class="pane-tag">Worktrees &amp; Artifacts</span>
+          </div>
+          <div id="storage-accounting-info" class="pane-content storage-info-box">
+            <!-- Dynamic Storage Breakdown -->
+          </div>
+        </div>
+
+        <!-- Right Column: Configuration, Secrets Masking & Tamper-Evident Audit -->
+        <div class="pane pane-right-split">
+          <div class="pane-header">
+            <span>Configuration &amp; Environment Scoping</span>
+            <span class="pane-tag">Masked Secrets</span>
+          </div>
+          <div id="config-secrets-info" class="pane-content config-info-box">
+            <!-- Dynamic Config & Environment Allowlist -->
+          </div>
+
+          <div class="pane-header header-divider">
+            <div class="header-tools-left">
+              <span>Tamper-Evident Audit Ledger</span>
+              <span id="audit-count-badge" class="badge-count">[0]</span>
+            </div>
+            <button id="btn-export-audit" class="btn-ops btn-sm">Export Audit JSON</button>
+          </div>
+          <div class="table-scroll-container">
+            <table class="ops-table" aria-label="Audit Ledger Table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Actor &amp; Role</th>
+                  <th>Action Type</th>
+                  <th>Target Resource</th>
+                  <th>Digest</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <!-- Dynamic Audit Ledger Rows -->
+              </tbody>
             </table>
           </div>
         </div>
@@ -330,45 +561,343 @@
     </section>
   </main>
 
-  <!-- Plan Authoring Modal -->
-  <div id="plan-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Create Governed Plan">
-    <div class="palette-box" style="width: 580px; padding: 16px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; font-size: 14px;">Author Governed Project Plan</h3>
-        <button id="btn-close-plan-modal" class="btn-ops" style="padding: 2px 6px;">✕</button>
+  <!-- ========================================================================= -->
+  <!-- MODALS & DRAWERS -->
+  <!-- ========================================================================= -->
+
+  <!-- 1. 13-Section Plan Authoring Modal (Spec §8.3, §8.4) -->
+  <div id="plan-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="plan-modal-title">
+    <div class="palette-box plan-modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h3 id="plan-modal-title" class="modal-title">Author Governed Project Plan</h3>
+          <span class="pane-tag">13-Section Specification</span>
+        </div>
+        <button id="btn-close-plan-modal" class="btn-ops btn-sm" aria-label="Close Plan Modal">✕</button>
       </div>
-      <form id="plan-form">
-        <div style="margin-bottom: 10px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Project Title</label>
-          <input type="text" id="form-plan-title" class="ops-input" placeholder="e.g. Swarm Telemetry Hardening" required>
+
+      <form id="plan-form" class="modal-body-scroll">
+        <!-- Safety banner -->
+        <div class="modal-alert-box info-alert">
+          <strong>Safety Contract Notice:</strong> Arbitrary command entry, shell execution, raw scripts, and client-supplied validation commands are strictly prohibited. The runner enforces pre-approved validation policies.
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Pipeline</label>
-          <select id="form-plan-pipeline" class="ops-select">
-            <option value="classic">Classic Pipeline (Build new project from scratch)</option>
-            <option value="managed">Managed Pipeline (Improve existing Git repository)</option>
-          </select>
+
+        <!-- Section 1 & 2: Intent & Title -->
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-plan-title" class="form-label">1. Project Title <span class="req">*</span></label>
+            <input type="text" id="form-plan-title" class="ops-input" placeholder="e.g. Swarm Telemetry Hardening" required>
+          </div>
+          <div class="form-group">
+            <label for="form-plan-pipeline" class="form-label">2. Execution Pipeline <span class="req">*</span></label>
+            <select id="form-plan-pipeline" class="ops-select">
+              <option value="managed">Managed Pipeline (Improve existing Git repository)</option>
+              <option value="classic">Classic Pipeline (Build new project from scratch)</option>
+            </select>
+          </div>
         </div>
-        <div style="margin-bottom: 10px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Target Repository (Managed only)</label>
-          <input type="text" id="form-plan-repo" class="ops-input" placeholder="/home/mojo/projects/target-repo">
+
+        <!-- Section 3 & 4: Problem, Users & Objective -->
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-plan-problem" class="form-label">3. Problem Statement &amp; Users <span class="req">*</span></label>
+            <input type="text" id="form-plan-problem" class="ops-input" placeholder="e.g. Inconsistent telemetry during variant execution" required>
+          </div>
+          <div class="form-group">
+            <label for="form-plan-users" class="form-label">Intended Users</label>
+            <input type="text" id="form-plan-users" class="ops-input" placeholder="SRE &amp; Autonomous Ops Engineers" value="SRE &amp; Engineering Operators">
+          </div>
         </div>
-        <div style="margin-bottom: 12px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Bounded Objective</label>
-          <textarea id="form-plan-objective" class="ops-textarea" placeholder="Exact objective and requirements..." required></textarea>
+
+        <div class="form-group">
+          <label for="form-plan-objective" class="form-label">4. Bounded Objective &amp; Scope <span class="req">*</span></label>
+          <textarea id="form-plan-objective" class="ops-textarea" placeholder="Detailed bounded objective..." rows="3" required></textarea>
         </div>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <button type="submit" class="btn-ops" style="border-color: var(--color-active); color: var(--color-active);">Save Revision #1 Draft</button>
+
+        <!-- Section 5 & 6: Requirements & Non-Goals -->
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-plan-requirements" class="form-label">5. Requirements (One per line) <span class="req">*</span></label>
+            <textarea id="form-plan-requirements" class="ops-textarea" placeholder="Pass all automated verification suites&#10;Preserve source branch cleanliness&#10;Implement 100% test coverage" rows="3" required></textarea>
+          </div>
+          <div class="form-group">
+            <label for="form-plan-nongoals" class="form-label">6. Non-Goals (One per line)</label>
+            <textarea id="form-plan-nongoals" class="ops-textarea" placeholder="No arbitrary shell commands&#10;No uncontained network access" rows="3"></textarea>
+          </div>
+        </div>
+
+        <!-- Section 7: Constraints & Risks -->
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-plan-constraints" class="form-label">7. Constraints</label>
+            <input type="text" id="form-plan-constraints" class="ops-input" placeholder="Strict backward compatibility; loopback bind" value="Strict backward compatibility">
+          </div>
+          <div class="form-group">
+            <label for="form-plan-risks" class="form-label">Risks &amp; Failure Modes</label>
+            <input type="text" id="form-plan-risks" class="ops-input" placeholder="Worktree disk pressure; timeout bounds" value="Concurrency &amp; execution timeouts">
+          </div>
+        </div>
+
+        <!-- Section 8: Repository Binding (Managed Only) -->
+        <div id="form-repo-binding-group" class="form-group form-panel">
+          <label class="form-label">8. Repository Binding (Managed Execution)</label>
+          <div class="form-row-3">
+            <div>
+              <label for="form-plan-repo" class="form-sublabel">Absolute Target Repo Path</label>
+              <input type="text" id="form-plan-repo" class="ops-input" placeholder="/home/mojo/projects/hermesswarmbuilder/hermesswarmbuilder">
+            </div>
+            <div>
+              <label for="form-plan-baseref" class="form-sublabel">Base Ref</label>
+              <input type="text" id="form-plan-baseref" class="ops-input" placeholder="HEAD" value="HEAD">
+            </div>
+            <div>
+              <label for="form-plan-basecommit" class="form-sublabel">Resolved Base Commit</label>
+              <input type="text" id="form-plan-basecommit" class="ops-input" placeholder="HEAD (Auto-resolve)" value="">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 9: Acceptance Gates & Evidence Paths -->
+        <div class="form-group form-panel">
+          <label class="form-label">9. Governed Acceptance Gates &amp; Safe Evidence Paths</label>
+          <div class="form-row-3">
+            <div>
+              <label for="form-gate-id" class="form-sublabel">Gate Safe ID</label>
+              <input type="text" id="form-gate-id" class="ops-input" value="gate-test-verification">
+            </div>
+            <div>
+              <label for="form-gate-desc" class="form-sublabel">Gate Description</label>
+              <input type="text" id="form-gate-desc" class="ops-input" value="All unit tests and security invariant checks pass cleanly">
+            </div>
+            <div>
+              <label for="form-gate-path" class="form-sublabel">Safe Evidence Path</label>
+              <input type="text" id="form-gate-path" class="ops-input" value="artifacts/test-results.json">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 10: Validation Policy -->
+        <div class="form-group">
+          <label class="form-label">10. Validation Policy</label>
+          <div class="read-only-badge-row">
+            <span class="system-badge badge-active">Policy: apb.runner-selected.v1</span>
+            <span class="system-badge badge-success">Client Commands Prohibited: TRUE</span>
+            <span class="system-badge badge-neutral">Runner-Selected Suite Only</span>
+          </div>
+        </div>
+
+        <!-- Section 11: Scope & Iteration Limits (Hard Bounds) -->
+        <div class="form-group form-panel">
+          <label class="form-label">11. Scope &amp; Iteration Hard Limits (§8.4)</label>
+          <div class="form-row-4">
+            <div>
+              <label for="form-limit-max-iters" class="form-sublabel">Max Iters (1-10)</label>
+              <input type="number" id="form-limit-max-iters" class="ops-input" min="1" max="10" value="3">
+            </div>
+            <div>
+              <label for="form-limit-variants" class="form-sublabel">Variants (1-5)</label>
+              <input type="number" id="form-limit-variants" class="ops-input" min="1" max="5" value="3">
+            </div>
+            <div>
+              <label for="form-limit-parallel" class="form-sublabel">Parallel (1-5)</label>
+              <input type="number" id="form-limit-parallel" class="ops-input" min="1" max="5" value="3">
+            </div>
+            <div>
+              <label for="form-limit-features" class="form-sublabel">Max Feats (1-4)</label>
+              <input type="number" id="form-limit-features" class="ops-input" min="1" max="4" value="4">
+            </div>
+          </div>
+          <div class="field-hint">Note: `stopAfterNoImprovement` is persisted in plan limits but marked non-enforcing until runner loop support is added.</div>
+        </div>
+
+        <!-- Section 12 & 13: Lineage & Review Readiness -->
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-plan-lineage" class="form-label">12. Lineage Mode</label>
+            <select id="form-plan-lineage" class="ops-select">
+              <option value="new">New Root Plan</option>
+              <option value="continue">Continuation from Prior Run</option>
+              <option value="fork">Fork from Existing Revision</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">13. Review Readiness</label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="form-plan-ready" checked>
+              <span>Mark as Ready for Review immediately upon creation</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-plan-modal" class="btn-ops">Cancel</button>
+          <button type="submit" class="btn-ops btn-primary">Save Revision #1 Draft</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- Command Palette Modal -->
+  <!-- 2. Clear Queue Blast-Radius Modal (Spec §9.1) -->
+  <div id="clear-queue-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="clear-queue-title">
+    <div class="palette-box blast-radius-modal">
+      <div class="modal-header">
+        <h3 id="clear-queue-title" class="modal-title text-error">⚠️ Clear Queue Blast-Radius Impact Preview</h3>
+        <button id="btn-close-clear-modal" class="btn-ops btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 10px; color: var(--text-primary);">
+          Clearing the candidate ideas queue carries system-wide operational consequences. The following resources and intents will be <strong>permanently revoked and purged</strong>:
+        </p>
+        <ul class="blast-radius-list">
+          <li><strong>All Queued Candidate Items:</strong> All pending unpinned and pinned items in SQLite storage.</li>
+          <li><strong>Pinned Active Candidate:</strong> The current priority pin lock will be released.</li>
+          <li><strong>Current Swarm Objective:</strong> Active runner objective pointer will be reset to Idle.</li>
+          <li><strong>Pending Next-Run Request:</strong> Any scheduled one-shot ticket will be cancelled.</li>
+          <li><strong>Requested-Run-Now Flag:</strong> Active admission trigger will be revoked.</li>
+          <li><strong>Queue-Linked Steering Directives:</strong> Directives bound to candidate queue items will expire.</li>
+        </ul>
+        <div class="modal-alert-box error-alert">
+          This operation requires <strong>Administrator</strong> role permissions and creates an irreversible audit record.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-abort-clear-queue" class="btn-ops">Abort / Keep Queue</button>
+        <button id="btn-confirm-clear-queue" class="btn-ops btn-danger">Confirm &amp; Execute Queue Purge</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Add Candidate Idea Modal -->
+  <div id="add-idea-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="add-idea-title">
+    <div class="palette-box" style="width: 520px;">
+      <div class="modal-header">
+        <h3 id="add-idea-title" class="modal-title">Add Candidate Idea to Queue</h3>
+        <button id="btn-close-idea-modal" class="btn-ops btn-sm">✕</button>
+      </div>
+      <form id="add-idea-form" class="modal-body">
+        <div class="form-group">
+          <label for="form-idea-title" class="form-label">Idea Title / Summary <span class="req">*</span></label>
+          <input type="text" id="form-idea-title" class="ops-input" placeholder="e.g. Add WCAG live region support" required>
+        </div>
+        <div class="form-group">
+          <label for="form-idea-objective" class="form-label">Candidate Objective <span class="req">*</span></label>
+          <textarea id="form-idea-objective" class="ops-textarea" placeholder="Detailed candidate objective..." rows="3" required></textarea>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-idea-priority" class="form-label">Priority</label>
+            <select id="form-idea-priority" class="ops-select">
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="standard" selected>Standard</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="form-idea-repo" class="form-label">Target Repo (Optional)</label>
+            <input type="text" id="form-idea-repo" class="ops-input" placeholder="/home/mojo/projects/target">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-idea-modal" class="btn-ops">Cancel</button>
+          <button type="submit" class="btn-ops btn-primary">Add Candidate Idea</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. Add Steering Directive Modal -->
+  <div id="add-steering-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="add-steering-title">
+    <div class="palette-box" style="width: 500px;">
+      <div class="modal-header">
+        <h3 id="add-steering-title" class="modal-title">Inject Operator Steering Directive</h3>
+        <button id="btn-close-steering-modal" class="btn-ops btn-sm">✕</button>
+      </div>
+      <form id="add-steering-form" class="modal-body">
+        <div class="form-group">
+          <label for="form-steering-text" class="form-label">Directive Instruction <span class="req">*</span></label>
+          <textarea id="form-steering-text" class="ops-textarea" placeholder="e.g. Focus variant 2 on optimizing render performance without altering DOM structure" rows="3" required></textarea>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-steering-scope" class="form-label">Scope</label>
+            <select id="form-steering-scope" class="ops-select">
+              <option value="next_run">Next Run Only</option>
+              <option value="current_run">Active Managed Run</option>
+              <option value="all_runs">Persistent Global</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="form-steering-priority" class="form-label">Priority</label>
+            <select id="form-steering-priority" class="ops-select">
+              <option value="required">Required (Must Follow)</option>
+              <option value="advisory">Advisory (Guidance)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-steering-modal" class="btn-ops">Cancel</button>
+          <button type="submit" class="btn-ops btn-primary">Inject Directive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 5. Deblock Modal Prompt (Spec §15.4) -->
+  <div id="deblock-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="deblock-modal-title">
+    <div class="palette-box" style="width: 540px;">
+      <div class="modal-header">
+        <h3 id="deblock-modal-title" class="modal-title text-warning">🛠️ Intervene / Deblock Active Run</h3>
+        <button id="btn-close-deblock-modal" class="btn-ops btn-sm">✕</button>
+      </div>
+      <form id="deblock-form" class="modal-body">
+        <div id="deblock-context-info" class="modal-alert-box warning-alert" style="margin-bottom: 10px;">
+          <!-- Dynamic Blocker Context -->
+        </div>
+        <div class="form-group">
+          <label for="form-deblock-prompt" class="form-label">Deblock Steering Directive <span class="req">*</span></label>
+          <textarea id="form-deblock-prompt" class="ops-textarea" placeholder="Analyze failed gate, relax strict assertion if non-breaking, and rerun validation suite." rows="3" required></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-deblock-modal" class="btn-ops">Cancel</button>
+          <button type="submit" class="btn-ops btn-warning">Submit Deblock Directive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 6. Command Palette Modal (Ctrl+K / :) -->
   <div id="palette-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Command Palette">
     <div class="palette-box">
-      <input type="text" id="palette-input" class="palette-input" placeholder="Type command (:hold, :pause, :stop, :resume, :steer, :new-plan, :clear-queue)...">
-      <div id="palette-results" class="palette-results"></div>
+      <input type="text" id="palette-input" class="palette-input" placeholder="Type a command (:hold, :pause, :stop, :resume, :steer, :new-plan, :clear-queue, :view)..." autocomplete="off" spellcheck="false">
+      <div id="palette-results" class="palette-results" role="listbox" aria-label="Command Suggestions"></div>
+      <div class="palette-footer">
+        <span>Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate, <kbd>Enter</kbd> to select, <kbd>Esc</kbd> to dismiss</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Keyboard Shortcuts Cheat Sheet Modal (?) -->
+  <div id="shortcuts-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title">
+    <div class="palette-box" style="width: 560px;">
+      <div class="modal-header">
+        <h3 id="shortcuts-modal-title" class="modal-title">⌨️ Keyboard Navigation &amp; Hotkeys</h3>
+        <button id="btn-close-shortcuts-modal" class="btn-ops btn-sm">✕</button>
+      </div>
+      <div class="modal-body-scroll">
+        <table class="shortcuts-table">
+          <tbody>
+            <tr><td><kbd>Ctrl+K</kbd> / <kbd>:</kbd></td><td>Open Command Palette</td></tr>
+            <tr><td><kbd>1</kbd> - <kbd>6</kbd></td><td>Switch primary console view (Overview, Plans, Runs, Iterations, Evidence, System)</td></tr>
+            <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Navigate table rows down / up</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>Inspect selected plan, run, iteration, or tool call</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close active modal, drawer, or command palette</td></tr>
+            <tr><td><kbd>?</kbd></td><td>Open this keyboard shortcuts cheat sheet</td></tr>
+            <tr><td><kbd>f</kbd></td><td>Toggle log follow-scroll (Overview &amp; Runs views)</td></tr>
+            <tr><td><kbd>w</kbd></td><td>Toggle log line wrap</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 

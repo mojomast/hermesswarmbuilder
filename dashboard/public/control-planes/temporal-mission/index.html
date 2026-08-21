@@ -7,57 +7,193 @@
   <link rel="stylesheet" href="temporal-mission.css">
 </head>
 <body>
-  <!-- Top Spatiotemporal HUD (Spec §6.2, §6.4) -->
-  <header class="temporal-hud-top" role="banner">
+  <!-- Top Spatiotemporal HUD (Spec §6.2, §6.4, §7) -->
+  <header class="temporal-hud-top" role="banner" aria-label="Spatiotemporal Mission Status HUD">
     <div class="hud-bar-main">
-      <div style="font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
-        <span>HERMES 3D TEMPORAL MISSION</span>
-        <span id="hud-status" class="time-badge">ACTIVE CORRIDOR</span>
+      <div class="hud-brand-group">
+        <a href="../index.html" class="hud-back-link" title="Return to Control Plane Directory" aria-label="Back to Control Planes">◂</a>
+        <div class="hud-title-wrap">
+          <span class="hud-title">HERMES 3D TEMPORAL MISSION</span>
+          <span id="hud-status" class="status-badge status-active" role="status" aria-live="polite">ACTIVE CORRIDOR</span>
+        </div>
       </div>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
-        <span id="hud-gen" class="time-badge">Gen: 1/10</span>
+
+      <div class="hud-meta-group">
+        <div class="hud-stat-pill">
+          <span class="stat-label">Run:</span>
+          <span id="hud-run" class="stat-val font-mono">run-103-spatial</span>
+        </div>
+        <div class="hud-stat-pill">
+          <span class="stat-label">Pipeline:</span>
+          <span id="hud-pipeline" class="stat-val font-mono">Managed</span>
+        </div>
+        <div class="hud-stat-pill">
+          <span class="stat-label">Gen:</span>
+          <span id="hud-gen" class="stat-val badge-gen font-mono">1 / 10</span>
+        </div>
+        <div class="hud-stat-pill">
+          <span class="stat-label">Admission:</span>
+          <span id="hud-admission" class="stat-val badge-admission">ENABLED</span>
+        </div>
+      </div>
+
+      <!-- Quick Control Action Bar -->
+      <div class="hud-actions-group" role="toolbar" aria-label="Runtime Checkpoint Controls">
+        <button id="btn-pause-checkpoint" class="btn-hud btn-warning" title="Pause at next safe managed checkpoint (Spec §6.3, §15.3)">⏸ Pause</button>
+        <button id="btn-graceful-stop" class="btn-hud btn-danger" title="Gracefully stop at boundary with terminal evidence (Spec §6.3)">⏹ Stop</button>
+        <button id="btn-resume" class="btn-hud btn-success" title="Resume runner admission (Spec §6.3)">⏵ Resume</button>
+        <button id="btn-run-now" class="btn-hud btn-accent" title="Request immediate runner admission tick (Spec §6.3)">⚡ Run Now</button>
+        <button id="btn-steer-modal" class="btn-hud" title="Inject operator steering directive or deblock (Spec §9.2, §15.4)">🎯 Steer</button>
+        <span id="stream-status-dot" class="stream-dot connected" title="Real-time SSE Stream Active" aria-label="SSE Connected"></span>
       </div>
     </div>
-    <div id="hud-identity" class="hud-identity-bar" aria-label="Identity Lineage Strip">
-      <!-- Dynamic Breadcrumb -->
+
+    <!-- Active Target Objective Banner -->
+    <div class="hud-objective-bar">
+      <span class="objective-tag">OBJECTIVE:</span>
+      <span id="hud-objective" class="objective-text">High-assurance 3D spatiotemporal visualization with diverging Bézier variant branches & multi-axis rubric verification.</span>
+    </div>
+
+    <!-- Cross-Resource Identity Lineage Strip (Spec §3.2, §6.4) -->
+    <div id="hud-identity" class="hud-identity-bar" role="navigation" aria-label="Cross-Resource Identity Lineage Strip">
+      <!-- Populated dynamically: Plan -> Rev -> Approval -> Launch -> Request -> Run -> Iteration -->
     </div>
   </header>
 
-  <!-- Main 3D Longitudinal Workspace (WCAG 2.2 AA) -->
-  <main role="main" aria-label="3D Temporal Mission Workspace">
-    <!-- 3D Longitudinal Corridor Canvas -->
-    <canvas id="temporal-canvas" aria-hidden="true"></canvas>
+  <!-- Main 3D Longitudinal Workspace (WCAG 2.2 AA compliant) -->
+  <main class="temporal-workspace" role="main" aria-label="3D Temporal Mission Workspace">
+    <!-- 3D Longitudinal Corridor Canvas (Three.js WebGL2/WebGPU) -->
+    <canvas id="temporal-canvas" role="img" aria-label="Interactive 3D Spatiotemporal Mission Corridor"></canvas>
 
-    <!-- Left Chronological Waterfall Table Overlay (WCAG 2.2 AA) -->
-    <aside class="waterfall-sidebar" aria-label="Longitudinal Mission Stages">
+    <!-- Floating 3D Tooltip for Hovered Scene Entities -->
+    <div id="canvas-tooltip" class="scene-tooltip" aria-hidden="true"></div>
+
+    <!-- Left Chronological Waterfall Overlay (Spec §7.5, §13.1, WCAG 2.2 AA) -->
+    <aside class="waterfall-sidebar" aria-label="Chronological Mission Stages">
       <div class="waterfall-header">
-        <span>Chronological Stages</span>
-        <span style="font-size: 10px; color: var(--text-muted);">Z-Axis Order</span>
+        <div class="sidebar-title-row">
+          <span class="sidebar-title">Chronological Stages</span>
+          <span class="sidebar-tag">Z-Axis Corridor</span>
+        </div>
+        <div class="sidebar-subtext">Click any stage to fly camera to chamber</div>
       </div>
-      <div id="waterfall-list" class="waterfall-content" role="list">
-        <!-- Dynamic Stage Cards -->
+      <div id="waterfall-list" class="waterfall-content" role="list" aria-label="Sequential longitudinal chambers">
+        <!-- Dynamic Chamber Stage Cards -->
       </div>
     </aside>
 
-    <!-- Right Chamber Inspector -->
-    <section class="chamber-inspector" aria-label="Stage Chamber Details">
-      <div id="inspector-header" class="inspector-header">
-        <span>Chamber Inspector</span>
+    <!-- Right Chamber / Stage Inspector (Spec §13, §14, §15) -->
+    <section class="chamber-inspector" aria-label="Chamber Detail and 2D Orthographic Rubric Inspector">
+      <div class="inspector-header">
+        <div class="inspector-title-group">
+          <span id="inspector-title" class="inspector-title-text">3. Variant Exploration Arena</span>
+          <span id="inspector-z-pill" class="inspector-z-pill font-mono">Z = 0m</span>
+        </div>
+        <button id="btn-toggle-inspector" class="btn-inspector-toggle" title="Toggle Inspector Collapse" aria-label="Toggle inspector view">⇥</button>
       </div>
-      <div id="inspector-content" class="inspector-body">
-        <!-- Chamber Details -->
+
+      <!-- Inspector Tab Navigation -->
+      <nav class="inspector-tab-nav" role="tablist" aria-label="Inspector Views">
+        <button class="inspector-tab active" data-tab="radar" role="tab" aria-selected="true" id="tab-btn-radar">2D Radar Rubric</button>
+        <button class="inspector-tab" data-tab="variants" role="tab" aria-selected="false" id="tab-btn-variants">Variants & Diffs</button>
+        <button class="inspector-tab" data-tab="synthesis" role="tab" aria-selected="false" id="tab-btn-synthesis">Synthesis & Features</button>
+        <button class="inspector-tab" data-tab="gates" role="tab" aria-selected="false" id="tab-btn-gates">Gate Evidence</button>
+        <button class="inspector-tab" data-tab="handoff" role="tab" aria-selected="false" id="tab-btn-handoff">Handoff & Recovery</button>
+      </nav>
+
+      <!-- Inspector Content Body -->
+      <div id="inspector-content" class="inspector-body" role="tabpanel" aria-labelledby="tab-btn-radar">
+        <!-- Dynamically rendered tab views -->
       </div>
     </section>
   </main>
 
-  <!-- Bottom Longitudinal Timeline Scrubber -->
-  <nav class="timeline-scrubber-dock" role="navigation" aria-label="Timeline Scrubber">
-    <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft'}))" title="Previous Chamber">◀ Prev</button>
-    <input type="range" id="scrubber-slider" class="scrubber-slider" min="-300" max="250" value="0" aria-label="Timeline Z-Axis Position">
-    <span id="slider-label" style="font-family: var(--font-mono); font-size: 11px; min-width: 240px; color: var(--color-time);">3. Variant Arena (Z = 0m)</span>
-    <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}))" title="Next Chamber">Next ▶</button>
+  <!-- Bottom Longitudinal Timeline Scrubber Dock (Spec §6, §7) -->
+  <nav class="timeline-scrubber-dock" role="navigation" aria-label="Corridor Timeline Scrubber Navigation">
+    <button id="btn-scrub-prev" class="btn-time" title="Previous Chamber (ArrowLeft)" aria-label="Previous chamber">◀ Prev Chamber</button>
+
+    <!-- Quick Chamber Jump Bookmarks -->
+    <div class="chamber-quick-bookmarks" role="group" aria-label="Chamber quick bookmarks">
+      <button class="btn-bookmark" data-z="-300" title="Historical Archive Racks (Z=-300m)">Archive</button>
+      <button class="btn-bookmark" data-z="-150" title="1: Spec Chamber (Z=-150m)">1: Spec</button>
+      <button class="btn-bookmark" data-z="-75" title="2: Architecture Chamber (Z=-75m)">2: Arch</button>
+      <button class="btn-bookmark active" data-z="0" title="3: Variant Arena (Z=0m)">3: Arena</button>
+      <button class="btn-bookmark" data-z="75" title="4: Eval Radar Arena (Z=+75m)">4: Eval</button>
+      <button class="btn-bookmark" data-z="150" title="5: Synthesis Funnel (Z=+150m)">5: Synth</button>
+      <button class="btn-bookmark" data-z="250" title="6: Gate & Release Crystal (Z=+250m)">6: Gate</button>
+    </div>
+
+    <!-- Continuous Range Slider along Z-Axis (-400m to +250m) -->
+    <div class="slider-wrapper">
+      <input type="range" id="scrubber-slider" class="scrubber-slider" min="-400" max="250" value="0" step="1" aria-label="Corridor Z-Axis Position Slider">
+      <span id="slider-label" class="slider-readout font-mono">3. Variant Exploration Arena (Z = 0m)</span>
+    </div>
+
+    <button id="btn-scrub-next" class="btn-time" title="Next Chamber (ArrowRight)" aria-label="Next chamber">Next Chamber ▶</button>
+
+    <div class="dock-aux-controls">
+      <button id="btn-auto-tour" class="btn-time btn-tour" title="Toggle Auto-Tour Camera Cruise (Space)">Auto-Tour ⏵</button>
+      <button id="btn-reset-view" class="btn-time" title="Reset Camera View to Origin (R / Home)">Reset (R)</button>
+    </div>
   </nav>
+
+  <!-- Steering / Deblock Modal (Spec §9.2, §15.4) -->
+  <dialog id="steer-dialog" class="modal-dialog" aria-labelledby="steer-dialog-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="steer-dialog-title" class="modal-title">Operator Steering & Deblock</h2>
+        <button id="btn-close-steer-dialog" class="btn-modal-close" aria-label="Close dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Submit typed operator directives to guide active or next generation work. All directives are auditable and bounded by plan constraints.
+        </p>
+        <div class="form-group">
+          <label for="steer-text" class="form-label">Directive or Deblock Prompt:</label>
+          <textarea id="steer-text" class="form-textarea" rows="4" placeholder="e.g., Focus on accessibility contrast ratios and add missing test assertions for variant 1..."></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group half">
+            <label for="steer-scope" class="form-label">Scope:</label>
+            <select id="steer-scope" class="form-select">
+              <option value="next_run">Next Iteration Run</option>
+              <option value="current_run">Active Run (if deblocking)</option>
+              <option value="global">Global Mission Steering</option>
+            </select>
+          </div>
+          <div class="form-group half">
+            <label for="steer-priority" class="form-label">Priority:</label>
+            <select id="steer-priority" class="form-select">
+              <option value="required">Required</option>
+              <option value="recommended">Recommended</option>
+              <option value="advisory">Advisory</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-steer" class="btn-modal-cancel">Cancel</button>
+        <button id="btn-submit-steer" class="btn-modal-primary">Submit Directive</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Code Diff & Raw Inspection Modal (Spec §13.4, §14.1) -->
+  <dialog id="raw-dialog" class="modal-dialog wide-modal" aria-labelledby="raw-dialog-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="raw-dialog-title" class="modal-title">Raw Evidence & Artifact Inspector</h2>
+        <button id="btn-close-raw-dialog" class="btn-modal-close" aria-label="Close dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <pre id="raw-modal-code" class="modal-code-block"></pre>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-raw" class="btn-modal-cancel">Copy Text</button>
+        <button id="btn-close-raw" class="btn-modal-primary">Close</button>
+      </div>
+    </div>
+  </dialog>
 
   <script type="module" src="temporal-mission.js"></script>
 </body>

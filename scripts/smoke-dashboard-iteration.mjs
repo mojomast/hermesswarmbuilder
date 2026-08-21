@@ -25,7 +25,7 @@ writeFileSync(join(state, 'control.json'), JSON.stringify({ schemaVersion: 'apb.
 writeFileSync(join(state, 'queue.json'), JSON.stringify({ schemaVersion: 'apb.queue.v1', items: [] }, null, 2));
 writeFileSync(join(state, 'gates.json'), JSON.stringify({ schemaVersion: 'apb.gates.v1', gates: [{ id: 'gate-1', description: 'fixture gate', decisions: [] }] }, null, 2));
 writeFileSync(join(runRoot, 'run.json'), JSON.stringify({ id: runId, status: 'completed', startedAt: new Date().toISOString(), repoPath: fixtureRepoPath, objective: 'Fixture objective' }, null, 2));
-writeFileSync(join(runRoot, 'iteration-state.json'), JSON.stringify({ id: `iter-${runId}`, runId, status: 'completed', objective: 'Fixture objective', repoPath: fixtureRepoPath, baseRef: 'HEAD' }, null, 2));
+writeFileSync(join(runRoot, 'iteration-state.json'), JSON.stringify({ id: `iter-${runId}`, runId, status: 'completed', objective: 'Fixture objective', repoPath: fixtureRepoPath, baseRef: 'HEAD', limits: { maxIterations: 1, maxVariantsPerIteration: 1, maxParallelVariants: 1, maxAcceptedFeatures: 1, maxVisualMotifChanges: 0, maxNewSections: 0, stopAfterNoImprovement: 1 }, acceptanceGates: [{ id: 'fixture-gate', description: 'fixture gate', severity: 'must', required: true, requiredEvidence: ['artifacts/variants/variant-1.json'] }] }, null, 2));
 writeFileSync(join(runRoot, 'artifacts', 'iterations', 'iteration.json'), JSON.stringify({ id: `iter-${runId}`, runId, objective: 'Fixture objective', repoPath: fixtureRepoPath }, null, 2));
 writeFileSync(join(runRoot, 'artifacts', 'source-evidence.json'), JSON.stringify({ sourceRunId: null, note: 'fixture' }, null, 2));
 writeFileSync(join(runRoot, 'artifacts', 'variants', 'variant-1.json'), JSON.stringify({ variantId: 'variant-1', title: 'Hero timeline', changes: ['timeline'] }, null, 2));
@@ -64,6 +64,7 @@ try {
   if (approved.effective !== 'continuation queued') throw new Error('approved deblock advice did not queue a continuation');
   const approvedControl = JSON.parse(readFileSync(join(state, 'control.json'), 'utf8'));
   if (!approvedControl.nextRunRequest || !approvedControl.requestedRunNow || approvedControl.nextRunRequest.type !== 'continue') throw new Error('approved deblock advice did not persist a managed continuation');
+  if (approvedControl.nextRunRequest.limits?.maxNewSections !== 0 || approvedControl.nextRunRequest.limits?.maxVariantsPerIteration !== 1 || approvedControl.nextRunRequest.snapshottedAcceptanceGates?.[0]?.id !== 'fixture-gate') throw new Error('approved deblock advice did not preserve the source iteration contract');
   const deblockingState = JSON.parse(readFileSync(join(state, 'state.json'), 'utf8'));
   if (deblockingState.status !== 'deblocking') throw new Error('approved deblock advice did not leave blocked state for deblocking');
   await post('continue-from-iteration', { runId, sourceIterationId: `iter-${runId}`, repoPath: fixtureRepoPath, objective: 'continue fixture', changeText: 'Complete one bounded fixture change.' });

@@ -335,7 +335,7 @@ function normalizeIterationRequestPayload(type: string, payload: any, control: a
   const sourceRunId = payload.sourceRunId || payload.runId || null;
   const sourceIterationIdRaw = payload.sourceIterationId || payload.iterationId || null;
   const sourceIter = listIterations().find((x: any) => x.id === sourceIterationIdRaw || x.runId === sourceRunId);
-  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", acceptanceGateIds: Array.isArray(payload.acceptanceGateIds) ? payload.acceptanceGateIds : (sourceIter?.acceptanceGateIds || []), createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationPolicy: "runner-selected-only", expectedArtifacts: ["artifacts/lifecycle-contract.json", "artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json", "artifacts/handoff.json"] };
+  return { schemaVersion: "apb.next-run-request.v1", id: uid("req"), type: reqType, status: "pending", sourceRunId, sourceIterationId: sourceIterationIdRaw || sourceIter?.id || null, repoPath: payload.repoPath || payload.baseRepoPath || sourceIter?.repoPath || null, baseRef: payload.baseRef || payload.baseCommit || sourceIter?.commit || "HEAD", queueItemId: payload.queueItemId || control.pinnedQueueItemId || null, objective: payload.objective || payload.text || sourceIter?.objective || control.currentObjective?.text || "", changeText: payload.change || payload.changeText || payload.directive || payload.notes || "", acceptanceGateIds: Array.isArray(payload.acceptanceGateIds) ? payload.acceptanceGateIds : (sourceIter?.acceptanceGateIds || []), snapshottedAcceptanceGates: Array.isArray(payload.snapshottedAcceptanceGates) ? payload.snapshottedAcceptanceGates : undefined, createdAt: now(), createdBy: actor, limits: payload.limits || control.autoIteration, sourceEvidencePolicy: payload.sourceEvidencePolicy || "load-from-source-run", validationPolicy: "runner-selected-only", expectedArtifacts: ["artifacts/lifecycle-contract.json", "artifacts/source-evidence.json", "artifacts/variants/*.json", "artifacts/evaluations/*.json", "artifacts/synthesis/synthesis.json", "artifacts/gate-decisions.json", "artifacts/handoff.json"] };
 }
 function iterationRequestErrors(req: any) {
   const errors: string[] = [];
@@ -519,12 +519,16 @@ async function handleCommand(req: Request) {
       control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
       control.activeSteering = [{ id: uid("steer"), scope: "current_run", priority: "required", text: `APPROVED DEBLOCK ADVICE ${advice.id}: ${advice.answer}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id }, ...(control.activeSteering || [])].slice(0, 20);
       const sourceIter = listIterations().find((item: any) => item.runId === runId);
+      const sourceState = runId ? safeReadJson(safeJoin(STATE_ROOT, "runs", runId, "iteration-state.json"), {}) : {};
+      const sourceLimits = sourceState.limits || sourceIter?.limits || control.autoIteration;
+      const sourceGates = Array.isArray(sourceState.acceptanceGates) ? sourceState.acceptanceGates : [];
       const continuation = normalizeIterationRequestPayload("continue-from-iteration", {
         runId, sourceRunId: runId, sourceIterationId: sourceIter?.id || sourceIter?.iterationId || null,
-        repoPath: sourceIter?.repoPath, baseRef: sourceIter?.baseRef || sourceIter?.commit || "HEAD",
-        objective: sourceIter?.objective || control.currentObjective?.text || "",
+        repoPath: sourceState.repoPath || sourceIter?.repoPath, baseRef: sourceState.baseRef || sourceIter?.baseRef || sourceIter?.commit || "HEAD",
+        objective: sourceState.objective || sourceIter?.objective || control.currentObjective?.text || "",
         changeText: `Execute approved deblock advice ${advice.id}: ${advice.answer}`,
-        acceptanceGateIds: sourceIter?.acceptanceGateIds || [], limits: control.autoIteration
+        acceptanceGateIds: sourceGates.map((gate: any) => gate.id).filter(Boolean).length ? sourceGates.map((gate: any) => gate.id) : (sourceIter?.acceptanceGateIds || []),
+        snapshottedAcceptanceGates: sourceGates, limits: sourceLimits
       }, control, actor);
       const errors = iterationRequestErrors(continuation);
       if (errors.length) return json({ error: "approved deblock advice could not be converted into a continuation", details: errors }, 409);

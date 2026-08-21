@@ -260,6 +260,61 @@ const DEFAULT_CRITERIA_WEIGHTS = {
   performance: 1.0
 };
 
+// The backend exposes bounded snapshot projections. Connected mode intentionally
+// renders only these observed fields; it never fills absent evidence with demo data.
+const LIVE_EMPTY = "Unavailable";
+const STAGE_DEFINITIONS = [
+  ["history", "Historical runs", -300], ["spec", "Specification & approval", -150],
+  ["draft", "Launch admission", -75], ["arena", "Variant exploration", 0],
+  ["eval", "Evaluation", 75], ["synth", "Synthesis", 150], ["gate", "Gates & handoff", 250]
+];
+const asArray = (value) => Array.isArray(value) ? value : [];
+const firstValue = (...values) => values.find((value) => value !== undefined && value !== null && value !== "") ?? null;
+const statusClass = (status) => {
+  const value = String(status || "unknown").toLowerCase();
+  if (/(completed|passed|approved|success)/.test(value)) return "passed";
+  if (/(blocked|failed|rejected|error)/.test(value)) return "failed";
+  if (/(running|launching|active|pending|requested)/.test(value)) return "active";
+  return value === "unknown" ? "unknown" : "archived";
+};
+const numberOrNull = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+const variantColor = (index) => ["#10b981", "#38bdf8", "#f59e0b", "#a855f7"][index % 4];
+
+export function projectTemporalMissionSnapshot({ cachedState, cachedPlans, cachedIterations, cachedRuns, cachedGates, cachedControl, cachedAudit }) {
+  const state = cachedState || {}, plans = asArray(cachedPlans), iterations = asArray(cachedIterations), runs = asArray(cachedRuns);
+  const gates = asArray(cachedGates?.gates), audit = asArray(cachedAudit), pointer = cachedControl?.projectLaunchRequest || {};
+  const activeRunId = firstValue(state.currentRunId, pointer.runId, cachedControl?.nextRunRequest?.resultRunId);
+  const activeIterationId = firstValue(state.iterationId, pointer.iterationId, cachedControl?.nextRunRequest?.resultIterationId);
+  const activeRun = runs.find((run) => run.id === activeRunId || run.runId === activeRunId) || runs.find((run) => run.iterationId === activeIterationId) || null;
+  const activeIteration = iterations.find((item) => item.id === activeIterationId || item.iterationId === activeIterationId || item.runId === activeRunId) || null;
+  const identitySource = activeIteration?.projectLaunch || activeRun?.projectLaunch || pointer;
+  const planId = firstValue(identitySource.planId, activeIteration?.planId, activeRun?.planId, state.planId);
+  const plan = plans.find((item) => item.planId === planId) || null;
+  const runStatus = firstValue(activeRun?.status, activeIteration?.status, state.status, pointer.status, "unknown");
+  const phase = firstValue(activeRun?.phase, activeIteration?.phase, state.phase, "unknown");
+  const rawVariants = asArray(activeIteration?.variants).length ? activeIteration.variants : asArray(activeRun?.variants);
+  const rawEvaluations = asArray(activeIteration?.evaluations).length ? activeIteration.evaluations : asArray(activeRun?.evaluations);
+  const evaluations = new Map(rawEvaluations.map((item) => [firstValue(item.variantId, item.id), item]));
+  const variants = rawVariants.map((variant, index) => {
+    const evaluation = evaluations.get(firstValue(variant.id, variant.variantId)) || {}, rawScores = evaluation.scores || variant.scores || {};
+    return { id: firstValue(variant.id, variant.variantId, LIVE_EMPTY), name: firstValue(variant.name, variant.label, variant.branch, variant.id, LIVE_EMPTY), branch: firstValue(variant.branch, LIVE_EMPTY), commit: firstValue(variant.commit, LIVE_EMPTY), color: variantColor(index), threeColor: parseInt(variantColor(index).slice(1), 16), isWinner: Boolean(firstValue(evaluation.accepted, evaluation.winner, variant.accepted, variant.winner, false)), recommendation: firstValue(evaluation.recommendation, variant.recommendation, evaluation.status, variant.status, "not evaluated"), totalScore: numberOrNull(firstValue(evaluation.totalScore, evaluation.score, variant.totalScore, variant.score)) ?? 0, rawScores, scores: { ...rawScores }, hardGateViolations: numberOrNull(firstValue(evaluation.hardGateViolations, variant.hardGateViolations)) ?? 0, scopeCompliance: firstValue(variant.scopeCompliance, LIVE_EMPTY), changes: asArray(firstValue(variant.changes, variant.claims, evaluation.claims)), risks: firstValue(evaluation.risks, variant.risks, LIVE_EMPTY), evaluatorRationale: firstValue(evaluation.rationale, evaluation.notes, variant.rationale, LIVE_EMPTY), diffOld: firstValue(variant.diffOld, ""), diffNew: firstValue(variant.diffNew, variant.diff, "") };
+  });
+  const historicalRuns = runs.filter((run) => run !== activeRun).map((run, index) => ({ id: firstValue(run.id, run.runId, LIVE_EMPTY), z: -350 + index * 35, name: firstValue(run.objective, run.id, run.runId, LIVE_EMPTY), status: firstValue(run.status, "unknown"), score: firstValue(run.score, LIVE_EMPTY), date: firstValue(run.completedAt, run.updatedAt, run.startedAt, LIVE_EMPTY), duration: firstValue(run.duration, LIVE_EMPTY), changes: firstValue(run.branch, LIVE_EMPTY), winner: firstValue(run.winner, LIVE_EMPTY) }));
+  const liveGates = gates.map((gate) => ({ id: firstValue(gate.id, LIVE_EMPTY), desc: firstValue(gate.description, gate.title, LIVE_EMPTY), required: gate.severity === "must" || gate.required === true, assurance: getAssuranceLevel(identitySource.pipelineType, "validation").level, status: firstValue(gate.status, "unknown"), path: asArray(gate.requiredEvidence).join(", ") || LIVE_EMPTY, evidence: firstValue(gate.evidence, gate.decisions, []) }));
+  const handoff = firstValue(activeIteration?.handoff, activeRun?.handoff, state.handoff, cachedControl?.handoff, null), artifacts = asArray(firstValue(activeIteration?.artifacts, activeRun?.artifacts, handoff?.artifacts, []));
+  const stageStatus = (id) => ({ history: historicalRuns.length ? "archived" : "unknown", spec: firstValue(plan?.state, identitySource.status, "unknown"), draft: firstValue(pointer.status, identitySource.status, "unknown"), arena: firstValue(activeIteration?.status, activeRun?.status, state.status, "unknown"), eval: rawEvaluations.length ? firstValue(rawEvaluations[0]?.status, "observed") : "unknown", synth: firstValue(activeIteration?.synthesis?.status, activeRun?.synthesis?.status, "unknown"), gate: firstValue(handoff?.state, liveGates[0]?.status, runStatus, "unknown") })[id];
+  const chambers = STAGE_DEFINITIONS.map(([id, name, z]) => ({ id, name, z, status: statusClass(stageStatus(id)), phase: id, desc: `${name}: ${stageStatus(id)}`, duration: firstValue(activeIteration?.updatedAt, activeRun?.updatedAt, state.updatedAt, LIVE_EMPTY), checkpoints: id === "gate" ? `${liveGates.length} observed gate(s)` : firstValue(activeRunId, activeIterationId, LIVE_EMPTY), artifacts: id === "gate" ? artifacts : [] }));
+  return { connected: true, state, control: cachedControl || {}, audit, plan, activeRun, activeIteration, handoff, artifacts, identity: { planId, revision: firstValue(identitySource.revision, activeIteration?.revision, activeRun?.revision, plan?.currentRevision), approvalId: firstValue(identitySource.approvalId, activeIteration?.approvalId, activeRun?.approvalId), approvalDigest: firstValue(identitySource.approvalDigest, activeIteration?.approvalDigest, activeRun?.approvalDigest), launchId: firstValue(identitySource.launchId, activeIteration?.launchId, activeRun?.launchId), requestId: firstValue(identitySource.requestId, activeIteration?.requestId, activeRun?.requestId), runId: firstValue(activeRunId, activeRun?.id, activeRun?.runId), iterationId: firstValue(activeIterationId, activeIteration?.id, activeIteration?.iterationId), pipelineType: firstValue(identitySource.pipelineType, activeIteration?.pipelineType, activeRun?.pipelineType, state.pipeline) }, runStatus, phase, chambers, variants, historicalRuns, gates: liveGates };
+}
+
+export function renderTemporalMissionLiveMarkup(live, chamber) {
+  const identity = live.identity, value = (item) => escapeHtml(item == null ? LIVE_EMPTY : String(item));
+  const variants = live.variants.length ? live.variants.map((variant) => `<li><strong>${value(variant.id)}</strong> — ${value(variant.recommendation)}; score: ${value(variant.totalScore)}</li>`).join("") : "<li>No variant snapshot was supplied.</li>";
+  const gates = live.gates.length ? live.gates.map((gate) => `<li><strong>${value(gate.id)}</strong> — ${value(gate.status)} — ${value(gate.desc)}</li>`).join("") : "<li>No gate snapshot was supplied.</li>";
+  const artifacts = live.artifacts.length ? live.artifacts.map((artifact) => `<li>${value(artifact.name || artifact.path || artifact)}</li>`).join("") : "<li>No artifact or handoff snapshot was supplied.</li>";
+  return `<div class="inspector-section"><div class="section-title"><span>Observed backend snapshot</span><span class="status-badge status-${chamber.status}">${value(chamber.status)}</span></div><div class="section-card"><div><strong>Stage:</strong> ${value(chamber.name)}</div><div><strong>Run status / phase:</strong> ${value(live.runStatus)} / ${value(live.phase)}</div><div><strong>Plan:</strong> <code>${value(identity.planId)}</code> rev <code>${value(identity.revision)}</code></div><div><strong>Approval / launch:</strong> <code>${value(identity.approvalId || identity.approvalDigest)}</code> / <code>${value(identity.launchId)}</code></div><div><strong>Request / run / iteration:</strong> <code>${value(identity.requestId)}</code> / <code>${value(identity.runId)}</code> / <code>${value(identity.iterationId)}</code></div></div></div><div class="inspector-section"><div class="section-title">Variants & evaluations</div><div class="section-card"><ul>${variants}</ul></div></div><div class="inspector-section"><div class="section-title">Gates</div><div class="section-card"><ul>${gates}</ul></div></div><div class="inspector-section"><div class="section-title">Artifacts & handoff</div><div class="section-card"><div><strong>Handoff status:</strong> ${value(live.handoff?.state)}</div><ul>${artifacts}</ul></div></div>`;
+}
+
 // ==========================================
 // 2. MAIN CONTROLLER CLASS
 // ==========================================
@@ -275,6 +330,7 @@ class TemporalMissionController {
     this.historicalRuns = DEFAULT_HISTORICAL_RUNS;
     this.gates = DEFAULT_GATES;
     this.criteriaWeights = { ...DEFAULT_CRITERIA_WEIGHTS };
+    this.liveProjection = null;
     
     this.selectedChamberIndex = 3; // Default to Chamber 3: Variant Exploration Arena (Z=0)
     this.selectedVariantId = "v1-balanced";
@@ -942,23 +998,37 @@ class TemporalMissionController {
       this.el.streamDot.className = `stream-dot ${msg.status === 'live' ? 'connected' : msg.status === 'reconnecting' ? 'reconnecting' : 'offline'}`;
     }
 
-    if (msg.type === "state-update" || msg.type === "resynchronized") {
-      const state = this.client.cachedState || {};
-      const disposition = deriveCanonicalDisposition(state, this.client.cachedControl, null, null);
-      
-      this.el.hudStatus.textContent = disposition.label;
-      this.el.hudStatus.className = `status-badge ${disposition.class || 'status-active'}`;
-      this.el.hudRun.textContent = state.currentRunId || 'run-103-spatial';
-      this.el.hudPipeline.textContent = state.pipeline || 'Managed';
-      
-      if (state.objective) {
-        this.el.hudObjective.textContent = state.objective;
-      }
+    if ((msg.type === "state-update" || msg.type === "resynchronized") && this.client.cachedState !== null) this.applyLiveSnapshot();
+  }
 
-      this.renderTopHud();
-      this.renderWaterfall();
-      this.renderInspectorContent();
-    }
+  applyLiveSnapshot() {
+    const selectedId = this.chambers[this.selectedChamberIndex]?.id;
+    this.liveProjection = projectTemporalMissionSnapshot(this.client);
+    this.chambers = this.liveProjection.chambers;
+    this.variants = this.liveProjection.variants;
+    this.historicalRuns = this.liveProjection.historicalRuns;
+    this.gates = this.liveProjection.gates;
+    const selectedIndex = this.chambers.findIndex((chamber) => chamber.id === selectedId);
+    this.selectedChamberIndex = selectedIndex >= 0 ? selectedIndex : Math.min(this.selectedChamberIndex, this.chambers.length - 1);
+    if (!this.variants.some((variant) => variant.id === this.selectedVariantId)) this.selectedVariantId = this.variants[0]?.id || null;
+    this.rebuildDataScene();
+    this.renderTopHud(); this.renderWaterfall(); this.selectChamber(this.selectedChamberIndex);
+  }
+
+  rebuildDataScene() {
+    if (!this.scene) return;
+    this.scene.traverse((object) => {
+      object.geometry?.dispose?.();
+      (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean).forEach((material) => material.dispose?.());
+    });
+    this.scene.clear(); this.interactiveObjects = [];
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    const dirLight = new THREE.DirectionalLight(0xa855f7, 1.6); dirLight.position.set(40, 100, 80);
+    const accentLight = new THREE.DirectionalLight(0x38bdf8, 1.2); accentLight.position.set(-60, 80, -100);
+    this.scene.add(ambientLight, dirLight, accentLight);
+    this.buildStarfieldParticles(); this.buildCorridorSpineAndGrid(); this.buildHistoricalArchiveRacks();
+    this.buildChamberPortals(); this.buildDivergingVariantBranches(); this.buildSynthesisFunnel(); this.buildTerminalReleaseCrystal();
+    this.requestRender();
   }
 
   recalculateRubricScores() {
@@ -1001,14 +1071,25 @@ class TemporalMissionController {
   // ==========================================
 
   renderTopHud() {
-    const state = this.client.cachedState || {};
-    const planId = state.planId ? state.planId.slice(0, 8) : "plan-9021";
-    const rev = state.revision || 3;
-    const approval = "sha256:7f4a2...";
-    const launch = state.launchId || "lnch-002";
-    const request = "req-11";
-    const run = state.currentRunId || "run-103-spatial";
-    const iter = state.iterationId || "iter-004-spatial";
+    const live = this.liveProjection;
+    const state = live?.state || this.client.cachedState || {};
+    const identity = live?.identity || {};
+    const display = (value) => value == null ? LIVE_EMPTY : String(value);
+    const planId = live ? display(identity.planId) : "OFFLINE DEFAULT";
+    const rev = live ? display(identity.revision) : "#3";
+    const approval = live ? display(identity.approvalDigest || identity.approvalId) : "sha256:7f4a2...";
+    const launch = live ? display(identity.launchId) : "lnch-002";
+    const request = live ? display(identity.requestId) : "req-11";
+    const run = live ? display(identity.runId) : "run-103-spatial";
+    const iter = live ? display(identity.iterationId) : "iter-004-spatial";
+    const disposition = live ? deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff) : null;
+    this.el.hudStatus.textContent = live ? disposition.label : "OFFLINE / DEFAULT DATA";
+    this.el.hudStatus.className = `status-badge ${live ? (disposition.class || "status-idle") : "status-warning"}`;
+    this.el.hudRun.textContent = run;
+    this.el.hudPipeline.textContent = display(live ? identity.pipelineType : state.pipeline || "Managed");
+    this.el.hudGen.textContent = display(live ? firstValue(live.activeIteration?.generation, live.activeIteration?.generationNumber, LIVE_EMPTY) : "1 / 10");
+    this.el.hudAdmission.textContent = display(live ? firstValue(live.control.runAdmission, "unknown") : "ENABLED").toUpperCase();
+    this.el.hudObjective.textContent = display(live ? firstValue(live.activeIteration?.objective, live.activeRun?.objective, state.objective, LIVE_EMPTY) : state.objective || "Offline default dataset — no backend snapshot connected.");
 
     this.el.hudIdentity.innerHTML = `
       <span class="identity-node" title="Plan ID: ${planId}">Plan: <strong>${planId}</strong></span>
@@ -1119,6 +1200,11 @@ class TemporalMissionController {
   renderInspectorContent() {
     const ch = this.chambers[this.selectedChamberIndex];
 
+    if (this.liveProjection) {
+      this.renderLiveInspector(ch);
+      return;
+    }
+
     switch (this.activeInspectorTab) {
       case "stage-view":
         this.renderDynamicStageWorkspace(ch);
@@ -1142,6 +1228,10 @@ class TemporalMissionController {
         this.renderDynamicStageWorkspace(ch);
         break;
     }
+  }
+
+  renderLiveInspector(ch) {
+    this.el.inspectorContent.innerHTML = renderTemporalMissionLiveMarkup(this.liveProjection, ch);
   }
 
   renderDynamicStageWorkspace(ch) {
@@ -1890,6 +1980,8 @@ class TemporalMissionController {
 }
 
 // Bootstrap on DOM ready
-window.addEventListener("DOMContentLoaded", () => {
-  window.temporalMissionApp = new TemporalMissionController();
-});
+if (typeof window !== "undefined") {
+  window.addEventListener("DOMContentLoaded", () => {
+    window.temporalMissionApp = new TemporalMissionController();
+  });
+}

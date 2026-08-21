@@ -361,6 +361,7 @@ export class ControlPlaneClient {
     this.cachedGates = { gates: [] };
     this.cachedControl = {};
     this.cachedAudit = [];
+    this.cachedEvents = [];
   }
 
   setRole(role) {
@@ -492,7 +493,9 @@ export class ControlPlaneClient {
 
   async getEvents(limit = 200, after = null) {
     const query = after ? `?limit=${limit}&after=${encodeURIComponent(after)}` : `?limit=${limit}`;
-    return this.fetchJson(`/api/events${query}`);
+    const data = await this.fetchJson(`/api/events${query}`);
+    this.cachedEvents = Array.isArray(data) ? data : [];
+    return this.cachedEvents;
   }
 
   async getCapabilities() {
@@ -777,7 +780,7 @@ export class ControlPlaneClient {
 
   async resyncSnapshots() {
     try {
-      const [state, plans, iterations, runs, queue, gates, control, audit] = await Promise.all([
+      const [state, plans, iterations, runs, queue, gates, control, audit, events] = await Promise.all([
         this.getState().catch(() => null),
         this.getProjectPlans().catch(() => null),
         this.getIterations().catch(() => null),
@@ -785,9 +788,10 @@ export class ControlPlaneClient {
         this.getQueue().catch(() => null),
         this.getGates().catch(() => null),
         this.getControl().catch(() => null),
-        this.getAudit().catch(() => null)
+        this.getAudit().catch(() => null),
+        this.getEvents().catch(() => null)
       ]);
-      this.notifySubscribers({ type: "resynchronized", state, plans, iterations, runs, queue, gates, control, audit });
+      this.notifySubscribers({ type: "resynchronized", state, plans, iterations, runs, queue, gates, control, audit, events });
     } catch (err) {
       console.warn("[Client] Snapshot resync failed:", err);
     }

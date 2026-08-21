@@ -71,6 +71,7 @@ function content(pipelineType: "classic" | "managed", complete: boolean, title: 
     requirements: complete ? ["Preserve immutable launch identity"] : [], nonGoals: complete ? ["No deployment"] : [], constraints: complete ? ["No source branch mutation"] : [], risks: complete ? ["Fixture-only behavior"] : [],
     repository: pipelineType === "managed" ? { path: project, baseRef: "HEAD", baseCommit: null } : { path: null, baseRef: null, baseCommit: null },
     acceptanceGates: pipelineType === "managed" ? [{ id: "approved-gate", description: "Approved variant evidence exists", severity: "must", required: true, requiredEvidence: ["artifacts/variants/variant-1.json"] }] : [],
+    scopeBundles: pipelineType === "managed" ? [{ id: "approved-mvp", description: "The one approved fixture delivery", capabilities: ["approved fixture improvement"], acceptanceGateIds: ["approved-gate"] }] : [],
     validationPolicy: complete ? validationPolicy : { ...validationPolicy, expectations: [] }, milestones: complete ? ["Complete fixture"] : [], limits, lineage
   };
 }
@@ -106,7 +107,7 @@ fs.appendFileSync(process.env.FAKE_HERMES_CALLS,JSON.stringify({agent,args})+'\\
 const runRoot=process.env.AUTONOMOUS_PROJECT_RUN_ROOT,root=process.env.AUTONOMOUS_PROJECT_STATE_ROOT;
 if(agent.startsWith('variant-')) {
   fs.writeFileSync(path.join(process.cwd(),agent+'.txt'),'focused managed change\\n');
-  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded approved change',acceptedFeatures:['focused fixture improvement'],objectiveMapping:['approved objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
+  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded approved change',acceptedFeatures:['approved fixture improvement'],acceptedScopeBundles:[{id:'approved-mvp',acceptedFeatures:['approved fixture improvement'],acceptanceGateIds:['approved-gate']}],objectiveMapping:['approved objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
 } else if(agent.startsWith('evaluator-')) {
   const variant=(query.match(/evaluation-(variant-[0-9]+)\\.json/)||[])[1]||'variant-1';
   fs.writeFileSync(path.join(runRoot,'artifacts','evaluations','evaluation-'+variant+'.json'),JSON.stringify({schemaVersion:'apb.evaluation.v1',variantId:variant,scores:{objectiveFit:90,userValue:85,visualQuality:80,implementationQuality:90,accessibility:85,performance:90,total:87},hardGateViolations:[],recommendation:'accept',rationale:'Evidence-backed fixture evaluation',evidenceArtifacts:['artifacts/variants/'+variant+'.json','artifacts/variants/'+variant+'.diff']},null,2));

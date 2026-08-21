@@ -105,6 +105,14 @@ Writes to mutable projections use temporary files and rename. Immutable revision
         "requiredEvidence": ["relative/run-local/path"]
       }
     ],
+    "scopeBundles": [
+      {
+        "id": "mvp-delivery",
+        "description": "One cohesive MVP delivery unit",
+        "capabilities": ["required capability A", "required capability B"],
+        "acceptanceGateIds": ["gate-..."]
+      }
+    ],
     "validationPolicy": {
       "id": "apb.runner-selected.v1",
       "expectations": ["Expected validation outcome"],
@@ -132,7 +140,7 @@ Writes to mutable projections use temporary files and rename. Immutable revision
 }
 ```
 
-`pipelineType` is `classic` or `managed`. A classic revision requires no existing repository and uses the classic SPEC/DEVPLAN/build/final-audit pipeline. A managed revision requires an absolute existing Git repository path, an explicit base ref resolved to `baseCommit` by the server before review, a bounded change, limits, and runner-selected validation policy.
+`pipelineType` is `classic` or `managed`. A classic revision requires no existing repository and uses the classic SPEC/DEVPLAN/build/final-audit pipeline. A managed revision requires an absolute existing Git repository path, an explicit base ref resolved to `baseCommit` by the server before review, a bounded change, limits, and runner-selected validation policy. `scopeBundles` are optional for legacy plans, but a managed plan should use them to bind a cohesive MVP's required capabilities to its acceptance gates. `maxAcceptedFeatures` limits accepted scope bundles, not capability-item count: one bundle may contain all capabilities and gates necessary for one coherent MVP. Variant artifacts must enumerate the same capabilities once across `acceptedFeatures` and their `acceptedScopeBundles`; declared bundles must match the frozen plan exactly. Visual motif, section, unrelated-feature, and tech-stack-churn limits remain independent hard gates.
 
 The digest is SHA-256 over canonical JSON containing `schemaVersion`, `planId`, `revision`, `parentRevision`, and `content`, prefixed with the `apb.project-plan.v1` domain. Generated timestamps and `contentDigest` are excluded.
 

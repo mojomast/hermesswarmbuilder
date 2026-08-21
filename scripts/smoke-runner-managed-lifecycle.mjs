@@ -39,7 +39,9 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
   fs.writeFileSync(path.join(process.cwd(),agent+'.txt'),'focused managed change\\n');
   const objectiveMapping=process.env.FAKE_OBJECT_MAPPING==='1'?{fixtureObjective:'Focused fixture implementation'}:['fixture objective'];
   const summaryObject=process.env.FAKE_SUMMARY_OBJECT==='1';
-  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',acceptedFeatures:['fixture improvement'],objectiveMapping,changes:summaryObject?'focused fixture implementation':[agent+'.txt','implementation summary','validation notes'],risks:[],evidence:summaryObject?{test:'fixture validation'}:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
+  const features=process.env.FAKE_SCOPE_BUNDLED_MVP==='1'?['plan intake','validated form','persistent draft','review summary','completion evidence']:['fixture improvement'];
+  const gateIds=process.env.FAKE_SCOPE_BUNDLED_MVP==='1'?['mvp-intake','mvp-form','mvp-draft','mvp-review','mvp-evidence']:[process.env.FAKE_BUNDLE_GATE_ID||'fixture-gate'];
+  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',acceptedFeatures:features,acceptedScopeBundles:[{id:process.env.FAKE_SCOPE_BUNDLED_MVP==='1'?'cohesive-mvp':'fixture-scope',acceptedFeatures:features,acceptanceGateIds:gateIds}],objectiveMapping,changes:summaryObject?'focused fixture implementation':[agent+'.txt','implementation summary','validation notes'],risks:[],evidence:summaryObject?{test:'fixture validation'}:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
   if(process.env.FAKE_SCENARIO==='pause') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.pause={requested:true,mode:'checkpoint',reason:'fixture pause'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
   if(process.env.FAKE_SCENARIO==='stop') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.stop={requested:true,mode:'graceful',reason:'fixture stop'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
   if(process.env.FAKE_SCENARIO==='hold-admission') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.runAdmission='paused'; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
@@ -56,23 +58,26 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
   const baseRef = options.invalidBase ? 'missing-base-ref' : 'HEAD';
   const request = {
     schemaVersion: 'apb.next-run-request.v1', id: requestId, status: 'pending', type: 'continue',
-    sourceRunId: 'source-run', sourceIterationId: 'source-iteration', repoPath, baseRef,
+    sourceRunId: 'source-run', sourceIterationId: 'source-iteration', repoPath, baseRef, acceptanceGateIds: ['fixture-gate'],
     objective: 'Deliver one trustworthy fixture improvement', changeText: 'Add one focused fixture file and validate its evidence.',
     validationCommands: [['touch', join(home, 'client-command-ran')]],
     limits: { maxIterations: 1, maxVariantsPerIteration: 1, maxParallelVariants: 1, maxAcceptedFeatures: 1, maxVisualMotifChanges: 0, maxNewSections: 0, stopAfterNoImprovement: 1 }
   };
-  if (options.snapshottedAcceptanceGates) request.snapshottedAcceptanceGates = options.snapshottedAcceptanceGates;
+  if (options.scopeBundledMvp) {
+    request.scopeBundles = [{ id:'cohesive-mvp', description:'One coherent MVP delivery bundle', capabilities:['plan intake','validated form','persistent draft','review summary','completion evidence'], acceptanceGateIds:['mvp-intake','mvp-form','mvp-draft','mvp-review','mvp-evidence'] }];
+    request.snapshottedAcceptanceGates = request.scopeBundles[0].acceptanceGateIds.map((id) => ({ id, severity:'must', required:true, description:`${id} evidence exists`, requiredEvidence:['artifacts/variants/variant-1.json'] }));
+  } else if (options.snapshottedAcceptanceGates) request.snapshottedAcceptanceGates = options.snapshottedAcceptanceGates;
   writeJson(join(root, 'state.json'), { schemaVersion:'apb.state.v1', status:'idle', phase:'idle', currentRunId:null, agents:{} });
   writeJson(join(root, 'control.json'), { schemaVersion:'apb.control.v1', runAdmission:'enabled', pause:{requested:false}, stop:{requested:false}, activeSteering:[], requestedRunNow:true, nextRunRequest:request, autoIteration:{enabled:false} });
   writeJson(join(root, 'queue.json'), { schemaVersion:'apb.queue.v1', items:[] });
-  writeJson(join(root, 'gates.json'), { schemaVersion:'apb.gates.v1', gates:[{id:'fixture-gate',severity:'must',description:'Fixture evidence exists',requiredEvidence:[gateEvidence]}] });
+  writeJson(join(root, 'gates.json'), { schemaVersion:'apb.gates.v1', gates: options.scopeBundledMvp ? request.snapshottedAcceptanceGates : [{id:'fixture-gate',severity:'must',description:'Fixture evidence exists',requiredEvidence:[gateEvidence]}] });
   writeJson(join(root, 'iterations.json'), { schemaVersion:'apb.iterations.v1', items:[{id:requestId,status:'requested',sourceRunId:'source-run',parentIterationId:'source-iteration'}] });
   writeFileSync(join(root, 'runner-prompt.md'), 'fixture prompt\n');
   writeFileSync(join(root, 'telemetry.py'), '# fixture\n');
 
   const result = spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], {
     cwd: sourceRepo,
-    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, FAKE_OBJECT_MAPPING:options.objectiveMappingObject?'1':'0', FAKE_SUMMARY_OBJECT:options.summaryObject?'1':'0', APB_DISABLE_AUTO_CONTINUATION:'1', ...(options.env || {}) },
+    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, FAKE_OBJECT_MAPPING:options.objectiveMappingObject?'1':'0', FAKE_SUMMARY_OBJECT:options.summaryObject?'1':'0', FAKE_SCOPE_BUNDLED_MVP:options.scopeBundledMvp?'1':'0', FAKE_BUNDLE_GATE_ID:options.snapshottedAcceptanceGates?.[0]?.id || 'fixture-gate', APB_DISABLE_AUTO_CONTINUATION:'1', ...(options.env || {}) },
     encoding:'utf8'
   });
   if(result.status !== 0) throw new Error(`${name}: runner exited ${result.status}: ${result.stderr || result.stdout}`);
@@ -88,7 +93,7 @@ try {
   if(existsSync(join(success.home,'client-command-ran')) || lifecycle.validationPlan.commands.some(x=>x.argv?.[0]==='touch')) throw new Error('success: client-supplied validation command was executed or persisted');
   const successRun=json(join(success.root,'run.json'));
   const successHandoff=json(join(success.root,'artifacts','handoff.json'));
-  if(successRun.status!=='completed' || successHandoff.state!=='completed') throw new Error('success: terminal state/handoff not completed');
+  if(successRun.status!=='completed' || successHandoff.state!=='completed') throw new Error(`success: terminal state/handoff not completed: ${json(join(success.root,'artifacts','failure.json')).reason}`);
   if(git(success.project,['rev-parse','HEAD'])!==success.baseCommit || git(success.project,['status','--porcelain'])) throw new Error('success: normal source branch or working tree was mutated');
   if(!successHandoff.accepted?.commit || successHandoff.baseCommit!==success.baseCommit || !successHandoff.operatorNextAction?.includes('git')) throw new Error('success: handoff promotion data incomplete');
   const gateReport=json(join(success.root,'artifacts','gate-report.json'));
@@ -104,6 +109,10 @@ try {
 
   const summaryObject=runScenario('summary-object',{summaryObject:true}); fixtures.push(summaryObject.home);
   if(json(join(summaryObject.root,'run.json')).status!=='completed') throw new Error('summary object: valid unconstrained changes/evidence was blocked');
+
+  const bundledMvp=runScenario('scope-bundled-mvp',{scopeBundledMvp:true}); fixtures.push(bundledMvp.home);
+  const bundledArtifact=json(join(bundledMvp.root,'artifacts','variants','variant-1.json'));
+  if(json(join(bundledMvp.root,'run.json')).status!=='completed' || bundledArtifact.acceptedFeatures.length<=1 || bundledArtifact.acceptedScopeBundles.length!==1) throw new Error('scope bundled MVP: maxAcceptedFeatures=1 incorrectly blocked cohesive required capabilities');
 
   const snapshotted=runScenario('snapshotted-gates',{snapshottedAcceptanceGates:[{id:'snapshotted-gate',severity:'must',required:true,description:'Snapshot gate survives request resolution',requiredEvidence:['artifacts/variants/variant-1.json']}]}); fixtures.push(snapshotted.home);
   const snapshottedLifecycle=json(join(snapshotted.root,'lifecycle-contract.json'));

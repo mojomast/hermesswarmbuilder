@@ -9,7 +9,7 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const COMMIT = /^[a-f0-9]{40,64}$/;
 const PROHIBITED_KEYS = new Set(["command", "commands", "argv", "shell", "script", "executable", "env", "environment", "validationcommands"]);
-const CONTENT_KEYS = new Set(["pipelineType", "title", "problem", "intendedUsers", "objective", "boundedScope", "requirements", "nonGoals", "constraints", "risks", "repository", "acceptanceGates", "validationPolicy", "milestones", "limits", "lineage"]);
+const CONTENT_KEYS = new Set(["pipelineType", "title", "problem", "intendedUsers", "objective", "boundedScope", "requirements", "nonGoals", "constraints", "risks", "repository", "acceptanceGates", "scopeBundles", "validationPolicy", "milestones", "limits", "lineage"]);
 const LIMIT_BOUNDS: Record<string, [number, number]> = {
   maxIterations: [1, 10], maxVariantsPerIteration: [1, 5], maxParallelVariants: [1, 5], maxAcceptedFeatures: [1, 4],
   maxVisualMotifChanges: [0, 1], maxNewSections: [0, 1], stopAfterNoImprovement: [1, 3]
@@ -132,6 +132,20 @@ export function normalizeProjectPlanContent(raw: unknown, complete = false, enfo
     if (gate.required && !requiredEvidence.length) throw new ProjectPlanError(`content.acceptanceGates[${i}] requires evidence paths`);
     return { id, description: boundedString(gate.description, `content.acceptanceGates[${i}].description`, 2000, true), severity: gate.severity, required: gate.required, requiredEvidence };
   });
+  const bundlesRaw = content.scopeBundles ?? [];
+  if (!Array.isArray(bundlesRaw) || bundlesRaw.length > 50) throw new ProjectPlanError("content.scopeBundles must have at most 50 items");
+  const bundleIds = new Set<string>();
+  const gateIdsForBundles = new Set(acceptanceGates.map((gate) => gate.id));
+  const scopeBundles = bundlesRaw.map((rawBundle: unknown, i: number) => {
+    const bundle = object(rawBundle, `content.scopeBundles[${i}]`);
+    exactKeys(bundle, new Set(["id", "description", "capabilities", "acceptanceGateIds"]), `content.scopeBundles[${i}]`);
+    const id = assertId(bundle.id, `content.scopeBundles[${i}].id`);
+    if (bundleIds.has(id)) throw new ProjectPlanError(`duplicate scope bundle id ${id}`);
+    bundleIds.add(id);
+    const acceptanceGateIds = stringList(bundle.acceptanceGateIds, `content.scopeBundles[${i}].acceptanceGateIds`);
+    if (new Set(acceptanceGateIds).size !== acceptanceGateIds.length || acceptanceGateIds.some((gateId) => !gateIdsForBundles.has(gateId))) throw new ProjectPlanError(`content.scopeBundles[${i}].acceptanceGateIds must name unique plan acceptance gates`);
+    return { id, description: boundedString(bundle.description, `content.scopeBundles[${i}].description`, 2000, true), capabilities: stringList(bundle.capabilities, `content.scopeBundles[${i}].capabilities`, true), acceptanceGateIds };
+  });
   const limits = object(content.limits, "content.limits");
   exactKeys(limits, new Set(Object.keys(LIMIT_BOUNDS)), "content.limits");
   const normalizedLimits: Record<string, number> = {};
@@ -163,7 +177,7 @@ export function normalizeProjectPlanContent(raw: unknown, complete = false, enfo
   return {
     pipelineType: content.pipelineType, title: text("title", 300), problem: text("problem"), intendedUsers: text("intendedUsers", 2000), objective: text("objective"), boundedScope: text("boundedScope"),
     requirements: stringList(content.requirements, "content.requirements", complete), nonGoals: stringList(content.nonGoals, "content.nonGoals", complete), constraints: stringList(content.constraints, "content.constraints", complete), risks: stringList(content.risks, "content.risks", complete),
-    repository: { path: repoPath, baseRef, baseCommit }, acceptanceGates,
+    repository: { path: repoPath, baseRef, baseCommit }, acceptanceGates, scopeBundles,
     validationPolicy: { id: validationPolicy.id, expectations: stringList(validationPolicy.expectations, "content.validationPolicy.expectations", complete), clientCommandsAllowed: false },
     milestones: stringList(content.milestones, "content.milestones", complete), limits: normalizedLimits,
     lineage: { mode: lineage.mode, sourcePlanId: lineage.sourcePlanId, sourceRevision: lineage.sourceRevision, sourceRunId: lineage.sourceRunId, sourceIterationId: lineage.sourceIterationId }

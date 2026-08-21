@@ -841,8 +841,9 @@ async function main(){
   try{
     launchAuthority=new LaunchAuthority(ROOT);
     let s=readState(), control=readControl();
+    const pendingContinuationForActiveRun=control.nextRunRequest?.status==="pending"&&control.nextRunRequest?.type==="continue"&&control.nextRunRequest?.sourceRunId===s.currentRunId;
     const activeRecovery=verifiedActiveTimeoutRecovery(s,control);
-    const interruptedRunRecovered=!activeRecovery&&recoverInterruptedActiveRun(s);
+    const interruptedRunRecovered=!activeRecovery&&!pendingContinuationForActiveRun&&recoverInterruptedActiveRun(s);
     if(interruptedRunRecovered) s=readState();
     writeRunnerParity();
     launchAuthority.recoverStrandedRunning(); launchAuthority.reconcile();
@@ -864,7 +865,8 @@ async function main(){
       s.lastAction="Hourly runner honored dashboard stop request and did not launch."; writeState(s); event("warn","system","hold",s.lastAction,{runId:s.currentRunId}); log(s.lastAction); return;
     }
     if(interruptedRunRecovered) return;
-    if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery&&(!explicitWake||s.status!=="blocked"||s.block?.timeout)){
+    const activeContinuationRequest=iterationRequest?.type==="continue"&&iterationRequest.sourceRunId===s.currentRunId;
+    if(s.currentRunId&&ACTIVE.has(s.status)&&!activeRecovery&&!activeContinuationRequest&&(!explicitWake||s.status!=="blocked"||s.block?.timeout)){
       s.lastAction=`Hourly check: active project ${s.currentRunId} is ${s.status}; no verified timeout recovery request was admitted.`;
       writeState(s); event("info","system","state-change",s.lastAction,{runId:s.currentRunId,status:s.status,nextHourlyRunTime:s.nextHourlyRunTime}); log(s.lastAction); return;
     }

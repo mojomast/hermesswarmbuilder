@@ -1,0 +1,147 @@
+/* Network Operations Center (NOC) Styling */
+:root {
+  --noc-bg: #07090c;
+  --noc-panel: #0d1117;
+  --noc-border: #1a222d;
+  --noc-cyan: #00f0ff;
+  --noc-green: #10b981;
+  --noc-amber: #f59e0b;
+  --noc-red: #ef4444;
+  --noc-purple: #a855f7;
+  --noc-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--noc-bg);
+  color: #c9d1d9;
+  font-family: var(--noc-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Global NOC Masthead */
+.noc-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #090d12;
+  border-bottom: 2px solid var(--noc-border);
+  gap: 12px;
+}
+.noc-brand { font-weight: 800; color: var(--noc-cyan); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.noc-status-bar { display: flex; gap: 14px; font-size: 10.5px; }
+
+/* Main NOC Operational Layout */
+.noc-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left Half: D3 Topology Graph & DWDM Matrix */
+.noc-left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--noc-border);
+  min-width: 0;
+}
+
+.noc-topology-wrap {
+  flex: 1;
+  position: relative;
+  background: #040608;
+  min-height: 0;
+}
+svg#nocTopologySvg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* DWDM 16-Lambda Matrix Strip */
+.noc-dwdm-strip {
+  height: 90px;
+  background: #080b0f;
+  border-top: 1px solid var(--noc-border);
+  display: flex;
+  padding: 6px;
+  gap: 4px;
+  overflow-x: auto;
+}
+.noc-lambda-cell {
+  flex: 1;
+  min-width: 45px;
+  background: #0d1218;
+  border: 1px solid #1a2330;
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px;
+  font-size: 8.5px;
+}
+.noc-lambda-cell.active { border-color: var(--noc-cyan); background: #01242e; }
+
+/* Right Half: X.733 Alarm Triage & Maintenance Plans */
+.noc-right-col {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--noc-panel);
+}
+
+.noc-section {
+  padding: 8px;
+  border-bottom: 1px solid var(--noc-border);
+}
+.noc-section-header {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--noc-cyan);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.noc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.5px;
+}
+.noc-table th, .noc-table td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid #161f2b;
+}
+.noc-table th { color: #64748b; font-weight: 700; }
+
+.noc-btn {
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #fff;
+}
+.noc-btn.danger { background: #7f1d1d; border-color: #ef4444; }
+
+@media (max-width: 1024px) {
+  .noc-stage { flex-direction: column; }
+  .noc-left-col { height: 50vh; border-right: none; border-bottom: 1px solid var(--noc-border); }
+  .noc-right-col { width: 100%; height: 50vh; }
+}

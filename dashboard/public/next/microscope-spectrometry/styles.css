@@ -1,0 +1,128 @@
+/* Microscope Spectrometry HMI Styling */
+:root {
+  --sem-bg: #090c0f;
+  --sem-panel: #11151a;
+  --sem-border: #1e242c;
+  --sem-phosphor: #22ee55;
+  --sem-cyan: #38bdf8;
+  --sem-amber: #fbbf24;
+  --sem-red: #f87171;
+  --sem-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--sem-bg);
+  color: #cdd9e5;
+  font-family: var(--sem-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Master Top Rail */
+.sem-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #0d1217;
+  border-bottom: 2px solid var(--sem-border);
+  gap: 12px;
+}
+.sem-brand { font-weight: 800; color: var(--sem-phosphor); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.sem-status-rail { display: flex; gap: 14px; font-size: 10.5px; }
+
+/* Main Console Stage */
+.sem-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left Optics & Vacuum Rack */
+.sem-left-col {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--sem-panel);
+  border-right: 1px solid var(--sem-border);
+  padding: 8px;
+  gap: 10px;
+  overflow: auto;
+}
+
+.sem-rack-box {
+  background: #080b0e;
+  border: 1px solid #1a222c;
+  border-radius: 3px;
+  padding: 8px;
+}
+.sem-box-title { font-size: 9.5px; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.05em; }
+
+/* Center Viewport: CRT Raster & EDX MCA Histogram */
+.sem-center-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--sem-border);
+}
+
+.sem-crt-wrap {
+  flex: 1;
+  position: relative;
+  background: #050807;
+  min-height: 0;
+  border-bottom: 1px solid var(--sem-border);
+}
+canvas#crtCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+
+.sem-mca-wrap {
+  height: 180px;
+  position: relative;
+  background: #080b0f;
+  padding: 6px;
+}
+canvas#mcaCanvas {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* Right Evidence & Specimen Plans */
+.sem-right-col {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: var(--sem-panel);
+}
+
+.sem-btn {
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #fff;
+}
+.sem-btn.primary { background: #0369a1; border-color: var(--sem-cyan); }
+.sem-btn.danger { background: #7f1d1d; border-color: var(--sem-red); }
+
+@media (max-width: 1024px) {
+  .sem-stage { flex-direction: column; }
+  .sem-left-col { width: 100%; height: 30vh; border-right: none; }
+  .sem-center-col { height: 45vh; }
+  .sem-right-col { width: 100%; height: 25vh; }
+}

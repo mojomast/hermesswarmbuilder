@@ -1,0 +1,165 @@
+/* Nuclear Reactor Core HMI Styling */
+:root {
+  --rc-bg: #07090b;
+  --rc-panel: #0d1115;
+  --rc-border: #1a222a;
+  --rc-flux-blue: #00e5ff;
+  --rc-flux-green: #10b981;
+  --rc-flux-amber: #f59e0b;
+  --rc-flux-red: #ef4444;
+  --rc-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--rc-bg);
+  color: #c9d1d9;
+  font-family: var(--rc-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Class 1E Top Header */
+.rc-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #090c10;
+  border-bottom: 2px solid var(--rc-border);
+  gap: 12px;
+}
+.rc-brand { font-weight: 800; color: #fff; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.rc-badge-1e { background: #1e3a8a; color: #60a5fa; border: 1px solid #3b82f6; padding: 1px 6px; border-radius: 2px; font-size: 9px; font-weight: 900; }
+
+/* Main Reactor Console */
+.rc-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left Half: Hexagonal Core Matrix & Control Rod Servos */
+.rc-left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--rc-border);
+  min-width: 0;
+}
+
+.rc-core-wrap {
+  flex: 1;
+  position: relative;
+  background: #040608;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+svg#hexCoreSvg {
+  width: 90%;
+  height: 90%;
+  display: block;
+}
+
+/* Control Rod Servo Bank Deck */
+.rc-rod-deck {
+  height: 110px;
+  background: #080b0e;
+  border-top: 1px solid var(--rc-border);
+  display: flex;
+  padding: 8px 12px;
+  gap: 12px;
+}
+.rc-rod-unit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rc-rod-track {
+  width: 14px;
+  flex: 1;
+  background: #0d1217;
+  border: 1px solid #1e2836;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.rc-rod-bar {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: var(--rod-pos, 30%);
+  background: #38bdf8;
+  transition: height 0.2s ease;
+}
+
+/* Right Half: SPDS & Safety Injection */
+.rc-right-col {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--rc-panel);
+}
+
+.rc-section {
+  padding: 8px;
+  border-bottom: 1px solid var(--rc-border);
+}
+.rc-section-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--rc-flux-blue);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+/* Armed SCRAM Mushroom Button */
+.rc-scram-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #18080a;
+  border: 2px solid #ef4444;
+  border-radius: 4px;
+  padding: 8px;
+}
+.rc-btn-scram {
+  padding: 10px 20px;
+  background: #991b1b;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  border: 2px solid #ef4444;
+  border-radius: 24px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(239,68,68,0.6);
+}
+.rc-btn-scram:active { background: #ef4444; }
+
+.rc-btn {
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #fff;
+}
+
+@media (max-width: 1024px) {
+  .rc-stage { flex-direction: column; }
+  .rc-left-col { height: 50vh; border-right: none; border-bottom: 1px solid var(--rc-border); }
+  .rc-right-col { width: 100%; height: 50vh; }
+}

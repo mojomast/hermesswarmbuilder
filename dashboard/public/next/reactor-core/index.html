@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Reactor Core | Class 1E Safety & SPDS Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Class 1E Masthead -->
+  <header class="rc-masthead">
+    <div class="rc-brand">
+      <span class="rc-badge-1e">CLASS 1E</span>
+      <span>WESTINGHOUSE AP1000 // NUCLEAR CORE SAFETY CONSOLE</span>
+    </div>
+    <div style="display:flex;gap:14px;font-size:10.5px;" aria-live="polite">
+      <span>THERMAL POWER: <b id="thermalPower">100.0% (3,400 MWth)</b></span>
+      <span>CORE DELTA-T: <b style="color:var(--rc-flux-blue);">+34.2 °C</b></span>
+      <span>RPS TRIP: <b id="rpsTripStatus" style="color:var(--rc-flux-green);">ARMED / NORMAL</b></span>
+      <span>PHASE: <b id="rcPhase" style="color:var(--rc-flux-green);">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnResyncCore" class="rc-btn" type="button">SYNC RPS</button>
+      <button id="btnBoration" class="rc-btn" style="background:#0369a1;" type="button">CVCS BORATION</button>
+    </div>
+  </header>
+
+  <main class="rc-stage">
+    <!-- Left Half: Hexagonal Core Flux Matrix & Control Rods -->
+    <section class="rc-left-col" aria-label="Hexagonal Fuel Matrix and Control Rods">
+      <div class="rc-core-wrap">
+        <svg id="hexCoreSvg" viewBox="0 0 600 550" role="img" aria-label="61-Element Hexagonal Nuclear Core Lattice"></svg>
+      </div>
+
+      <!-- Control Rod Servo Bank Deck -->
+      <div class="rc-rod-deck" aria-label="Control Rod Drive Mechanism Servos">
+        <div class="rc-rod-unit" id="rodBankA">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:15%;"></div></div>
+          <span style="font-size:8.5px;color:#64748b;">BANK A</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankB">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:25%;"></div></div>
+          <span style="font-size:8.5px;color:#64748b;">BANK B</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankC">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:40%;"></div></div>
+          <span style="font-size:8.5px;color:#64748b;">BANK C</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankD">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:60%;"></div></div>
+          <span style="font-size:8.5px;color:#64748b;">BANK D</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankSD1">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
+          <span style="font-size:8.5px;color:#10b981;">SHUTDOWN 1</span>
+        </div>
+        <div class="rc-rod-unit" id="rodBankSD2">
+          <div class="rc-rod-track"><div class="rc-rod-bar" style="--rod-pos:0%;"></div></div>
+          <span style="font-size:8.5px;color:#10b981;">SHUTDOWN 2</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Half: SPDS & Emergency SCRAM -->
+    <aside class="rc-right-col" aria-label="Safety Parameters and SCRAM Control">
+      <!-- Armed SCRAM Button -->
+      <div class="rc-section">
+        <div class="rc-scram-box">
+          <div>
+            <div style="color:#ef4444;font-weight:900;font-size:11px;">EMERGENCY REACTOR SCRAM</div>
+            <div style="font-size:9.5px;color:#94a3b8;">Manual Trip Breakers: ARMED</div>
+          </div>
+          <button id="btnManualScram" class="rc-btn-scram" type="button">SCRAM</button>
+        </div>
+      </div>
+
+      <!-- Core Deblock & Steering -->
+      <div class="rc-section">
+        <div class="rc-section-title">CORE REACTIVITY STEERING</div>
+        <div style="display:flex;gap:6px;">
+          <button id="btnDeblockCore" class="rc-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
+          <button id="btnAdviceCore" class="rc-btn" style="flex:1;" type="button">QUERY ADVICE</button>
+        </div>
+      </div>
+
+      <!-- Core Fuel Load Plans -->
+      <div class="rc-section" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div class="rc-section-title" style="margin-bottom:0;">CORE FUEL LOAD PLANS</div>
+          <button id="btnNewFuelPlan" class="rc-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+        </div>
+        <div id="fuelPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
+          <!-- Rendered by Mithril / app.js -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="rcToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

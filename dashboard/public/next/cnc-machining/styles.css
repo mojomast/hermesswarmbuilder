@@ -1,0 +1,158 @@
+/* CNC Machining HMI Styling */
+:root {
+  --cnc-bg: #090c10;
+  --cnc-panel: #11151a;
+  --cnc-border: #1e2530;
+  --cnc-dro-green: #22c55e;
+  --cnc-amber: #f59e0b;
+  --cnc-red: #ef4444;
+  --cnc-cyan: #06b6d4;
+  --cnc-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--cnc-bg);
+  color: #c9d1d9;
+  font-family: var(--cnc-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Header Masthead */
+.cnc-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #0d1217;
+  border-bottom: 2px solid var(--cnc-border);
+  gap: 12px;
+}
+.cnc-brand { font-weight: 800; color: #fff; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+.cnc-badge { padding: 2px 6px; border-radius: 2px; font-size: 9.5px; font-weight: 800; }
+.cnc-badge.auto { background: #064e3b; color: #34d399; border: 1px solid #10b981; }
+
+/* Main Pendant Console */
+.cnc-pendant {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left Half: DRO & 3D Toolpath Viewport */
+.cnc-left-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--cnc-border);
+  min-width: 0;
+}
+
+/* 5-Axis Precision DRO Panel */
+.cnc-dro-panel {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 8px;
+  background: #06080b;
+  border-bottom: 1px solid var(--cnc-border);
+}
+.cnc-dro-axis {
+  background: #090d12;
+  border: 1px solid #1a222d;
+  border-radius: 3px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.cnc-axis-name { font-size: 10px; font-weight: 800; color: #64748b; }
+.cnc-axis-val { font-size: 14px; font-weight: 900; color: var(--cnc-dro-green); font-variant-numeric: tabular-nums; }
+
+/* 3D Toolpath Viewport Canvas */
+.cnc-toolpath-wrap {
+  flex: 1;
+  position: relative;
+  background: #040608;
+  min-height: 0;
+}
+canvas#toolpathCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* Right Half: G-Code Buffer, Spindle Tach, Hard-Keys */
+.cnc-right-col {
+  width: 440px;
+  display: flex;
+  flex-direction: column;
+  background: var(--cnc-panel);
+}
+
+/* Spindle & Feed Overrides */
+.cnc-spindle-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  background: #090d12;
+  border-bottom: 1px solid var(--cnc-border);
+  gap: 12px;
+}
+.cnc-tach-val { font-size: 13px; font-weight: 800; color: var(--cnc-cyan); }
+
+/* G-Code Execution Stream Buffer */
+.cnc-gcode-pane {
+  flex: 1;
+  overflow: auto;
+  padding: 6px;
+  background: #06090c;
+  font-size: 10px;
+  border-bottom: 1px solid var(--cnc-border);
+}
+.cnc-gcode-line {
+  padding: 2px 4px;
+  display: flex;
+  gap: 8px;
+  color: #64748b;
+}
+.cnc-gcode-line.active { background: #131c26; color: #22c55e; font-weight: bold; border-left: 2px solid #22c55e; }
+
+/* Industrial Hard-Key Station */
+.cnc-hardkeys {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  background: #0d1217;
+  border-top: 1px solid var(--cnc-border);
+}
+.cnc-hardkey {
+  padding: 10px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 900;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #fff;
+  text-align: center;
+}
+.cnc-hardkey.start { background: #047857; border-color: #10b981; }
+.cnc-hardkey.hold { background: #b45309; border-color: #f59e0b; }
+.cnc-hardkey.estop { background: #991b1b; border-color: #ef4444; border-radius: 20px; }
+
+@media (max-width: 1024px) {
+  .cnc-pendant { flex-direction: column; }
+  .cnc-left-col { height: 50vh; border-right: none; border-bottom: 1px solid var(--cnc-border); }
+  .cnc-right-col { width: 100%; height: 50vh; }
+  .cnc-dro-panel { grid-template-columns: repeat(3, 1fr); }
+}

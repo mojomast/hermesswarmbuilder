@@ -17,6 +17,16 @@ const clients = [
   ['casefiles', 'casefiles.js', ['class="cabinet-layout"', 'class="folder-tabs"']],
   ['patchbay', 'patchbay.js', ['id="cableLayer"', 'class="patch-field"']],
   ['gallery', 'app.js', ['class="wayfinding"', 'id="curator-desk"']],
+  ['logic-analyzer', 'app.js', ['id="waveformCanvas"', 'class="la-cursor-hud"']],
+  ['scada-powergrid', 'app.js', ['id="sldCanvas"', 'class="scada-annunciator"']],
+  ['flight-annunciator', 'app.js', ['id="synopticCanvas"', 'class="fa-sequence-bar"']],
+  ['broadcast-switcher', 'app.js', ['class="bs-multiviewer"', 'class="bs-tbar-assembly"']],
+  ['audio-mixer', 'app.js', ['class="am-meterbridge"', 'class="am-master-center"']],
+  ['cnc-machining', 'app.js', ['id="toolpathCanvas"', 'class="cnc-dro-panel"']],
+  ['robotics-teleop', 'app.js', ['id="webglCanvas"', 'class="rt-hud-overlay"']],
+  ['network-noc', 'app.js', ['id="nocTopologySvg"', 'class="noc-dwdm-strip"']],
+  ['microscope-spectrometry', 'app.js', ['id="crtCanvas"', 'id="mcaCanvas"']],
+  ['reactor-core', 'app.js', ['id="hexCoreSvg"', 'class="rc-rod-deck"']],
 ];
 
 const requiredMethods = [

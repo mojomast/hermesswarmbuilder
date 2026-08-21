@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Audio Mixer | Large-Format Summing Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Overhead EBU R68 VU Meter Bridge -->
+  <header class="am-meterbridge" aria-label="EBU R68 Meter Bridge">
+    <div class="am-meter-unit" id="meterCh1">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:45%;"></div></div>
+      <span class="am-meter-label">CH 1</span>
+    </div>
+    <div class="am-meter-unit" id="meterCh2">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:65%;"></div></div>
+      <span class="am-meter-label">CH 2</span>
+    </div>
+    <div class="am-meter-unit" id="meterCh3">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:30%;"></div></div>
+      <span class="am-meter-label">CH 3</span>
+    </div>
+    <div class="am-meter-unit" id="meterCh4">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:50%;"></div></div>
+      <span class="am-meter-label">CH 4</span>
+    </div>
+    <div class="am-meter-unit" id="meterCh5">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:20%;"></div></div>
+      <span class="am-meter-label">CH 5</span>
+    </div>
+    <div class="am-meter-unit" id="meterCh6">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:40%;"></div></div>
+      <span class="am-meter-label">CH 6</span>
+    </div>
+    <!-- Master L/R Meters -->
+    <div class="am-meter-unit" id="meterMasterL">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:70%;background:linear-gradient(to top, #10b981 70%, #ef4444 100%);"></div></div>
+      <span class="am-meter-label" style="color:#00f0ff;">MST L</span>
+    </div>
+    <div class="am-meter-unit" id="meterMasterR">
+      <div class="am-meter-scale"><div class="am-meter-bar" style="--meter-level:70%;background:linear-gradient(to top, #10b981 70%, #ef4444 100%);"></div></div>
+      <span class="am-meter-label" style="color:#00f0ff;">MST R</span>
+    </div>
+  </header>
+
+  <!-- Main Mixing Console Desk -->
+  <main class="am-console">
+    <!-- Channel Strip Bay -->
+    <section class="am-channel-bay" id="channelBay" aria-label="Console Channel Strip Bank">
+      <!-- 6 Channel Strips rendered by Vue 3 / app.js -->
+    </section>
+
+    <!-- Master Center Section -->
+    <aside class="am-master-center" aria-label="Master Center Section">
+      <!-- Transport & Run Status -->
+      <div style="background:#090d12;border:1px solid var(--am-border);padding:8px;border-radius:3px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <b style="color:#00f0ff;font-size:11px;">SSL DUALITY // MASTER HUB</b>
+          <span id="phaseBadge" style="background:#0284c7;color:#fff;padding:1px 6px;border-radius:2px;font-size:9.5px;font-weight:700;">IDLE</span>
+        </div>
+        <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">
+          <div>ACTIVE RUN: <b id="masterRunId" style="color:#fff;">NONE</b></div>
+          <div>SSE STREAM: <b id="masterSseStatus" style="color:#10b981;">CONNECTED</b></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button id="btnTransportPause" class="am-btn-switch" type="button">PAUSE / MUTE</button>
+          <button id="btnTransportResume" class="am-btn-switch" type="button">RESUME</button>
+          <button id="btnTransportWake" class="am-btn-switch" style="color:#00f0ff;border-color:#00f0ff;" type="button">RUN NOW</button>
+          <button id="btnTransportStop" class="am-btn-switch" style="color:#ef4444;border-color:#ef4444;" type="button">EMERGENCY CUT</button>
+        </div>
+      </div>
+
+      <!-- Talkback Intercom & Slate Buffer -->
+      <div class="am-talkback-box">
+        <b style="font-size:10px;color:#f59e0b;">TALKBACK INTERCOM & SLATE BUFFER</b>
+        <input id="slateDirectiveInput" type="text" placeholder="Inject operator steering directive..." style="background:#05070a;border:1px solid #1e2632;color:#fff;padding:4px 6px;font-family:inherit;font-size:10.5px;border-radius:2px;">
+        <div style="display:flex;gap:4px;">
+          <button id="btnPushToTalk" class="am-btn-ptt" style="flex:1;" type="button">PUSH TO TALK (PTT)</button>
+          <button id="btnDeblockIntercom" class="am-btn-ptt" style="background:#78350f;border-color:#f59e0b;" type="button">DEBLOCK</button>
+        </div>
+      </div>
+
+      <!-- Total Recall Project Plans -->
+      <div style="flex:1;background:#090d12;border:1px solid var(--am-border);padding:8px;border-radius:3px;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <b style="font-size:10px;color:#00f0ff;">TOTAL RECALL PLANS</b>
+          <button id="btnNewSessionPlan" class="am-btn-switch" style="color:#00f0ff;" type="button">+ NEW</button>
+        </div>
+        <div id="recallPlansList" style="flex:1;overflow:auto;display:grid;gap:4px;">
+          <!-- Rendered by Vue 3 / app.js -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="amToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

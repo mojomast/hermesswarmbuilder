@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>CNC Machining Center | 5-Axis G-Code Motion Controller</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="cnc-masthead">
+    <div class="cnc-brand">
+      <span class="cnc-badge auto" id="modeBadge">AUTO</span>
+      <span>FANUC 31i-B5 // 5-AXIS CNC MACHINING CENTER</span>
+    </div>
+    <div style="display:flex;gap:12px;font-size:10.5px;" aria-live="polite">
+      <span>WCS: <b style="color:var(--cnc-cyan);">G54 PART ZERO</b></span>
+      <span>PROG: <b id="progName">O1001.NC</b></span>
+      <span>CYCLE: <b id="cyclePhase" style="color:var(--cnc-dro-green);">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnRefresh" class="cnc-hardkey" style="padding:4px 8px;font-size:9.5px;" type="button">SYNC DNC</button>
+      <button id="btnMdiSteer" class="cnc-hardkey" style="background:#0369a1;padding:4px 8px;font-size:9.5px;" type="button">MDI STEER</button>
+    </div>
+  </header>
+
+  <main class="cnc-pendant">
+    <!-- Left Half: 5-Axis DRO & 3D Toolpath Canvas -->
+    <section class="cnc-left-col" aria-label="Position DRO and Toolpath Simulation">
+      <!-- 5-Axis Precision DRO -->
+      <div class="cnc-dro-panel" aria-label="Digital Readout Coordinates">
+        <div class="cnc-dro-axis">
+          <span class="cnc-axis-name">AXIS X (PROGRESS)</span>
+          <span class="cnc-axis-val" id="droX">+000.000</span>
+        </div>
+        <div class="cnc-dro-axis">
+          <span class="cnc-axis-name">AXIS Y (GENERATION)</span>
+          <span class="cnc-axis-val" id="droY">+001.000</span>
+        </div>
+        <div class="cnc-dro-axis">
+          <span class="cnc-axis-name">AXIS Z (DEPTH/AGENTS)</span>
+          <span class="cnc-axis-val" id="droZ">-004.000</span>
+        </div>
+        <div class="cnc-dro-axis">
+          <span class="cnc-axis-name">AXIS A (GATE TILT)</span>
+          <span class="cnc-axis-val" id="droA">+000.000°</span>
+        </div>
+        <div class="cnc-dro-axis">
+          <span class="cnc-axis-name">AXIS B (THROUGHPUT)</span>
+          <span class="cnc-axis-val" id="droB">+045.000°</span>
+        </div>
+      </div>
+
+      <!-- Isometric 3D Toolpath Canvas -->
+      <div class="cnc-toolpath-wrap">
+        <canvas id="toolpathCanvas" role="img" aria-label="Isometric 3D CNC Toolpath Simulation Viewport"></canvas>
+      </div>
+    </section>
+
+    <!-- Right Half: G-Code Buffer & Hard-Key Console -->
+    <aside class="cnc-right-col" aria-label="G-Code Execution and Machine Controls">
+      <!-- Spindle & Feed Pacing -->
+      <div class="cnc-spindle-box">
+        <div>
+          <div style="font-size:9px;color:#64748b;">SPINDLE SPEED (M03)</div>
+          <div class="cnc-tach-val" id="spindleRpm">12,450 RPM</div>
+        </div>
+        <div>
+          <div style="font-size:9px;color:#64748b;">FEED OVERRIDE (FRO)</div>
+          <div style="font-size:12px;font-weight:bold;color:var(--cnc-dro-green);" id="froVal">100% (1,200 mm/min)</div>
+        </div>
+        <div>
+          <div style="font-size:9px;color:#64748b;">ACTIVE TOOL</div>
+          <div style="font-size:11px;font-weight:bold;color:#f59e0b;" id="activeTool">T01 (ARCHITECT)</div>
+        </div>
+      </div>
+
+      <!-- G-Code Program Stream Buffer -->
+      <div class="cnc-gcode-pane" id="gcodeBuffer" aria-label="G-Code Block Execution Stream">
+        <div class="cnc-gcode-line"><span>N0010</span><span>G21 G90 G17 G54</span></div>
+        <div class="cnc-gcode-line"><span>N0020</span><span>T01 M06 (SELECT AGENT: ARCHITECT)</span></div>
+        <div class="cnc-gcode-line"><span>N0030</span><span>S12000 M03</span></div>
+        <div class="cnc-gcode-line active"><span>N0040</span><span>G01 X142.500 Y84.200 Z-4.000 F1200</span></div>
+        <div class="cnc-gcode-line"><span>N0050</span><span>M98 P2001 (CALL SUB: DEVPLAN_BUILD)</span></div>
+      </div>
+
+      <!-- NC Part Programs (Project Plans) -->
+      <div style="padding:6px;background:#090d12;border-top:1px solid var(--cnc-border);display:flex;justify-content:space-between;align-items:center;">
+        <b style="font-size:10px;color:var(--cnc-cyan);">NC PART PROGRAMS (PLANS)</b>
+        <button id="btnNewNcPlan" class="cnc-hardkey" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+      </div>
+      <div id="ncPlansList" style="max-height:90px;overflow:auto;padding:6px;background:#06080b;display:grid;gap:4px;">
+        <!-- Rendered by Alpine / app.js -->
+      </div>
+
+      <!-- Industrial Hard-Keys -->
+      <div class="cnc-hardkeys">
+        <button id="btnCycleStart" class="cnc-hardkey start" type="button">CYCLE START</button>
+        <button id="btnFeedHold" class="cnc-hardkey hold" type="button">FEED HOLD</button>
+        <button id="btnEStop" class="cnc-hardkey estop" type="button">E-STOP</button>
+      </div>
+    </aside>
+  </main>
+
+  <div id="cncToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+/* Flight Annunciator Cockpit Styling */
+:root {
+  --fa-bg: #07090b;
+  --fa-panel: #0d1013;
+  --fa-bezel: #161b20;
+  --fa-border: #222a30;
+  --fa-amber: #ffb703;
+  --fa-red: #ff3344;
+  --fa-cyan: #00f0ff;
+  --fa-green: #00ff88;
+  --fa-white: #ffffff;
+  --fa-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--fa-bg);
+  color: #c9d1d9;
+  font-family: var(--fa-font);
+  font-size: 11px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Glareshield Top Deck */
+.fa-glareshield {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #090c0e;
+  border-bottom: 2px solid #1a2026;
+  gap: 12px;
+}
+
+.fa-master-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.master-warn-btn, .master-caut-btn {
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid #333;
+  background: #111;
+  color: #444;
+}
+.master-warn-btn.active {
+  background: #33070b;
+  color: var(--fa-red);
+  border-color: var(--fa-red);
+  box-shadow: 0 0 12px rgba(255,51,68,0.6);
+  animation: fa-flash 0.8s infinite alternate;
+}
+.master-caut-btn.active {
+  background: #2b1c02;
+  color: var(--fa-amber);
+  border-color: var(--fa-amber);
+  box-shadow: 0 0 12px rgba(255,183,3,0.6);
+  animation: fa-flash 1.2s infinite alternate;
+}
+@keyframes fa-flash {
+  0% { opacity: 0.6; }
+  100% { opacity: 1.0; }
+}
+
+/* 16-Phase Flight Sequence Bar */
+.fa-sequence-bar {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  max-width: 700px;
+}
+.fa-seq-seg {
+  flex: 1;
+  padding: 3px 2px;
+  background: #0d1114;
+  border: 1px solid #1a2228;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+  color: #3e4c59;
+  border-radius: 1px;
+}
+.fa-seq-seg.active {
+  background: #01242e;
+  color: var(--fa-cyan);
+  border-color: var(--fa-cyan);
+  box-shadow: 0 0 6px rgba(0,240,255,0.4);
+}
+
+/* Main Flight Deck Workspace */
+.fa-cockpit {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left Overhead Switchboard */
+.fa-overhead {
+  width: 340px;
+  background: var(--fa-panel);
+  border-right: 1px solid var(--fa-border);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  overflow: auto;
+  gap: 12px;
+}
+
+.fa-switch-bay {
+  background: #080a0c;
+  border: 1px solid #1a2228;
+  border-radius: 3px;
+  padding: 6px;
+}
+.fa-bay-header {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #64748b;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+.fa-switch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+/* Tactile Korry 389 Split-Legend Pushbuttons */
+.korry-housing {
+  position: relative;
+  width: 72px;
+  height: 64px;
+  background: #111417;
+  border: 1px solid #222a30;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 400px;
+}
+.korry-btn {
+  width: 66px;
+  height: 58px;
+  background: #0d1013;
+  border: 1px solid #1f272e;
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  padding: 2px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 3px rgba(255,255,255,0.05), 0 2px 4px rgba(0,0,0,0.6);
+}
+.korry-btn:active { transform: translateY(1px); }
+
+.legend-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  border-radius: 1px;
+}
+.legend-field.dead-front { color: #1e262f; background: #07090b; }
+.legend-field.lit-amber { color: var(--fa-amber); background: #2b1c02; text-shadow: 0 0 6px var(--fa-amber); }
+.legend-field.lit-red { color: var(--fa-red); background: #33070b; text-shadow: 0 0 6px var(--fa-red); }
+.legend-field.lit-cyan { color: var(--fa-cyan); background: #01242e; text-shadow: 0 0 6px var(--fa-cyan); }
+.legend-field.lit-green { color: var(--fa-green); background: #022b15; text-shadow: 0 0 6px var(--fa-green); }
+
+/* Guarded Safety Flip-Covers */
+.fa-guard-cover {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 10;
+  transform-origin: top center;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: rgba(220, 20, 60, 0.35);
+  border: 1.5px solid rgba(255, 50, 50, 0.7);
+  box-shadow: inset 0 0 8px rgba(255, 0, 0, 0.3);
+}
+.fa-guard-cover.guard-open {
+  transform: rotateX(-125deg);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.9);
+}
+
+/* Center Synoptic Display (MFD) */
+.fa-mfd-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #050709;
+}
+.fa-synoptic-wrap {
+  flex: 1;
+  position: relative;
+  border-bottom: 1px solid var(--fa-border);
+}
+svg#synopticCanvas {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* Lower Pedestal & Electronic Checklist */
+.fa-pedestal {
+  height: 220px;
+  display: flex;
+  background: var(--fa-panel);
+  border-top: 1px solid var(--fa-border);
+}
+.fa-checklist-pane {
+  flex: 1;
+  padding: 8px;
+  overflow: auto;
+  border-right: 1px solid var(--fa-border);
+}
+.fa-ecl-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  background: #07090b;
+  border: 1px solid #1a2228;
+  border-radius: 2px;
+  font-size: 10px;
+}
+.fa-ecl-step.pending { border-color: var(--fa-cyan); color: var(--fa-cyan); }
+.fa-ecl-step.complete { border-color: var(--fa-green); color: var(--fa-green); }
+
+/* Right FMS & Planning Deck */
+.fa-fms-deck {
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--fa-panel);
+  border-left: 1px solid var(--fa-border);
+}
+
+@media (max-width: 1024px) {
+  .fa-cockpit { flex-direction: column; }
+  .fa-overhead { width: 100%; height: 35vh; border-right: none; }
+  .fa-mfd-stage { height: 40vh; }
+  .fa-fms-deck { width: 100%; height: 25vh; border-left: none; }
+}

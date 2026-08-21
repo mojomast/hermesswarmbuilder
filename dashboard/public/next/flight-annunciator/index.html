@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Flight Annunciator | Aerospace Mission Cockpit & EICAS</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- Top Glareshield Master Warning & Phase Sequence -->
+  <header class="fa-glareshield">
+    <div class="fa-master-alert">
+      <button id="btnMasterWarn" class="master-warn-btn" type="button">MASTER<br>WARN</button>
+      <button id="btnMasterCaut" class="master-caut-btn" type="button">MASTER<br>CAUT</button>
+    </div>
+
+    <div class="fa-sequence-bar" id="flightSequenceBar" aria-label="16-Phase Flight Sequence Annunciator">
+      <!-- 16 Phases rendered by SolidJS / app.js -->
+    </div>
+
+    <div style="display:flex;gap:6px;">
+      <button id="btnLampTest" class="master-caut-btn" style="color:#00f0ff;border-color:#00f0ff;" type="button">LAMP<br>TEST</button>
+      <button id="btnSilenceAudio" class="master-caut-btn" type="button">SILENCE<br>AUDIO</button>
+    </div>
+  </header>
+
+  <main class="fa-cockpit">
+    <!-- Left Overhead Switchboard (4 Bays) -->
+    <section class="fa-overhead" aria-label="Overhead Switchboard Deck">
+      <!-- Bay 1: Core & Power Bus -->
+      <div class="fa-switch-bay">
+        <div class="fa-bay-header">BAY 1: CORE / POWER & SSE BUS</div>
+        <div class="fa-switch-grid">
+          <div class="korry-housing" id="swSse">
+            <button class="korry-btn" type="button" aria-pressed="true">
+              <div class="legend-field lit-green">SSE ON</div>
+              <div class="legend-field dead-front">FAIL</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swPause">
+            <button class="korry-btn" type="button" aria-pressed="false">
+              <div class="legend-field dead-front">PAUSED</div>
+              <div class="legend-field lit-cyan">STREAM</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swPoll">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">POLL</div>
+              <div class="legend-field lit-cyan">AUTO</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swSync">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">SYNC</div>
+              <div class="legend-field lit-green">REFRESH</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bay 2: Propulsion & Steer Bus -->
+      <div class="fa-switch-bay">
+        <div class="fa-bay-header">BAY 2: RUN PROPULSION & STEERING</div>
+        <div class="fa-switch-grid">
+          <div class="korry-housing" id="swRunNow">
+            <button class="korry-btn" type="button">
+              <div class="legend-field lit-cyan">RUN NOW</div>
+              <div class="legend-field dead-front">HOLD</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swLoop">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">LOOP</div>
+              <div class="legend-field lit-amber">SHOWCASE</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swSteer">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">STEER</div>
+              <div class="legend-field lit-cyan">ARMED</div>
+            </button>
+          </div>
+          <!-- Guarded Abort Switch -->
+          <div class="korry-housing" id="swAbort">
+            <div class="fa-guard-cover" id="guardAbort" aria-label="Safety Guard Cover" role="button" aria-expanded="false"></div>
+            <button class="korry-btn" type="button" style="background:#330005;">
+              <div class="legend-field lit-red">ABORT</div>
+              <div class="legend-field dead-front">STOP</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bay 3: Avionics & Acceptance Gates -->
+      <div class="fa-switch-bay">
+        <div class="fa-bay-header">BAY 3: AVIONICS & GATE INTERLOCKS</div>
+        <div class="fa-switch-grid">
+          <div class="korry-housing" id="swDeblock">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">BLOCKED</div>
+              <div class="legend-field lit-cyan">DEBLOCK</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swAdvice">
+            <button class="korry-btn" type="button">
+              <div class="legend-field dead-front">ADVICE</div>
+              <div class="legend-field lit-amber">QUERY</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swGates">
+            <button class="korry-btn" type="button">
+              <div class="legend-field lit-green">GATES</div>
+              <div class="legend-field dead-front">PASS</div>
+            </button>
+          </div>
+          <div class="korry-housing" id="swQueue">
+            <button class="korry-btn" type="button">
+              <div class="legend-field lit-cyan">QUEUE</div>
+              <div class="legend-field dead-front">PIN</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Center Synoptic Display (EICAS MFD) -->
+    <section class="fa-mfd-stage" aria-label="Synoptic System Schematic Display">
+      <div class="fa-synoptic-wrap">
+        <svg id="synopticCanvas" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cockpit Synoptic Flow Diagram">
+          <!-- Rendered by SolidJS / app.js -->
+        </svg>
+      </div>
+
+      <!-- Lower Pedestal: Electronic Checklist (ECL/QRH) -->
+      <div class="fa-pedestal">
+        <div class="fa-checklist-pane" aria-label="Electronic Checklist (ECL)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <b style="color:var(--fa-cyan);font-size:10px;">ELECTRONIC CHECKLIST (ECL / QRH)</b>
+            <span id="eclFaultTitle" style="color:var(--fa-amber);font-size:9.5px;">NOMINAL FLIGHT PROFILE</span>
+          </div>
+          <div id="eclStepsList">
+            <div class="fa-ecl-step complete"><span>1. SSE TELEMETRY STREAM</span><span>[VERIFIED GREEN]</span></div>
+            <div class="fa-ecl-step complete"><span>2. ACTIVE AGENT CONCURRENCY</span><span>[NORMAL]</span></div>
+            <div class="fa-ecl-step complete"><span>3. ACCEPTANCE GATE RELAYS</span><span>[ARMED]</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Flight Management System (FMS & Project Plans) -->
+    <aside class="fa-fms-deck" aria-label="Flight Management System and Plans">
+      <div style="padding:8px;border-bottom:1px solid var(--fa-border);display:flex;justify-content:space-between;align-items:center;">
+        <b style="color:var(--fa-cyan);">FMS // PROJECT PLANS</b>
+        <button id="btnNewFlightPlan" class="master-caut-btn" style="color:#00f0ff;border-color:#00f0ff;padding:2px 6px;" type="button">+ NEW</button>
+      </div>
+      <div id="fmsPlansList" style="flex:1;overflow:auto;padding:8px;display:grid;gap:6px;">
+        <!-- Rendered by SolidJS / app.js -->
+      </div>
+      <div style="padding:8px;border-top:1px solid var(--fa-border);background:#090c0e;">
+        <div style="font-size:9.5px;color:#64748b;margin-bottom:4px;">UPLINK // PLANNING ASSISTANT</div>
+        <button id="btnLaunchAssist" class="master-caut-btn" style="width:100%;color:#00ff88;border-color:#00ff88;" type="button">START AI COPILOT SESSION</button>
+      </div>
+    </aside>
+  </main>
+
+  <div id="faToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

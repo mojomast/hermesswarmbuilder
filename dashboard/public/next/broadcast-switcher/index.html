@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Broadcast Switcher | MCR Production Console</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="bs-masthead">
+    <div class="bs-brand">
+      <div class="bs-onair-badge" id="onAirBadge">ON AIR</div>
+      <span>KAYENNE 4-M/E // BROADCAST MASTER CONTROL</span>
+    </div>
+    <div style="display:flex;gap:12px;font-size:10.5px;" aria-live="polite">
+      <span>FEED SYNC: <b id="feedSyncText" style="color:var(--bs-tally-pvw);">LOCKED</b></span>
+      <span>ACTIVE RUN: <b id="activeRunText">NONE</b></span>
+      <span>PHASE: <b id="activePhaseText" style="color:#00f0ff;">IDLE</b></span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button id="btnResyncFeed" class="bs-btn-crosspoint" style="padding:4px 8px;" type="button">SYNC FEEDS</button>
+      <button id="btnEStop" class="bs-btn-crosspoint" style="background:#7f1d1d;color:#fff;padding:4px 8px;" type="button">FADE TO BLACK (E-STOP)</button>
+    </div>
+  </header>
+
+  <!-- 4-Up Multiviewer Monitor Wall -->
+  <section class="bs-multiviewer" aria-label="Multiviewer Monitor Wall">
+    <!-- PGM Master Monitor -->
+    <div class="bs-monitor tally-pgm" id="monPgm">
+      <div class="bs-monitor-header">
+        <span style="color:var(--bs-tally-pgm);">PROGRAM (PGM) // ON-AIR LIVE</span>
+        <span id="pgmSourceBadge">CAM 1: LEAD ARCH</span>
+      </div>
+      <div class="bs-monitor-body" id="pgmBody">
+        Live master broadcast feed of active swarm execution...
+      </div>
+    </div>
+
+    <!-- PVW Preview Monitor -->
+    <div class="bs-monitor tally-pvw" id="monPvw">
+      <div class="bs-monitor-header">
+        <span style="color:var(--bs-tally-pvw);">PREVIEW (PVW) // NEXT CUE</span>
+        <span id="pvwSourceBadge">CAM 2: CODER</span>
+      </div>
+      <div class="bs-monitor-body" id="pvwBody">
+        Staged preview stream cued for next transition...
+      </div>
+    </div>
+
+    <!-- CAM 1: Lead Architect -->
+    <div class="bs-monitor" id="monCam1">
+      <div class="bs-monitor-header"><span>CAM 1: ARCHITECT</span><span style="color:#10b981;">LIVE</span></div>
+      <div class="bs-monitor-body" id="cam1Body">Spec analysis & schema generation...</div>
+    </div>
+
+    <!-- CAM 2: Code Generator -->
+    <div class="bs-monitor" id="monCam2">
+      <div class="bs-monitor-header"><span>CAM 2: CODER</span><span style="color:#10b981;">LIVE</span></div>
+      <div class="bs-monitor-body" id="cam2Body">File writing & syntax verification...</div>
+    </div>
+
+    <!-- CAM 3: Test Runner -->
+    <div class="bs-monitor" id="monCam3">
+      <div class="bs-monitor-header"><span>CAM 3: QA VERIFIER</span><span style="color:#f59e0b;">ARMED</span></div>
+      <div class="bs-monitor-body" id="cam3Body">Acceptance gates & test runners...</div>
+    </div>
+
+    <!-- CAM 4: Showcase Loop -->
+    <div class="bs-monitor" id="monCam4">
+      <div class="bs-monitor-header"><span>CAM 4: SHOWCASE</span><span style="color:#64748b;">STANDBY</span></div>
+      <div class="bs-monitor-body" id="cam4Body">Creative loop & variant scorecard...</div>
+    </div>
+
+    <!-- AUX 1: Event Log Oscilloscope -->
+    <div class="bs-monitor" id="monAux1">
+      <div class="bs-monitor-header"><span>AUX 1: EVENT LOG</span><span style="color:#00f0ff;">SSE</span></div>
+      <div class="bs-monitor-body" id="aux1Body">Event stream monitor...</div>
+    </div>
+
+    <!-- AUX 2: Blocker & Deblock Intercom -->
+    <div class="bs-monitor" id="monAux2">
+      <div class="bs-monitor-header"><span style="color:#ef4444;">AUX 2: DEBLOCK INTERCOM</span><span id="blockerBadge">NORMAL</span></div>
+      <div class="bs-monitor-body" id="aux2Body">No active blocker interrupts.</div>
+    </div>
+  </section>
+
+  <!-- Lower Switcher Hardware Deck -->
+  <main class="bs-switcher-deck">
+    <!-- Crosspoint Buses -->
+    <section class="bs-crosspoint-bay" aria-label="Crosspoint Switcher Buses">
+      <!-- PGM Bus Row -->
+      <div class="bs-bus-row">
+        <div class="bs-bus-label pgm">PGM BUS</div>
+        <div class="bs-bus-buttons" id="pgmBusButtons">
+          <button class="bs-btn-crosspoint active-pgm" type="button" data-source="cam1">CAM 1</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="cam2">CAM 2</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="cam3">CAM 3</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="cam4">CAM 4</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="aux1">AUX 1</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="aux2">AUX 2</button>
+        </div>
+      </div>
+
+      <!-- PVW Bus Row -->
+      <div class="bs-bus-row">
+        <div class="bs-bus-label pvw">PVW BUS</div>
+        <div class="bs-bus-buttons" id="pvwBusButtons">
+          <button class="bs-btn-crosspoint" type="button" data-source="cam1">CAM 1</button>
+          <button class="bs-btn-crosspoint active-pvw" type="button" data-source="cam2">CAM 2</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="cam3">CAM 3</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="cam4">CAM 4</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="aux1">AUX 1</button>
+          <button class="bs-btn-crosspoint" type="button" data-source="aux2">AUX 2</button>
+        </div>
+      </div>
+
+      <!-- DSK Keyer Overlays -->
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button id="btnDsk1" class="bs-btn-crosspoint" style="flex:1;" type="button">DSK 1: SPEC.MD (OVERLAY)</button>
+        <button id="btnDsk2" class="bs-btn-crosspoint" style="flex:1;" type="button">DSK 2: DEVPLAN.MD (OVERLAY)</button>
+        <button id="btnDeblockAdvice" class="bs-btn-crosspoint" style="flex:1;background:#0369a1;" type="button">DEBLOCK ADVICE</button>
+      </div>
+    </section>
+
+    <!-- Transition Block & T-Bar -->
+    <section class="bs-transition-block" aria-label="Transition Block and Fader Bar">
+      <div class="bs-tbar-assembly" id="tbarAssembly">
+        <div class="bs-tbar-handle" id="tbarHandle" tabindex="0" role="slider" aria-label="Transition Fader" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+      </div>
+      <div style="display:flex;gap:6px;width:100%;">
+        <button id="btnCut" class="bs-btn-take cut" type="button">CUT</button>
+        <button id="btnAuto" class="bs-btn-take auto" type="button">AUTO MIX</button>
+      </div>
+    </section>
+
+    <!-- Studio Planning & Macro Deck -->
+    <aside class="bs-studio-dock" aria-label="Studio Planning and Macros">
+      <div style="padding:6px;border-bottom:1px solid var(--bs-border);display:flex;justify-content:space-between;align-items:center;">
+        <b style="font-size:10px;color:#00f0ff;">BROADCAST PROJECT PLANS</b>
+        <button id="btnNewStudioPlan" class="bs-btn-crosspoint" style="padding:2px 6px;" type="button">+ NEW</button>
+      </div>
+      <div id="studioPlansList" style="flex:1;overflow:auto;padding:6px;display:grid;gap:6px;">
+        <!-- Rendered by Svelte / app.js -->
+      </div>
+      <div style="padding:6px;border-top:1px solid var(--bs-border);background:#0d1218;">
+        <button id="btnShowcaseLoop" class="bs-btn-take" style="background:#0284c7;border-color:#38bdf8;padding:6px;" type="button">CUE SHOWCASE MACRO LOOP</button>
+      </div>
+    </aside>
+  </main>
+
+  <div id="bsToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="../../dashboard-directory.js"></script>
+</body>
+</html>

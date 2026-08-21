@@ -103,7 +103,7 @@ test("Temporal Mission live-data contract resyncs fixture state instead of demo 
 
   const temporalSource = await Bun.file(join(dashboardRoot, "public/control-planes/temporal-mission/temporal-mission.js")).text();
   expect(temporalSource).toContain("await this.client.resyncSnapshots()");
-  expect(temporalSource).toContain("deriveCanonicalDisposition(state, this.client.cachedControl");
+  expect(temporalSource).toContain("deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff)");
   expect(temporalSource).not.toContain("this.el.hudRun.textContent = state.currentRunId || 'run-103-spatial'");
   expect(temporalSource).not.toContain('const approval = "sha256:7f4a2..."');
 });

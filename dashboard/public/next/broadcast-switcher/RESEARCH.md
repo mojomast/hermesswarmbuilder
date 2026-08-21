@@ -1,9 +1,9 @@
 # Broadcast Switcher Interface Research & Design Report
 
-**Client Route:** `/next/broadcast-switcher/index.html`  
-**Client Codebase Archetype:** Television Broadcast Master Control Room & Production Video Switcher  
-**Primary Framework:** Svelte Stores & Reactive Engine (`../../vendor/svelte.js`)  
-**Primary Renderer:** High-Performance Multiviewer Monitor Wall + Tactile Crosspoint Matrix Bus + Hardware T-Bar Transition Fader  
+**Client Route:** `/next/broadcast-switcher/index.html`
+**Client Codebase Archetype:** Television Broadcast Master Control Room & Production Video Switcher
+**Primary Framework:** Svelte Stores & Reactive Engine (`../../vendor/svelte.js`)
+**Primary Renderer:** High-Performance Multiviewer Monitor Wall + Tactile Crosspoint Matrix Bus + Hardware T-Bar Transition Fader
 
 ---
 
@@ -22,20 +22,20 @@ Key operational principles applied:
 
 ## 2. Authoritative Sources
 
-1. **SMPTE ST 2110 Standards Suite (*Professional Media Over Managed IP Networks*)**  
-   https://www.smpte.org/standards  
+1. **SMPTE ST 2110 Standards Suite (*Professional Media Over Managed IP Networks*)**
+   https://www.smpte.org/standards
    *Applied*: Separates media payload streams into discrete essences (Video / Telemetry, Audio / Logs, Ancillary / State Metadata); establishes low-latency synchronization.
 
-2. **EBU Recommendation R128 (*Loudness normalisation and permitted maximum level of audio signals*)**  
-   https://tech.ebu.ch/publications/r128  
+2. **EBU Recommendation R128 (*Loudness normalisation and permitted maximum level of audio signals*)**
+   https://tech.ebu.ch/publications/r128
    *Applied*: Fast quasi-peak and short-term loudness PPM meter ballistics integrated into multiviewer monitor tiles.
 
-3. **Grass Valley — *Kayenne Video Production Center Operations & User Guide***  
-   https://www.grassvalley.com/products/production-switchers/kayenne/  
+3. **Grass Valley — *Kayenne Video Production Center Operations & User Guide***
+   https://www.grassvalley.com/products/production-switchers/kayenne/
    *Applied*: Dual-bus PGM/PVW crosspoint matrix layout; tactile T-bar transition kinematics; DSK tie and cutover logic; macro cue sequencing for automated loops.
 
-4. **W3C WAI-ARIA APG — *Toolbar, Grid, and Status Role Guidelines***  
-   https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/  
+4. **W3C WAI-ARIA APG — *Toolbar, Grid, and Status Role Guidelines***
+   https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/
    *Applied*: Accessible keyboard hotkeys for crosspoint takes (`1-8`, `Space` for CUT, `Enter` for AUTO); high-visibility tally state badges.
 
 ---

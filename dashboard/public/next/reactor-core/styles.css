@@ -1,165 +1,938 @@
-/* Nuclear Reactor Core HMI Styling */
+/* ==========================================================================
+   Nuclear Reactor Core & SPDS Safety Console Styling
+   Class 1E High-Contrast Nuclear MCR Theme (AP1000 & NUREG-0700)
+   4K & High-DPI Display Optimization (14px Base REM System)
+   ========================================================================== */
+
 :root {
-  --rc-bg: #07090b;
-  --rc-panel: #0d1115;
-  --rc-border: #1a222a;
-  --rc-flux-blue: #00e5ff;
+  --rc-bg: #05070a;
+  --rc-panel: #090e14;
+  --rc-panel-alt: #0e1520;
+  --rc-surface: #131f2f;
+  --rc-border: #1a2a3d;
+  --rc-border-bright: #294260;
+
+  --rc-flux-cyan: #00e5ff;
+  --rc-flux-cyan-glow: rgba(0, 229, 255, 0.4);
   --rc-flux-green: #10b981;
+  --rc-flux-green-glow: rgba(16, 185, 129, 0.4);
   --rc-flux-amber: #f59e0b;
+  --rc-flux-amber-glow: rgba(245, 158, 11, 0.4);
   --rc-flux-red: #ef4444;
-  --rc-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --rc-flux-red-glow: rgba(239, 68, 68, 0.45);
+
+  --rc-text: #e2e8f0;
+  --rc-text-dim: #94a3b8;
+  --rc-text-muted: #475569;
+
+  --rc-font: "JetBrains Mono", ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, monospace;
+  --rc-radius: 4px;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  height: 100%;
+}
+
+@media (min-width: 2560px) {
+  html { font-size: 16px; }
+}
+
+@media (min-width: 3840px) {
+  html { font-size: 18px; }
+}
+
 body {
   background: var(--rc-bg);
-  color: #c9d1d9;
+  color: var(--rc-text);
   font-family: var(--rc-font);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 1rem;
+  line-height: 1.45;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Class 1E Top Header */
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--rc-panel); }
+::-webkit-scrollbar-thumb { background: var(--rc-border-bright); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--rc-flux-cyan); }
+
+/* Top Class 1E Masthead */
 .rc-masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: #090c10;
+  padding: 0.6rem 1.2rem;
+  background: var(--rc-panel);
   border-bottom: 2px solid var(--rc-border);
-  gap: 12px;
+  gap: 1rem;
+  flex-wrap: wrap;
+  z-index: 10;
 }
-.rc-brand { font-weight: 800; color: #fff; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
-.rc-badge-1e { background: #1e3a8a; color: #60a5fa; border: 1px solid #3b82f6; padding: 1px 6px; border-radius: 2px; font-size: 9px; font-weight: 900; }
 
-/* Main Reactor Console */
+.rc-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rc-badge-1e {
+  background: #1e3a8a;
+  color: #60a5fa;
+  border: 1px solid #3b82f6;
+  padding: 0.15rem 0.55rem;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.rc-title-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.rc-brand-text {
+  font-weight: 800;
+  color: #ffffff;
+  font-size: 1.05rem;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.rc-sub-brand {
+  font-size: 0.72rem;
+  color: var(--rc-text-dim);
+  letter-spacing: 0.06em;
+}
+
+.rc-telemetry-strip {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  background: var(--rc-panel-alt);
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--rc-radius);
+  border: 1px solid var(--rc-border);
+}
+
+.rc-stat-item {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.75rem;
+}
+
+.rc-stat-label {
+  color: var(--rc-text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.rc-stat-val {
+  color: var(--rc-flux-cyan);
+  font-weight: 700;
+}
+
+.rc-masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* 16-Phase Workflow Strip */
+.rc-workflow-bar {
+  display: flex;
+  align-items: center;
+  background: #070c12;
+  border-bottom: 1px solid var(--rc-border);
+  padding: 0.4rem 1.2rem;
+  gap: 0.8rem;
+  overflow-x: auto;
+  min-height: 2.4rem;
+}
+
+.rc-workflow-lead {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.rc-wf-label {
+  color: var(--rc-text-muted);
+  font-weight: 700;
+}
+
+.rc-wf-phase {
+  color: var(--rc-flux-green);
+  font-weight: 800;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  text-shadow: 0 0 8px var(--rc-flux-green-glow);
+}
+
+.rc-wf-run {
+  color: var(--rc-flux-cyan);
+  font-size: 0.75rem;
+}
+
+.rc-phase-track {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  overflow-x: auto;
+}
+
+.rc-phase-step {
+  font-size: 0.68rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+  background: var(--rc-panel-alt);
+  color: var(--rc-text-muted);
+  border: 1px solid var(--rc-border);
+  white-space: nowrap;
+}
+
+.rc-phase-step.past {
+  color: var(--rc-text-dim);
+  border-color: #1a364a;
+  background: #0a1824;
+}
+
+.rc-phase-step.current {
+  color: #000;
+  background: var(--rc-flux-green);
+  border-color: var(--rc-flux-green);
+  font-weight: 800;
+  box-shadow: 0 0 10px var(--rc-flux-green-glow);
+}
+
+.rc-blocker-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #3b0d0c;
+  border: 1px solid var(--rc-flux-red);
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  animation: pulseScram 2s infinite ease-in-out;
+}
+
+@keyframes pulseScram {
+  0%, 100% { border-color: var(--rc-flux-red); box-shadow: 0 0 6px var(--rc-flux-red-glow); }
+  50% { border-color: #ff8888; box-shadow: 0 0 16px var(--rc-flux-red-glow); }
+}
+
+.rc-blocker-text {
+  color: #ffcccc;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* Console Stage Layout */
 .rc-stage {
   display: flex;
   flex: 1;
   min-height: 0;
+  background: var(--rc-bg);
 }
 
-/* Left Half: Hexagonal Core Matrix & Control Rod Servos */
+/* Left Column: 61-Hex Core & Control Rod Servos */
 .rc-left-col {
-  flex: 1;
+  flex: 1.2;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--rc-border);
   min-width: 0;
+  border-right: 1px solid var(--rc-border);
 }
 
 .rc-core-wrap {
   flex: 1;
   position: relative;
-  background: #040608;
+  background: #030508;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.rc-core-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: rgba(9, 14, 20, 0.95);
+  border-bottom: 1px solid var(--rc-border);
+}
+
+.rc-core-title {
+  color: var(--rc-flux-cyan);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.rc-core-hud {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.72rem;
+  color: var(--rc-text-dim);
+}
+
+.rc-svg-holder {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
+  padding: 0.5rem;
+  overflow: hidden;
 }
+
 svg#hexCoreSvg {
-  width: 90%;
-  height: 90%;
+  width: 100%;
+  height: 100%;
+  max-height: 38rem;
   display: block;
 }
 
-/* Control Rod Servo Bank Deck */
+/* Control Rod Drive Mechanism (CRDM) Servos Deck */
 .rc-rod-deck {
-  height: 110px;
-  background: #080b0e;
-  border-top: 1px solid var(--rc-border);
+  height: 9rem;
+  background: var(--rc-panel);
+  border-top: 2px solid var(--rc-border);
   display: flex;
-  padding: 8px 12px;
-  gap: 12px;
+  padding: 0.6rem 1rem;
+  gap: 0.8rem;
+  overflow-x: auto;
 }
+
 .rc-rod-unit {
   flex: 1;
+  min-width: 3.5rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 0.3rem;
 }
+
 .rc-rod-track {
-  width: 14px;
+  width: 1.2rem;
   flex: 1;
-  background: #0d1217;
-  border: 1px solid #1e2836;
+  background: #070a0e;
+  border: 1px solid var(--rc-border-bright);
   border-radius: 2px;
   position: relative;
   overflow: hidden;
 }
+
 .rc-rod-bar {
   position: absolute;
   top: 0;
   width: 100%;
-  height: var(--rod-pos, 30%);
-  background: #38bdf8;
-  transition: height 0.2s ease;
+  height: var(--rod-pos, 25%);
+  background: var(--rc-flux-cyan);
+  box-shadow: 0 0 8px var(--rc-flux-cyan-glow);
+  transition: height 0.25s ease;
 }
 
-/* Right Half: SPDS & Safety Injection */
+.rc-rod-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--rc-text-dim);
+  white-space: nowrap;
+}
+
+/* Center Column: SPDS & Assembly Parameters */
+.rc-center-col {
+  width: 26rem;
+  min-width: 22rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--rc-border);
+  background: var(--rc-panel);
+  overflow-y: auto;
+  gap: 0.8rem;
+  padding: 0.8rem;
+}
+
+.rc-spds-wrap {
+  background: var(--rc-panel-alt);
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rc-spds-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--rc-border);
+  padding-bottom: 0.3rem;
+}
+
+.rc-spds-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--rc-text-dim);
+}
+
+.rc-spds-canvas-holder {
+  width: 100%;
+  height: 14rem;
+  position: relative;
+}
+
+canvas#spdsCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.rc-assembly-meta-wrap {
+  background: var(--rc-panel-alt);
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rc-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--rc-border);
+  padding-bottom: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--rc-text-dim);
+}
+
+.rc-param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.rc-param-grid label {
+  color: var(--rc-text-muted);
+  font-size: 0.68rem;
+}
+
+.rc-param-grid b {
+  color: var(--rc-text);
+}
+
+.rc-runs-deck {
+  background: var(--rc-panel-alt);
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rc-select {
+  width: 100%;
+  background: #05070a;
+  border: 1px solid var(--rc-border-bright);
+  color: var(--rc-text);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--rc-radius);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.rc-select:focus {
+  outline: 2px solid var(--rc-flux-cyan);
+  border-color: var(--rc-flux-cyan);
+}
+
+.rc-run-meta-card {
+  background: #05070a;
+  border: 1px solid var(--rc-border);
+  border-radius: 3px;
+  padding: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.74rem;
+}
+
+.rc-dim { color: var(--rc-text-muted); }
+
+/* Right Column: Agents, Telemetry Feed & Gates */
 .rc-right-col {
-  width: 420px;
+  width: 28rem;
+  min-width: 22rem;
   display: flex;
   flex-direction: column;
   background: var(--rc-panel);
+  padding: 0.8rem;
+  gap: 0.8rem;
 }
 
 .rc-section {
-  padding: 8px;
-  border-bottom: 1px solid var(--rc-border);
+  background: var(--rc-panel-alt);
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
-.rc-section-title {
-  font-size: 10px;
+
+.rc-agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-y: auto;
+}
+
+.rc-agent-card {
+  background: #05070a;
+  border: 1px solid var(--rc-border);
+  border-radius: 3px;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.74rem;
+}
+
+.rc-agent-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.rc-agent-name {
+  color: var(--rc-flux-cyan);
+  font-weight: 700;
+}
+
+.rc-agent-role {
+  color: var(--rc-flux-green);
+  font-size: 0.68rem;
+}
+
+.rc-agent-task {
+  color: var(--rc-text-dim);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-feed-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rc-input {
+  width: 100%;
+  background: #05070a;
+  border: 1px solid var(--rc-border-bright);
+  color: var(--rc-text);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--rc-radius);
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+.rc-input:focus {
+  outline: 2px solid var(--rc-flux-cyan);
+  border-color: var(--rc-flux-cyan);
+}
+
+.rc-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.rc-chip {
+  background: #05070a;
+  border: 1px solid var(--rc-border);
+  color: var(--rc-text-dim);
+  padding: 0.2rem 0.5rem;
+  border-radius: 2px;
+  font-size: 0.68rem;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rc-chip.active {
+  background: var(--rc-surface);
+  border-color: var(--rc-flux-cyan);
+  color: var(--rc-flux-cyan);
+}
+
+.rc-check-label {
+  font-size: 0.68rem;
+  color: var(--rc-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  cursor: pointer;
+}
+
+.rc-telemetry-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-y: auto;
+  background: #05070a;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.5rem;
+}
+
+.rc-event-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 3px;
+  background: var(--rc-panel-alt);
+  border-left: 3px solid var(--rc-border-bright);
+  font-size: 0.73rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.rc-event-row:hover {
+  background: var(--rc-surface);
+}
+
+.rc-event-row.tool { border-left-color: var(--rc-flux-cyan); }
+.rc-event-row.error { border-left-color: var(--rc-flux-red); background: #1c080a; }
+
+.rc-event-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.rc-event-time { color: var(--rc-text-muted); font-size: 0.65rem; }
+.rc-event-src { color: var(--rc-flux-green); font-weight: 700; font-size: 0.68rem; }
+.rc-event-type { color: var(--rc-flux-cyan); font-size: 0.68rem; }
+.rc-event-msg { color: var(--rc-text); word-break: break-all; }
+
+.rc-gates-quick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+.rc-gate-card {
+  background: #05070a;
+  border: 1px solid var(--rc-border);
+  padding: 0.4rem 0.5rem;
+  border-radius: 3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+}
+
+/* Button & Badge System */
+.rc-btn {
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: var(--rc-radius);
+  cursor: pointer;
+  border: 1px solid var(--rc-border-bright);
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  letter-spacing: 0.03em;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.rc-btn:hover {
+  background: #192b42;
+  border-color: var(--rc-flux-cyan);
+  color: #fff;
+}
+
+.rc-btn:focus-visible {
+  outline: 2px solid var(--rc-flux-cyan);
+  outline-offset: 2px;
+}
+
+.rc-btn.primary {
+  background: #0369a1;
+  border-color: var(--rc-flux-cyan);
+  color: #fff;
+}
+
+.rc-btn.primary:hover {
+  background: #0284c7;
+  box-shadow: 0 0 10px var(--rc-flux-cyan-glow);
+}
+
+.rc-btn.danger {
+  background: #7f1d1d;
+  border-color: var(--rc-flux-red);
+  color: #fff;
+}
+
+.rc-btn.danger:hover {
+  background: #991b1b;
+  box-shadow: 0 0 10px var(--rc-flux-red-glow);
+}
+
+.rc-btn-scram {
+  padding: 0.5rem 1.2rem;
+  background: #991b1b;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  border: 2px solid var(--rc-flux-red);
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  box-shadow: 0 0 12px var(--rc-flux-red-glow);
+  transition: all 0.15s;
+}
+
+.rc-btn-scram:hover {
+  background: #b91c1c;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.8);
+}
+
+.rc-btn.small { padding: 0.3rem 0.6rem; font-size: 0.72rem; }
+.rc-btn.tiny { padding: 0.15rem 0.45rem; font-size: 0.65rem; }
+
+.rc-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+  background: var(--rc-surface);
+  border: 1px solid var(--rc-border-bright);
+  color: var(--rc-flux-cyan);
+}
+
+.rc-badge.success {
+  background: #0d281e;
+  border-color: var(--rc-flux-green);
+  color: var(--rc-flux-green);
+}
+
+.rc-badge.danger {
+  background: #3b0d0c;
+  border-color: var(--rc-flux-red);
+  color: #ff8888;
+}
+
+/* Modals & Drawers */
+.rc-dialog {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: auto;
+}
+
+.rc-dialog::backdrop {
+  background: rgba(3, 5, 8, 0.88);
+  backdrop-filter: blur(4px);
+}
+
+.rc-dialog-pane {
+  background: var(--rc-panel);
+  border: 2px solid var(--rc-border-bright);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), 0 0 20px rgba(0, 229, 255, 0.15);
+  width: 50rem;
+  max-width: 94vw;
+  height: 42rem;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--rc-text);
+}
+
+.rc-dialog-pane.wide { width: 68rem; }
+.rc-dialog-pane.ultra-wide { width: 82rem; }
+.rc-dialog-pane.large { width: 60rem; }
+
+.rc-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 1.2rem;
+  background: var(--rc-panel-alt);
+  border-bottom: 2px solid var(--rc-border);
+}
+
+.rc-dialog-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.rc-dialog-title-group h2 {
+  font-size: 0.95rem;
   font-weight: 800;
-  color: var(--rc-flux-blue);
-  margin-bottom: 6px;
+  color: var(--rc-flux-cyan);
   letter-spacing: 0.05em;
 }
 
-/* Armed SCRAM Mushroom Button */
-.rc-scram-box {
+.rc-modal-tabs {
+  display: flex;
+  background: #06090e;
+  border-bottom: 1px solid var(--rc-border);
+  padding: 0 1rem;
+  gap: 0.4rem;
+  overflow-x: auto;
+}
+
+.rc-tab-btn {
+  padding: 0.6rem 0.9rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--rc-text-dim);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+}
+
+.rc-tab-btn:hover { color: #fff; }
+
+.rc-tab-btn.active {
+  color: var(--rc-flux-cyan);
+  border-bottom-color: var(--rc-flux-cyan);
+  text-shadow: 0 0 8px var(--rc-flux-cyan-glow);
+}
+
+.rc-dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.rc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.rc-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rc-form-group.full { grid-column: 1 / -1; }
+
+.rc-form-group label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--rc-text-dim);
+}
+
+.rc-form-group textarea {
+  width: 100%;
+  min-height: 5rem;
+  background: #05070a;
+  border: 1px solid var(--rc-border-bright);
+  color: var(--rc-text);
+  padding: 0.5rem;
+  border-radius: var(--rc-radius);
+  font-family: inherit;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.rc-form-group textarea:focus {
+  outline: 2px solid var(--rc-flux-cyan);
+  border-color: var(--rc-flux-cyan);
+}
+
+.rc-code-block {
+  background: #030508;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  padding: 0.8rem;
+  font-family: var(--rc-font);
+  font-size: 0.78rem;
+  color: #bae6fd;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-y: auto;
+  max-height: 28rem;
+}
+
+.rc-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  padding: 0.75rem 1.2rem;
+  border-radius: var(--rc-radius);
+  font-size: 0.85rem;
+  font-weight: 700;
+  z-index: 1000;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #18080a;
-  border: 2px solid #ef4444;
-  border-radius: 4px;
-  padding: 8px;
-}
-.rc-btn-scram {
-  padding: 10px 20px;
-  background: #991b1b;
-  color: #fff;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 900;
-  border: 2px solid #ef4444;
-  border-radius: 24px;
-  cursor: pointer;
-  box-shadow: 0 0 12px rgba(239,68,68,0.6);
-}
-.rc-btn-scram:active { background: #ef4444; }
-
-.rc-btn {
-  padding: 5px 8px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 2px;
-  cursor: pointer;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #fff;
+  gap: 0.6rem;
+  animation: slideToast 0.25s ease-out;
 }
 
-@media (max-width: 1024px) {
-  .rc-stage { flex-direction: column; }
-  .rc-left-col { height: 50vh; border-right: none; border-bottom: 1px solid var(--rc-border); }
-  .rc-right-col { width: 100%; height: 50vh; }
+@keyframes slideToast {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Responsive Layout */
+@media (max-width: 1200px) {
+  .rc-stage { flex-direction: column; overflow-y: auto; }
+  .rc-left-col { height: 35rem; border-right: none; border-bottom: 1px solid var(--rc-border); }
+  .rc-center-col { width: 100%; height: auto; }
+  .rc-right-col { width: 100%; height: auto; }
 }

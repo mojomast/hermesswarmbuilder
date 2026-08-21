@@ -1,84 +1,113 @@
-/* Microscope Spectrometry HMI Styling */
+/* Analytical SEM & Mass Spectrometry Styles */
 :root {
-  --sem-bg: #090c0f;
-  --sem-panel: #11151a;
-  --sem-border: #1e242c;
-  --sem-phosphor: #22ee55;
+  --sem-bg: #05070a;
+  --sem-panel: #0b1017;
+  --sem-panel-alt: #101620;
+  --sem-border: #1a2432;
+  --sem-border-light: #2c3c52;
+  --sem-text: #e2e8f0;
+  --sem-text-dim: #94a3b8;
+  --sem-p31: #22ee55;
   --sem-cyan: #38bdf8;
   --sem-amber: #fbbf24;
-  --sem-red: #f87171;
-  --sem-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --sem-red: #ef4444;
+  --sem-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --sem-base-size: clamp(13px, 0.9vw, 16px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
   background: var(--sem-bg);
-  color: #cdd9e5;
-  font-family: var(--sem-font);
-  font-size: 11px;
-  line-height: 1.4;
+  color: var(--sem-text);
+  font-family: var(--sem-font-mono);
+  font-size: var(--sem-base-size);
+  line-height: 1.45;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  user-select: none;
 }
 
-/* Master Top Rail */
+/* Optics Column Masthead */
 .sem-masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: #0d1217;
-  border-bottom: 2px solid var(--sem-border);
-  gap: 12px;
-}
-.sem-brand { font-weight: 800; color: var(--sem-phosphor); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
-.sem-status-rail { display: flex; gap: 14px; font-size: 10.5px; }
-
-/* Main Console Stage */
-.sem-stage {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Left Optics & Vacuum Rack */
-.sem-left-col {
-  width: 320px;
-  display: flex;
-  flex-direction: column;
+  padding: 0.6rem 1.25rem;
   background: var(--sem-panel);
-  border-right: 1px solid var(--sem-border);
-  padding: 8px;
-  gap: 10px;
-  overflow: auto;
+  border-bottom: 2px solid var(--sem-border);
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.sem-rack-box {
-  background: #080b0e;
-  border: 1px solid #1a222c;
+.sem-brand {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sem-brand span { color: var(--sem-p31); }
+
+.sem-status-cluster {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  background: var(--sem-panel-alt);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--sem-border);
+}
+
+.sem-toolbar { display: flex; gap: 0.5rem; }
+
+.sem-btn {
+  padding: 0.4rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
   border-radius: 3px;
-  padding: 8px;
+  cursor: pointer;
+  border: 1px solid var(--sem-border-light);
+  background: var(--sem-panel-alt);
+  color: var(--sem-text);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
-.sem-box-title { font-size: 9.5px; font-weight: 800; color: #64748b; margin-bottom: 6px; letter-spacing: 0.05em; }
+.sem-btn:hover { border-color: var(--sem-p31); background: #1a2430; color: #fff; }
+.sem-btn.primary { background: #065f46; border-color: var(--sem-p31); color: #fff; }
+.sem-btn.danger { background: #991b1b; border-color: var(--sem-red); color: #fff; }
 
-/* Center Viewport: CRT Raster & EDX MCA Histogram */
-.sem-center-col {
+/* Main Stage */
+.sem-workbench {
+  display: flex;
   flex: 1;
+  min-height: 0;
+}
+
+/* Left CRT & MCA Stage (60% width) */
+.sem-stage {
+  flex: 1.4;
   display: flex;
   flex-direction: column;
+  border-right: 2px solid var(--sem-border);
   min-width: 0;
-  border-right: 1px solid var(--sem-border);
+  background: #020305;
 }
 
+/* P31 Phosphor CRT Raster Display */
 .sem-crt-wrap {
-  flex: 1;
+  flex: 1.2;
   position: relative;
-  background: #050807;
-  min-height: 0;
-  border-bottom: 1px solid var(--sem-border);
+  min-height: 220px;
+  background: #000;
+  border-bottom: 2px solid var(--sem-border);
 }
 canvas#crtCanvas {
   position: absolute;
@@ -87,42 +116,99 @@ canvas#crtCanvas {
   display: block;
 }
 
+/* EDX Multi-Channel Analyzer (MCA) Histogram Strip */
 .sem-mca-wrap {
   height: 180px;
+  background: #040608;
   position: relative;
-  background: #080b0f;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
 }
 canvas#mcaCanvas {
-  width: 100%; height: 100%;
+  flex: 1;
+  width: 100%;
+  height: 100%;
   display: block;
 }
 
-/* Right Evidence & Specimen Plans */
-.sem-right-col {
-  width: 380px;
+/* Right Inspector Deck (40% width) */
+.sem-inspector-deck {
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--sem-panel);
+  min-width: 380px;
+  max-width: 600px;
 }
 
-.sem-btn {
-  padding: 5px 8px;
+.sem-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--sem-border);
+  background: #080b0f;
+}
+.sem-tab {
+  flex: 1;
+  padding: 0.6rem 0.4rem;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--sem-text-dim);
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 2px;
+  font-size: 0.8rem;
+  font-weight: 800;
   cursor: pointer;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #fff;
+  text-align: center;
+  transition: all 0.15s ease;
 }
-.sem-btn.primary { background: #0369a1; border-color: var(--sem-cyan); }
-.sem-btn.danger { background: #7f1d1d; border-color: var(--sem-red); }
+.sem-tab:hover { color: #fff; background: #111822; }
+.sem-tab.active { color: var(--sem-p31); border-bottom-color: var(--sem-p31); background: var(--sem-panel); }
 
-@media (max-width: 1024px) {
-  .sem-stage { flex-direction: column; }
-  .sem-left-col { width: 100%; height: 30vh; border-right: none; }
-  .sem-center-col { height: 45vh; }
-  .sem-right-col { width: 100%; height: 25vh; }
+.sem-tab-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Modals & Dialogs */
+.sem-dialog {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(850px, 92vw);
+  max-height: 88vh;
+  background: var(--sem-panel);
+  color: var(--sem-text);
+  border: 2px solid var(--sem-p31);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+  padding: 1.25rem;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sem-dialog[open] { display: flex; }
+.sem-dialog::backdrop { background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); }
+
+.sem-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+.sem-field label { font-size: 0.8rem; font-weight: 700; color: var(--sem-text-dim); }
+.sem-input, .sem-textarea, .sem-select {
+  padding: 0.5rem 0.75rem;
+  background: #06090e;
+  border: 1px solid var(--sem-border-light);
+  border-radius: 3px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.sem-input:focus, .sem-textarea:focus, .sem-select:focus { border-color: var(--sem-p31); outline: none; }
+.sem-textarea { resize: vertical; min-height: 80px; }
+
+@media (max-width: 1200px) {
+  .sem-workbench { flex-direction: column; }
+  .sem-stage { height: 55vh; border-right: none; border-bottom: 2px solid var(--sem-border); }
+  .sem-inspector-deck { width: 100%; max-width: none; height: 45vh; }
 }

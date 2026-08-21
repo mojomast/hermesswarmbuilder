@@ -1,9 +1,9 @@
 # Robotics Teleoperation Workstation Interface Research & Design Report
 
-**Client Route:** `/next/robotics-teleop/index.html`  
-**Client Codebase Archetype:** Planetary Rover & Hazardous Environment Robotics Teleoperation Workstation  
-**Primary Framework:** Three.js / WebGL Kinematics Engine (`../../vendor/three.js`)  
-**Primary Renderer:** 3D Articulated Robotic Arm/Rover Digital Twin + HUD Overlay + Terrain Costmap  
+**Client Route:** `/next/robotics-teleop/index.html`
+**Client Codebase Archetype:** Planetary Rover & Hazardous Environment Robotics Teleoperation Workstation
+**Primary Framework:** Three.js / WebGL Kinematics Engine (`../../vendor/three.js`)
+**Primary Renderer:** 3D Articulated Robotic Arm/Rover Digital Twin + HUD Overlay + Terrain Costmap
 
 ---
 
@@ -19,20 +19,20 @@ Planetary rover operations (e.g. NASA JPL Mars 2020 Perseverance Ground Data Sys
 
 ## 2. Authoritative Sources
 
-1. **NASA JPL — *Mars 2020 Perseverance Rover Ground Data System & Teleoperation Guidelines***  
-   https://mars.nasa.gov/mars2020/mission/technology/  
+1. **NASA JPL — *Mars 2020 Perseverance Rover Ground Data System & Teleoperation Guidelines***
+   https://mars.nasa.gov/mars2020/mission/technology/
    *Applied*: Staged command uplink sequencing; terrain hazard costmap visualization; Deep Space Network (DSN) link budget monitoring.
 
-2. **Open Robotics — *ROS 2 & MoveIt 2 Motion Planning Framework Specification***  
-   https://moveit.picknik.ai/  
+2. **Open Robotics — *ROS 2 & MoveIt 2 Motion Planning Framework Specification***
+   https://moveit.picknik.ai/
    *Applied*: 6-DOF robotic manipulator joint state modeling; Cartesian path trajectory validation; interactive end-effector marker manipulation.
 
-3. **NASA-STD-3001, Vol. 2 (*Human Integration Design Handbook — Robotic Systems Controls*)**  
-   https://standards.nasa.gov/standard/NASA/NASA-STD-3001-VOL-2  
+3. **NASA-STD-3001, Vol. 2 (*Human Integration Design Handbook — Robotic Systems Controls*)**
+   https://standards.nasa.gov/standard/NASA/NASA-STD-3001-VOL-2
    *Applied*: High-contrast telemetry HUDs; multi-tier safety interlocks; visual waypoint breadcrumb trails.
 
-4. **W3C WebGL & Web Accessibility Initiative 3D Graphics Standards**  
-   https://www.w3.org/WAI/tutorials/images/complex/  
+4. **W3C WebGL & Web Accessibility Initiative 3D Graphics Standards**
+   https://www.w3.org/WAI/tutorials/images/complex/
    *Applied*: Fallback semantic ARIA tables alongside WebGL viewports; non-visual telemetry status announcements.
 
 ---

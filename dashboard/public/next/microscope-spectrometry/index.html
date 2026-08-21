@@ -4,94 +4,100 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Microscope Spectrometry | Analytical SEM & EDX Console</title>
+  <title>Microscope Spectrometry | Analytical SEM & EDX Microbeam Console</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <!-- Top Masthead Rail -->
   <header class="sem-masthead">
     <div class="sem-brand">
-      <span>JEOL JSM-IT800 // ANALYTICAL SEM & EDX SPECTROMETER</span>
+      <span>JEOL JSM-7900F</span> // FIELD EMISSION SEM & EDX
     </div>
-    <div class="sem-status-rail" aria-live="polite">
-      <span>VACUUM: <b style="color:var(--sem-phosphor);">2.1e-5 Pa (HI-VAC)</b></span>
-      <span>GUN HV: <b style="color:var(--sem-cyan);">15.0 kV</b></span>
-      <span>DEAD TIME: <b id="deadTimeText">28% (NORMAL)</b></span>
-      <span>PHASE: <b id="semPhase" style="color:var(--sem-phosphor);">IDLE</b></span>
+    <div class="sem-status-cluster" aria-live="polite">
+      <span>VACUUM: <b style="color:var(--sem-p31);">2.1e-5 Pa (HI-VAC)</b></span>
+      <span>RUN: <b id="semRunId" style="color:#fff;">NONE</b></span>
+      <span>PHASE: <b id="semPhase" style="color:var(--sem-cyan);">IDLE</b></span>
     </div>
-    <div style="display:flex;gap:6px;">
-      <button id="btnResyncSem" class="sem-btn" type="button">SYNC OPTICS</button>
-      <button id="btnBeamTrip" class="sem-btn danger" type="button">BEAM TRIP (E-STOP)</button>
+    <div class="sem-toolbar" aria-label="Microscopist beam controls">
+      <button id="btnRasterScan" class="sem-btn primary" type="button">RASTER SCAN</button>
+      <button id="btnRefresh" class="sem-btn" type="button">SYNC BEAM</button>
+      <button id="btnCommands" class="sem-btn" type="button">OPTICS CONTROLS</button>
+      <button id="btnPlanning" class="sem-btn" type="button">ANALYSIS PLANS</button>
+      <button id="btnHelp" class="sem-btn" type="button" style="border-color:var(--sem-p31);">? MANUAL</button>
     </div>
   </header>
 
-  <main class="sem-stage">
-    <!-- Left Column: Optics & Vacuum Interlock Deck -->
-    <aside class="sem-left-col" aria-label="Electron Optics and Vacuum Deck">
-      <!-- Beam Optics Column -->
-      <div class="sem-rack-box">
-        <div class="sem-box-title">ELECTRON BEAM COLUMN OPTICS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;">
-          <div>ACCEL VOLTAGE: <b>15.0 kV</b></div>
-          <div>PROBE CURRENT: <b>1.2 nA</b></div>
-          <div>SPOT SIZE: <b>INDEX 4</b></div>
-          <div>MAGNIFICATION: <b>2,500x</b></div>
-          <div>WORKING DIST: <b>10.0 mm</b></div>
-          <div>SCAN SPEED: <b style="color:var(--sem-cyan);">TV RATE</b></div>
-        </div>
-      </div>
-
-      <!-- Vacuum Interlocks -->
-      <div class="sem-rack-box">
-        <div class="sem-box-title">VACUUM SAFETY INTERLOCKS</div>
-        <div style="font-size:10px;margin-bottom:8px;">
-          <div>CHAMBER: <b style="color:var(--sem-phosphor);">HI-VAC LOCKED</b></div>
-          <div>GUN VALVE: <b>OPEN</b></div>
-          <div>INTERLOCK: <b id="interlockStatus" style="color:var(--sem-phosphor);">ENGAGED</b></div>
-        </div>
-        <div style="display:flex;gap:4px;">
-          <button id="btnPauseBeam" class="sem-btn" style="flex:1;" type="button">BEAM PAUSE</button>
-          <button id="btnResumeBeam" class="sem-btn" style="flex:1;" type="button">RESUME</button>
-        </div>
-      </div>
-
-      <!-- Deblock & Steer Directives -->
-      <div class="sem-rack-box">
-        <div class="sem-box-title">CHAMBER RECOVERY & STEER</div>
-        <div style="display:flex;gap:4px;">
-          <button id="btnDeblockSem" class="sem-btn" style="flex:1;background:#78350f;" type="button">OVERRIDE DEBLOCK</button>
-          <button id="btnAdviceSem" class="sem-btn" style="flex:1;" type="button">ADVICE</button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Center Viewport: CRT Raster & MCA Spectrum -->
-    <section class="sem-center-col" aria-label="P31 Phosphor CRT and MCA Spectrum">
+  <main class="sem-workbench">
+    <!-- Left CRT & MCA Stage (60% width) -->
+    <section class="sem-stage" aria-label="P31 CRT Raster Viewport and EDX Spectrogram">
+      <!-- P31 Phosphor CRT Raster Display -->
       <div class="sem-crt-wrap">
-        <canvas id="crtCanvas" role="img" aria-label="P31 Green Phosphor CRT Raster Scan"></canvas>
+        <canvas id="crtCanvas" role="img" aria-label="P31 Green Phosphor CRT Raster Viewport"></canvas>
       </div>
 
+      <!-- EDX Multi-Channel Analyzer (MCA) Histogram Strip -->
       <div class="sem-mca-wrap">
-        <canvas id="mcaCanvas" role="img" aria-label="EDX Energy Dispersive Spectrum Histogram"></canvas>
+        <div style="padding:0.3rem 0.75rem;background:var(--sem-panel);font-size:0.75rem;font-weight:800;color:var(--sem-cyan);display:flex;justify-content:space-between;">
+          <span>EDX MULTI-CHANNEL ANALYZER (0.00 keV - 20.48 keV)</span>
+          <span style="color:#64748b;">Si Kα: 1.74 | Fe Kα: 6.40 | Cu Kα: 8.04</span>
+        </div>
+        <canvas id="mcaCanvas" role="img" aria-label="EDX Energy Dispersive Spectrometry Histogram"></canvas>
       </div>
     </section>
 
-    <!-- Right Column: Evidence & Specimen Plans -->
-    <aside class="sem-right-col" aria-label="Evidence and Specimen Plans">
-      <div style="padding:6px;border-bottom:1px solid var(--sem-border);display:flex;justify-content:space-between;align-items:center;">
-        <b style="font-size:10px;color:var(--sem-cyan);">SPECIMEN PLANS (RECIPES)</b>
-        <button id="btnNewSpecimenPlan" class="sem-btn" style="padding:2px 6px;font-size:9px;" type="button">+ NEW</button>
+    <!-- Right Inspector Deck (40% width) -->
+    <aside class="sem-inspector-deck" aria-label="Beam Column and Specimen Deck">
+      <div class="sem-tabs" role="tablist" aria-label="Inspector Panels">
+        <button class="sem-tab active" role="tab" aria-selected="true" data-tab="column">BEAM COLUMN</button>
+        <button class="sem-tab" role="tab" aria-selected="false" data-tab="traffic">DETECTOR LOG</button>
+        <button class="sem-tab" role="tab" aria-selected="false" data-tab="evidence">SPECTRA</button>
+        <button class="sem-tab" role="tab" aria-selected="false" data-tab="assist">OPTICS AI</button>
       </div>
-      <div id="specimenPlansList" style="flex:1;overflow:auto;padding:6px;display:grid;gap:4px;">
-        <!-- Rendered by Native Web Components / app.js -->
-      </div>
-      <div style="padding:6px;border-top:1px solid var(--sem-border);background:#0d1217;">
-        <button id="btnShowcaseScan" class="sem-btn primary" style="width:100%;" type="button">START 10-GEN SERIAL SCAN</button>
+      <div id="inspectorContent" class="sem-tab-content">
+        <!-- Rendered by Web Components / app.js -->
       </div>
     </aside>
   </main>
 
-  <div id="semToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+  <!-- Optics Commands Modal -->
+  <dialog id="commandDialog" class="sem-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--sem-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--sem-p31);font-weight:800;">ELECTRON OPTICS CONTROLS & VACUUM INTERLOCKS</h3>
+      <button class="sem-btn" type="button" id="btnCloseCommands">CLOSE [X]</button>
+    </div>
+    <div id="commandDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- Analysis Plans Modal -->
+  <dialog id="planDialog" class="sem-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--sem-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--sem-p31);font-weight:800;">SPECIMEN ANALYSIS & MICROBEAM PLANS</h3>
+      <button class="sem-btn" type="button" id="btnClosePlans">CLOSE [X]</button>
+    </div>
+    <div id="planDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- Help & Manual Modal -->
+  <dialog id="helpDialog" class="sem-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--sem-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--sem-p31);font-weight:800;">MICROSCOPE SPECTROMETRY OPERATIONAL MANUAL</h3>
+      <button class="sem-btn" type="button" id="btnCloseHelp">CLOSE [X]</button>
+    </div>
+    <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:0.85rem;font-size:0.85rem;line-height:1.6;color:var(--sem-text);">
+      <p><b style="color:var(--sem-p31);">System Overview:</b> Modeled after field-emission analytical scanning electron microscopes (JEOL JSM-7900F & Thermo Fisher Helios), complying with ISO 22493 microbeam analysis standards.</p>
+      <h4 style="color:var(--sem-cyan);margin-top:0.5rem;">P31 CRT & EDX Histogram</h4>
+      <ul style="padding-left:1.5rem;display:grid;gap:0.3rem;">
+        <li><b>P31 Phosphor CRT Raster Scan</b>: Green phosphor decay simulation showing electron beam scanning across the active swarm specimen.</li>
+        <li><b>EDX Multi-Channel Analyzer (MCA)</b>: Real-time energy histogram plotting characteristic X-ray counts across elemental emission lines.</li>
+        <li><b>Optics Interlocks</b>: High-vacuum chamber safety interlocks, beam trip recovery, and direction queues.</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <div id="semToast" role="status" aria-live="polite" style="position:fixed;bottom:1rem;right:1rem;display:none;padding:0.6rem 1.2rem;border-radius:4px;font-size:0.9rem;font-weight:700;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.8);"></div>
 
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>

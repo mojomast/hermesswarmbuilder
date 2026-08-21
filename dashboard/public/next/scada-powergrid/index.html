@@ -4,70 +4,176 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>SCADA PowerGrid | Substation Automation & Dispatch</title>
+  <title>SCADA PowerGrid | Substation Automation & Dispatch HMI</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <header class="scada-masthead">
-    <div class="scada-title">
-      SUBSTATION 500kV / 230kV // SCADA MIMIC (IEC 61850)
+  <!-- Header Masthead -->
+  <header class="scada-masthead" role="banner">
+    <div class="scada-brand">
+      <span class="scada-title-highlight">SUBSTATION 500kV / 230kV</span>
+      <span class="scada-standard-tag">// SCADA MIMIC (IEC 61850 / IEEE C37.1)</span>
     </div>
     <div class="scada-metrics" aria-live="polite">
-      <span>GRID FREQ: <b id="gridFreq">60.00 Hz</b></span>
-      <span>SYSTEM LOAD: <b id="systemLoad">450 MW</b></span>
-      <span>CONN: <b id="connStatus" style="color:var(--scada-closed);">SSE_LINKED</b></span>
-      <span>PHASE: <b id="phaseDisplay" style="color:var(--scada-bus-500);">IDLE</b></span>
+      <span class="scada-metric-item">GRID FREQ: <b id="gridFreq" class="scada-val-cyan">60.00 Hz</b></span>
+      <span class="scada-divider">|</span>
+      <span class="scada-metric-item">SYSTEM LOAD: <b id="systemLoad" class="scada-val-bright">450 MW</b></span>
+      <span class="scada-divider">|</span>
+      <span class="scada-metric-item">CONN: <b id="connStatus" class="scada-val-green">SSE_LINKED</b></span>
+      <span class="scada-divider">|</span>
+      <span class="scada-metric-item">PHASE: <b id="phaseDisplay" class="scada-val-amber">IDLE</b></span>
+      <span class="scada-divider">|</span>
+      <span class="scada-metric-item">RUN: <b id="runContextDisplay" class="scada-val-bright">NONE</b></span>
     </div>
-    <div>
-      <button id="btnAckAlarms" class="scada-btn" type="button">ACK ALARMS</button>
-      <button id="btnRefresh" class="scada-btn" type="button">SYNC TELEMETRY</button>
-      <button id="btnEmergencyTrip" class="scada-btn danger" type="button">E-TRIP (SCRAM)</button>
+    <div class="scada-toolbar" role="toolbar" aria-label="Operator SCADA Controls">
+      <button id="btnAckAlarms" class="scada-btn" type="button" title="Acknowledge All Alarms [Space]">ACK ALARMS</button>
+      <button id="btnPauseResume" class="scada-btn primary" type="button" title="Pause or Resume Live Telemetry Stream">PAUSE / RESUME</button>
+      <button id="btnRefresh" class="scada-btn" type="button" title="Synchronize Telemetry [S]">SYNC TELEMETRY</button>
+      <button id="btnCommands" class="scada-btn action" type="button" title="Open Bay Dispatch Command Deck [B]">COMMAND DECK</button>
+      <button id="btnPlans" class="scada-btn" type="button" title="Open Grid Dispatch Planning Workstation [P]">GRID PLANS</button>
+      <button id="btnHelp" class="scada-btn" type="button" title="Substation Operating Manual & Shortcuts [H]">MANUAL &amp; HELP</button>
+      <button id="btnEmergencyTrip" class="scada-btn danger" type="button" title="Emergency Trip / SCRAM Active Run">E-TRIP (SCRAM)</button>
     </div>
   </header>
 
-  <!-- 8-Tile Alarm Matrix -->
+  <!-- ISA-18.2 Annunciator Alarm Matrix (12 Tiles) -->
   <section class="scada-annunciator" aria-label="ISA-18.2 Annunciator Tile Matrix">
     <div class="ann-tile active-green" id="tileBusA">500kV BUS A: ENERGIZED</div>
     <div class="ann-tile active-amber" id="tileBusB">230kV BUS B: SYNCHRONIZED</div>
-    <div class="ann-tile" id="tileTransformer">XFMR T1: 85% MVA</div>
+    <div class="ann-tile" id="tileTransformer">XFMR T1: 500/230kV ACTIVE</div>
     <div class="ann-tile" id="tileBlocker">BLOCKER TRIP: NORMAL</div>
     <div class="ann-tile active-green" id="tileGates">GATES: ARMED</div>
     <div class="ann-tile" id="tileQueue">QUEUE: IDLE</div>
     <div class="ann-tile" id="tileShowcase">SHOWCASE LOOP: READY</div>
     <div class="ann-tile" id="tilePlanSync">PLAN ROM: SYNCED</div>
+    <div class="ann-tile active-green" id="tileCb101">CB-101 (ORCH): CLOSED</div>
+    <div class="ann-tile active-green" id="tileCb102">CB-102 (CODE): CLOSED</div>
+    <div class="ann-tile active-green" id="tileCb201">CB-201 (TEST): CLOSED</div>
+    <div class="ann-tile" id="tileCopilot">DISPATCH COPILOT: STANDBY</div>
   </section>
 
-  <main class="scada-stage">
-    <section class="scada-sld-wrap" aria-label="Substation Single-Line Diagram">
-      <svg id="sldCanvas" viewBox="0 0 1000 650" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Substation Vector Single-Line Diagram">
-        <!-- SVG content rendered by Lit / app.js -->
-      </svg>
+  <!-- Main SCADA Layout Stage -->
+  <main class="scada-stage" role="main">
+    <!-- Left Stage: Single-Line Diagram (SLD) + Sequence of Events (SOE) Feed -->
+    <section class="scada-left-stage" aria-label="Substation Single-Line Diagram and Sequence of Events">
+      <!-- SLD Viewport Stage -->
+      <div class="scada-sld-wrap" aria-label="Substation Single-Line Diagram Vector Mimic">
+        <svg id="sldCanvas" viewBox="0 0 1000 500" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Substation Vector Single-Line Diagram">
+          <!-- Dynamically populated and topologically colored by Lit in app.js -->
+        </svg>
+      </div>
+
+      <!-- Lower Deck: Sequence of Events (SOE) Telemetry & Traffic Feed -->
+      <div class="scada-soe-deck" aria-label="Substation Sequence of Events Telemetry Feed">
+        <div class="scada-soe-header">
+          <div class="scada-soe-title-group">
+            <span class="scada-soe-title">SEQUENCE OF EVENTS (SOE) TELEMETRY &amp; RELAY LOG</span>
+            <span id="soeEventCount" class="scada-chip info">0 EVENTS</span>
+          </div>
+          <div class="scada-filter-bar">
+            <input id="soeSearch" type="search" placeholder="Search SOE relay events..." class="scada-input-search" aria-label="Filter SOE events">
+            <div class="scada-filter-buttons" role="group" aria-label="Telemetry Filters">
+              <button class="scada-filter-btn active" data-filter="all" type="button">ALL</button>
+              <button class="scada-filter-btn" data-filter="tools" type="button">SWITCHGEAR / TOOLS</button>
+              <button class="scada-filter-btn" data-filter="alerts" type="button">PROTECTION / TRIPS</button>
+              <button class="scada-filter-btn" data-filter="system" type="button">SYSTEM</button>
+            </div>
+          </div>
+        </div>
+        <div class="scada-soe-table-wrap">
+          <table class="scada-table" role="grid" aria-label="Sequence of Events Table">
+            <thead>
+              <tr>
+                <th scope="col" style="width: 130px;">TIMESTAMP</th>
+                <th scope="col" style="width: 140px;">BAY / DEVICE</th>
+                <th scope="col" style="width: 160px;">EVENT ACTION</th>
+                <th scope="col">TELEMETRY DATA SUMMARY</th>
+                <th scope="col" style="width: 80px; text-align: center;">INSPECT</th>
+              </tr>
+            </thead>
+            <tbody id="soeTableBody">
+              <tr><td colspan="5" style="text-align:center;color:var(--scada-text-dim);padding:20px;">Awaiting substation telemetry events from Hermes Swarm...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
-    <aside class="scada-bay-dock" aria-label="Bay Control and Disassembly">
-      <div class="scada-tabs" role="tablist">
-        <button class="scada-tab active" role="tab" aria-selected="true" data-tab="bays">BAY SWITCHGEAR</button>
-        <button class="scada-tab" role="tab" aria-selected="false" data-tab="evidence">RELAY EVIDENCE</button>
-        <button class="scada-tab" role="tab" aria-selected="false" data-tab="plans">GRID PLANS</button>
-        <button class="scada-tab" role="tab" aria-selected="false" data-tab="assist">DISPATCH ASSIST</button>
+    <!-- Right Stage: Bay Control Unit & Dispatch Workstation (Lit Container) -->
+    <aside class="scada-bay-dock" aria-label="Bay Control Unit, Evidence Viewer, and Grid Plans">
+      <div class="scada-tabs" role="tablist" aria-label="Bay Dock Tabs">
+        <button id="tab-bays" class="scada-tab active" role="tab" aria-selected="true" data-tab="bays">BAY SWITCHGEAR</button>
+        <button id="tab-evidence" class="scada-tab" role="tab" aria-selected="false" data-tab="evidence">RELAY EVIDENCE</button>
+        <button id="tab-plans" class="scada-tab" role="tab" aria-selected="false" data-tab="plans">GRID PLANS</button>
+        <button id="tab-assist" class="scada-tab" role="tab" aria-selected="false" data-tab="assist">DISPATCH COPILOT</button>
       </div>
       <div id="bayDockContent" class="scada-tab-body">
-        <!-- Rendered by Lit / app.js -->
+        <!-- Rendered reactively via Lit in app.js -->
       </div>
     </aside>
   </main>
 
-  <dialog id="sboDialog" class="scada-modal">
-    <h3 style="color:#f59e0b;font-size:12px;margin-bottom:8px;">SELECT-BEFORE-OPERATE (SBO) TRANSACTION INTERLOCK</h3>
-    <p id="sboDescription" style="margin-bottom:12px;font-size:11px;"></p>
-    <div style="display:flex;justify-content:flex-end;gap:8px;">
-      <button id="btnCancelSbo" class="scada-btn" type="button">CANCEL / ABORT</button>
-      <button id="btnExecuteSbo" class="scada-btn" style="background:#047857;border-color:#10b981;" type="button">EXECUTE SWITCHING</button>
+  <!-- Two-Step Select-Before-Operate (SBO) Interlocking Modal -->
+  <dialog id="sboDialog" class="scada-modal" aria-labelledby="sboTitle">
+    <div class="scada-modal-header">
+      <h3 id="sboTitle" class="scada-modal-title" style="color:var(--scada-bus-230);">SELECT-BEFORE-OPERATE (SBO) INTERLOCKING CONFIRMATION</h3>
+    </div>
+    <div class="scada-modal-body">
+      <p id="sboDescription" style="font-size:0.9rem;margin-bottom:1rem;color:var(--scada-text-bright);line-height:1.5;"></p>
+      <div style="background:#090d14;border:1px solid #1e293b;padding:0.75rem;border-radius:4px;margin-bottom:1rem;">
+        <div style="display:flex;justify-content:space-between;font-size:0.82rem;color:var(--scada-text-dim);">
+          <span>SAFETY INTERLOCK CHECK: <b style="color:var(--scada-closed);">VERIFIED OK</b></span>
+          <span>RESERVATION TIMEOUT: <b id="sboCountdown" style="color:var(--scada-bus-230);">30s</b></span>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button id="btnCancelSbo" class="scada-btn" type="button">CANCEL / ABORT</button>
+        <button id="btnExecuteSbo" class="scada-btn success" type="button">EXECUTE SWITCHING</button>
+      </div>
     </div>
   </dialog>
 
-  <div id="scadaToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+  <!-- Operator Command Station Modal -->
+  <dialog id="commandStationDialog" class="scada-modal scada-modal-lg" aria-labelledby="cmdStationTitle">
+    <div class="scada-modal-header">
+      <h3 id="cmdStationTitle" class="scada-modal-title">SUBSTATION OPERATOR COMMAND STATION &amp; DISPATCH DECK</h3>
+      <button id="btnCloseCommandStation" class="scada-btn xs" type="button" aria-label="Close Command Station">✕</button>
+    </div>
+    <div id="commandStationContent" class="scada-modal-body">
+      <!-- Rendered reactively via Lit in app.js -->
+    </div>
+  </dialog>
 
+  <!-- Relay Evidence & Artifact Dissector Modal -->
+  <dialog id="evidenceViewerDialog" class="scada-modal scada-modal-lg" aria-labelledby="evidenceTitle">
+    <div class="scada-modal-header">
+      <h3 id="evidenceTitle" class="scada-modal-title">RELAY EVENT &amp; ARTIFACT DISSECTOR</h3>
+      <div style="display:flex;gap:6px;">
+        <button id="btnCopyEvidence" class="scada-btn xs" type="button">COPY RAW</button>
+        <button id="btnCloseEvidence" class="scada-btn xs" type="button" aria-label="Close Viewer">✕</button>
+      </div>
+    </div>
+    <div class="scada-modal-body">
+      <div id="evidenceMeta" class="scada-meta-strip"></div>
+      <pre id="evidenceBody" class="scada-code-block"></pre>
+    </div>
+  </dialog>
+
+  <!-- Substation Operating Manual Modal -->
+  <dialog id="helpManualDialog" class="scada-modal scada-modal-lg" aria-labelledby="manualTitle">
+    <div class="scada-modal-header">
+      <h3 id="manualTitle" class="scada-modal-title">SUBSTATION AUTOMATION &amp; DISPATCH OPERATING MANUAL</h3>
+      <button id="btnCloseHelp" class="scada-btn xs" type="button" aria-label="Close Manual">✕</button>
+    </div>
+    <div id="helpManualContent" class="scada-modal-body scada-manual-body">
+      <!-- Rendered static or dynamic in app.js -->
+    </div>
+  </dialog>
+
+  <!-- Status Notification Toast -->
+  <div id="scadaToast" role="status" aria-live="polite" class="scada-toast"></div>
+
+  <!-- Scripts -->
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>
 </body>

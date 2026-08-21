@@ -1,208 +1,287 @@
-/* Broadcast Switcher HMI Styling */
+/* Broadcast Production Switcher Styles */
 :root {
-  --bs-bg: #090c10;
-  --bs-panel: #11161d;
-  --bs-border: #1e2632;
-  --bs-tally-pgm: #ef4444; /* On-Air Red */
-  --bs-tally-pvw: #10b981; /* Preview Green */
-  --bs-tally-aux: #f59e0b; /* Aux Amber */
-  --bs-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --bs-bg: #06080b;
+  --bs-panel: #0d1217;
+  --bs-panel-alt: #131a22;
+  --bs-border: #1e2633;
+  --bs-border-light: #323e52;
+  --bs-text: #e2e8f0;
+  --bs-text-dim: #94a3b8;
+  --bs-red: #ef4444;
+  --bs-green: #10b981;
+  --bs-amber: #f59e0b;
+  --bs-cyan: #00f0ff;
+  --bs-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --bs-base-size: clamp(13px, 0.9vw, 16px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
   background: var(--bs-bg);
-  color: #e2e8f0;
-  font-family: var(--bs-font);
-  font-size: 11px;
-  line-height: 1.4;
+  color: var(--bs-text);
+  font-family: var(--bs-font-mono);
+  font-size: var(--bs-base-size);
+  line-height: 1.45;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  user-select: none;
 }
 
-/* Master Masthead */
+/* Master Control Masthead */
 .bs-masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: #0d1218;
-  border-bottom: 1px solid var(--bs-border);
-  gap: 12px;
+  padding: 0.6rem 1.25rem;
+  background: var(--bs-panel);
+  border-bottom: 2px solid var(--bs-border);
+  gap: 1rem;
+  flex-wrap: wrap;
 }
-.bs-brand { font-weight: 800; color: #fff; font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
-.bs-onair-badge {
-  background: var(--bs-tally-pgm);
+
+.bs-brand {
+  font-size: 1.1rem;
+  font-weight: 800;
   color: #fff;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 900;
-  border-radius: 2px;
-  letter-spacing: 0.1em;
-  animation: onair-pulse 1s infinite alternate;
-}
-@keyframes onair-pulse {
-  0% { opacity: 0.8; }
-  100% { opacity: 1.0; }
-}
-
-/* Multiviewer Monitor Wall */
-.bs-multiviewer {
-  display: grid;
-  grid-template-columns: 2fr 2fr 1fr 1fr;
-  grid-template-rows: 160px 140px;
-  gap: 6px;
-  padding: 8px;
-  background: #05070a;
-  border-bottom: 1px solid var(--bs-border);
-}
-
-.bs-monitor {
-  background: #090d12;
-  border: 2px solid #1a222d;
-  border-radius: 3px;
-  position: relative;
-  overflow: hidden;
+  letter-spacing: 0.05em;
   display: flex;
-  flex-direction: column;
-}
-.bs-monitor.tally-pgm { border-color: var(--bs-tally-pgm); box-shadow: 0 0 10px rgba(239,68,68,0.4); }
-.bs-monitor.tally-pvw { border-color: var(--bs-tally-pvw); box-shadow: 0 0 10px rgba(16,185,129,0.4); }
-
-.bs-monitor-header {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 3px 6px;
-  background: #0d131a;
-  font-size: 9px;
-  font-weight: 700;
-  border-bottom: 1px solid #18202b;
+  gap: 0.5rem;
 }
-.bs-monitor-body {
-  flex: 1;
-  padding: 6px;
-  overflow: auto;
-  font-size: 10px;
-  color: #94a3b8;
+.bs-brand span { color: var(--bs-red); }
+
+.bs-status-cluster {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  background: var(--bs-panel-alt);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--bs-border);
 }
 
-/* Lower Switcher Deck (Crosspoints & T-Bar) */
-.bs-switcher-deck {
+.bs-tally-pill {
+  padding: 0.15rem 0.6rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.bs-tally-pill.pgm { background: #991b1b; color: #fff; box-shadow: 0 0 8px #ef4444; }
+.bs-tally-pill.pvw { background: #065f46; color: #fff; box-shadow: 0 0 8px #10b981; }
+
+.bs-toolbar { display: flex; gap: 0.5rem; }
+
+.bs-btn {
+  padding: 0.4rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid var(--bs-border-light);
+  background: var(--bs-panel-alt);
+  color: var(--bs-text);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.bs-btn:hover { border-color: var(--bs-red); background: #1a2430; color: #fff; }
+.bs-btn.primary { background: #991b1b; border-color: var(--bs-red); color: #fff; }
+.bs-btn.warn { background: #92400e; border-color: var(--bs-amber); color: #fff; }
+
+/* Main Stage */
+.bs-workbench {
   display: flex;
   flex: 1;
   min-height: 0;
-  background: var(--bs-panel);
 }
 
-/* Left Crosspoint Matrix */
-.bs-crosspoint-bay {
-  flex: 1;
-  padding: 10px;
-  border-right: 1px solid var(--bs-border);
+/* Left Switcher Stage (60% width) */
+.bs-switcher-stage {
+  flex: 1.4;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow: auto;
+  border-right: 2px solid var(--bs-border);
+  min-width: 0;
+  background: #040608;
 }
 
+/* 8-Monitor Multiviewer Wall */
+.bs-multiviewer {
+  flex: 1.2;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 8px;
+  background: #020305;
+  min-height: 200px;
+}
+.bs-monitor {
+  background: #090d12;
+  border: 2px solid #1a2330;
+  border-radius: 3px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+}
+.bs-monitor.on-air { border-color: var(--bs-red); box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+.bs-monitor.cued { border-color: var(--bs-green); box-shadow: 0 0 10px rgba(16,185,129,0.4); }
+.bs-monitor-title { font-size: 0.75rem; font-weight: 800; color: #fff; }
+
+/* Crosspoints & T-Bar Lower Deck */
+.bs-crosspoint-bay {
+  height: 240px;
+  background: var(--bs-panel);
+  border-top: 2px solid var(--bs-border);
+  display: flex;
+  padding: 0.75rem;
+  gap: 1.5rem;
+}
+.bs-bus-rows {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
 .bs-bus-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
-.bs-bus-label {
-  width: 70px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-}
-.bs-bus-label.pgm { color: var(--bs-tally-pgm); }
-.bs-bus-label.pvw { color: var(--bs-tally-pvw); }
-
-.bs-bus-buttons {
-  display: flex;
-  gap: 6px;
-  flex: 1;
-}
-.bs-btn-crosspoint {
-  flex: 1;
-  padding: 8px 4px;
-  background: #151b24;
-  border: 1px solid #283546;
-  border-radius: 3px;
-  color: #c5d1de;
+.bs-bus-label { font-size: 0.8rem; font-weight: 900; width: 50px; }
+.bs-bus-btn {
+  padding: 0.4rem 0.75rem;
   font-family: inherit;
-  font-size: 9.5px;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 800;
+  border: 2px solid #334155;
+  border-radius: 3px;
+  background: #0d1218;
+  color: #94a3b8;
   cursor: pointer;
-  text-align: center;
 }
-.bs-btn-crosspoint.active-pgm { background: #7f1d1d; border-color: var(--bs-tally-pgm); color: #fff; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
-.bs-btn-crosspoint.active-pvw { background: #064e3b; border-color: var(--bs-tally-pvw); color: #fff; box-shadow: 0 0 8px rgba(16,185,129,0.6); }
+.bs-bus-btn.pgm-active { background: #991b1b; border-color: var(--bs-red); color: #fff; }
+.bs-bus-btn.pvw-active { background: #065f46; border-color: var(--bs-green); color: #fff; }
 
-/* Center Transition Block & T-Bar */
-.bs-transition-block {
-  width: 220px;
-  padding: 10px;
-  border-right: 1px solid var(--bs-border);
+/* Hardware T-Bar Assembly */
+.bs-tbar-assembly {
+  width: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  background: #080b0f;
+  border: 1px solid var(--bs-border);
+  border-radius: 4px;
+  padding: 0.5rem;
 }
-
-.bs-tbar-assembly {
-  width: 60px;
-  height: 140px;
-  background: #090d12;
-  border: 1px solid #222d3b;
-  border-radius: 30px;
+.bs-tbar-track {
+  width: 12px;
+  flex: 1;
+  background: #030507;
+  border: 1px solid #1e2633;
+  border-radius: 6px;
   position: relative;
-  display: flex;
-  justify-content: center;
+  margin: 0.5rem 0;
+  cursor: pointer;
 }
 .bs-tbar-handle {
-  width: 50px;
-  height: 24px;
-  background: #2a3749;
-  border: 2px solid #475569;
-  border-radius: 6px;
   position: absolute;
-  top: 10px;
-  cursor: grab;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.6);
-}
-
-.bs-btn-take {
-  width: 100%;
-  padding: 10px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 900;
+  left: -20px;
+  width: 52px;
+  height: 22px;
+  background: #cbd5e1;
+  border: 2px solid #475569;
   border-radius: 3px;
-  cursor: pointer;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #fff;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+  cursor: grab;
 }
-.bs-btn-take.cut { background: #7f1d1d; border-color: var(--bs-tally-pgm); }
-.bs-btn-take.auto { background: #064e3b; border-color: var(--bs-tally-pvw); }
 
-/* Right DSK & Planning Studio Dock */
-.bs-studio-dock {
-  width: 360px;
+/* Right Inspector Deck (40% width) */
+.bs-inspector-deck {
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bs-panel);
+  min-width: 380px;
+  max-width: 600px;
 }
 
-@media (max-width: 1024px) {
-  .bs-multiviewer { grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, 120px); }
-  .bs-switcher-deck { flex-direction: column; }
-  .bs-transition-block { width: 100%; flex-direction: row; }
-  .bs-studio-dock { width: 100%; height: 35vh; }
+.bs-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--bs-border);
+  background: #080b0f;
+}
+.bs-tab {
+  flex: 1;
+  padding: 0.6rem 0.4rem;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--bs-text-dim);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.bs-tab:hover { color: #fff; background: #111822; }
+.bs-tab.active { color: var(--bs-red); border-bottom-color: var(--bs-red); background: var(--bs-panel); }
+
+.bs-tab-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Modals & Dialogs */
+.bs-dialog {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(850px, 92vw);
+  max-height: 88vh;
+  background: var(--bs-panel);
+  color: var(--bs-text);
+  border: 2px solid var(--bs-red);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+  padding: 1.25rem;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.bs-dialog[open] { display: flex; }
+.bs-dialog::backdrop { background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); }
+
+.bs-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+.bs-field label { font-size: 0.8rem; font-weight: 700; color: var(--bs-text-dim); }
+.bs-input, .bs-textarea, .bs-select {
+  padding: 0.5rem 0.75rem;
+  background: #06090e;
+  border: 1px solid var(--bs-border-light);
+  border-radius: 3px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.bs-input:focus, .bs-textarea:focus, .bs-select:focus { border-color: var(--bs-red); outline: none; }
+.bs-textarea { resize: vertical; min-height: 80px; }
+
+@media (max-width: 1200px) {
+  .bs-workbench { flex-direction: column; }
+  .bs-switcher-stage { height: 55vh; border-right: none; border-bottom: 2px solid var(--bs-border); }
+  .bs-inspector-deck { width: 100%; max-width: none; height: 45vh; }
 }

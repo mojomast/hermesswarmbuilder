@@ -4,167 +4,133 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Flight Annunciator | Aerospace Mission Cockpit & EICAS</title>
+  <title>Flight Annunciator | Aerospace Master Warning & Cockpit Switchboard</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <!-- Top Glareshield Master Warning & Phase Sequence -->
   <header class="fa-glareshield">
-    <div class="fa-master-alert">
-      <button id="btnMasterWarn" class="master-warn-btn" type="button">MASTER<br>WARN</button>
-      <button id="btnMasterCaut" class="master-caut-btn" type="button">MASTER<br>CAUT</button>
+    <div class="fa-brand">
+      <span>BOEING 777 // APB AVIONICS FLIGHT DECK</span>
     </div>
-
-    <div class="fa-sequence-bar" id="flightSequenceBar" aria-label="16-Phase Flight Sequence Annunciator">
-      <!-- 16 Phases rendered by SolidJS / app.js -->
+    <div class="fa-beacons" aria-label="Glareshield Master Warning and Caution">
+      <button id="masterWarning" class="fa-master-alert danger" type="button" onclick="window.__silenceAlerts()">MASTER WARNING</button>
+      <button id="masterCaution" class="fa-master-alert warn" type="button" onclick="window.__silenceAlerts()">MASTER CAUTION</button>
     </div>
-
-    <div style="display:flex;gap:6px;">
-      <button id="btnLampTest" class="master-caut-btn" style="color:#00f0ff;border-color:#00f0ff;" type="button">LAMP<br>TEST</button>
-      <button id="btnSilenceAudio" class="master-caut-btn" type="button">SILENCE<br>AUDIO</button>
+    <div class="fa-toolbar" aria-label="Flight crew controls">
+      <button id="btnLampTest" class="fa-btn" type="button">LAMP TEST</button>
+      <button id="btnRefresh" class="fa-btn" type="button">RESYNC</button>
+      <button id="btnCommands" class="fa-btn primary" type="button">FLIGHT CONTROLS</button>
+      <button id="btnPlanning" class="fa-btn" type="button">FMS PLANS</button>
+      <button id="btnHelp" class="fa-btn" type="button" style="border-color:var(--fa-cyan);">? MANUAL</button>
     </div>
   </header>
 
-  <main class="fa-cockpit">
-    <!-- Left Overhead Switchboard (4 Bays) -->
-    <section class="fa-overhead" aria-label="Overhead Switchboard Deck">
-      <!-- Bay 1: Core & Power Bus -->
-      <div class="fa-switch-bay">
-        <div class="fa-bay-header">BAY 1: CORE / POWER & SSE BUS</div>
-        <div class="fa-switch-grid">
-          <div class="korry-housing" id="swSse">
-            <button class="korry-btn" type="button" aria-pressed="true">
-              <div class="legend-field lit-green">SSE ON</div>
-              <div class="legend-field dead-front">FAIL</div>
-            </button>
+  <!-- 16-Phase Sequence Bar -->
+  <nav class="fa-sequence-bar" id="phaseSequenceBar" aria-label="16-Phase Flight Workflow Sequence">
+    <!-- Populated by SolidJS / app.js -->
+  </nav>
+
+  <main class="fa-workbench">
+    <!-- Left Switchboard & Synoptics Stage (60% width) -->
+    <section class="fa-cockpit-stage" aria-label="Cockpit Overhead Switchboard and Synoptics">
+      <div class="fa-switchboard-bays">
+        <!-- Bay 1: Flight Deck Power & Engine -->
+        <div class="fa-bay">
+          <div class="fa-bay-title">BAY 1: FLIGHT RUNNER</div>
+          <div class="fa-korry-btn active" onclick="client.pause(); window.__toast('Flight engine paused', 'warn')">
+            <span class="fa-korry-top">ENG 1 RUN</span>
+            <span class="fa-korry-bot">ACTIVE</span>
           </div>
-          <div class="korry-housing" id="swPause">
-            <button class="korry-btn" type="button" aria-pressed="false">
-              <div class="legend-field dead-front">PAUSED</div>
-              <div class="legend-field lit-cyan">STREAM</div>
-            </button>
+          <div class="fa-korry-btn" onclick="client.resume(); window.__toast('Flight engine resumed', 'info')">
+            <span class="fa-korry-top">ENG 2 WAKE</span>
+            <span class="fa-korry-bot">STANDBY</span>
           </div>
-          <div class="korry-housing" id="swPoll">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">POLL</div>
-              <div class="legend-field lit-cyan">AUTO</div>
-            </button>
+        </div>
+
+        <!-- Bay 2: Subagent Avionics -->
+        <div class="fa-bay">
+          <div class="fa-bay-title">BAY 2: SWARM AVIONICS</div>
+          <div class="fa-korry-btn active">
+            <span class="fa-korry-top">AUTONAV</span>
+            <span class="fa-korry-bot">ENGAGED</span>
           </div>
-          <div class="korry-housing" id="swSync">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">SYNC</div>
-              <div class="legend-field lit-green">REFRESH</div>
-            </button>
+          <div class="fa-korry-btn">
+            <span class="fa-korry-top">SWARM BUS</span>
+            <span class="fa-korry-bot">SYNCED</span>
+          </div>
+        </div>
+
+        <!-- Bay 3: Emergency Jettison -->
+        <div class="fa-bay">
+          <div class="fa-bay-title">BAY 3: EMERGENCY ACTUATOR</div>
+          <div class="fa-korry-btn" style="border-color:var(--fa-red);" onclick="client.command('stop'); window.__toast('EMERGENCY ABORT TRANSMITTED', 'error')">
+            <span class="fa-korry-top" style="color:var(--fa-red);">ABORT FLIGHT</span>
+            <span class="fa-korry-bot">GUARDED</span>
           </div>
         </div>
       </div>
 
-      <!-- Bay 2: Propulsion & Steer Bus -->
-      <div class="fa-switch-bay">
-        <div class="fa-bay-header">BAY 2: RUN PROPULSION & STEERING</div>
-        <div class="fa-switch-grid">
-          <div class="korry-housing" id="swRunNow">
-            <button class="korry-btn" type="button">
-              <div class="legend-field lit-cyan">RUN NOW</div>
-              <div class="legend-field dead-front">HOLD</div>
-            </button>
-          </div>
-          <div class="korry-housing" id="swLoop">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">LOOP</div>
-              <div class="legend-field lit-amber">SHOWCASE</div>
-            </button>
-          </div>
-          <div class="korry-housing" id="swSteer">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">STEER</div>
-              <div class="legend-field lit-cyan">ARMED</div>
-            </button>
-          </div>
-          <!-- Guarded Abort Switch -->
-          <div class="korry-housing" id="swAbort">
-            <div class="fa-guard-cover" id="guardAbort" aria-label="Safety Guard Cover" role="button" aria-expanded="false"></div>
-            <button class="korry-btn" type="button" style="background:#330005;">
-              <div class="legend-field lit-red">ABORT</div>
-              <div class="legend-field dead-front">STOP</div>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bay 3: Avionics & Acceptance Gates -->
-      <div class="fa-switch-bay">
-        <div class="fa-bay-header">BAY 3: AVIONICS & GATE INTERLOCKS</div>
-        <div class="fa-switch-grid">
-          <div class="korry-housing" id="swDeblock">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">BLOCKED</div>
-              <div class="legend-field lit-cyan">DEBLOCK</div>
-            </button>
-          </div>
-          <div class="korry-housing" id="swAdvice">
-            <button class="korry-btn" type="button">
-              <div class="legend-field dead-front">ADVICE</div>
-              <div class="legend-field lit-amber">QUERY</div>
-            </button>
-          </div>
-          <div class="korry-housing" id="swGates">
-            <button class="korry-btn" type="button">
-              <div class="legend-field lit-green">GATES</div>
-              <div class="legend-field dead-front">PASS</div>
-            </button>
-          </div>
-          <div class="korry-housing" id="swQueue">
-            <button class="korry-btn" type="button">
-              <div class="legend-field lit-cyan">QUEUE</div>
-              <div class="legend-field dead-front">PIN</div>
-            </button>
-          </div>
-        </div>
+      <!-- Center Synoptic Flow Display -->
+      <div class="fa-synoptic-wrap" id="synopticCanvas">
+        <svg id="synopticSvg" viewBox="0 0 800 320" role="img" aria-label="Synoptic System Flow MFD"></svg>
       </div>
     </section>
 
-    <!-- Center Synoptic Display (EICAS MFD) -->
-    <section class="fa-mfd-stage" aria-label="Synoptic System Schematic Display">
-      <div class="fa-synoptic-wrap">
-        <svg id="synopticCanvas" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cockpit Synoptic Flow Diagram">
-          <!-- Rendered by SolidJS / app.js -->
-        </svg>
+    <!-- Right Inspector Deck (40% width) -->
+    <aside class="fa-inspector-deck" aria-label="Electronic Checklist and Evidence">
+      <div class="fa-tabs" role="tablist" aria-label="Inspector Panels">
+        <button class="fa-tab active" role="tab" aria-selected="true" data-tab="ecl">CHECKLIST (ECL)</button>
+        <button class="fa-tab" role="tab" aria-selected="false" data-tab="traffic">DATALINK</button>
+        <button class="fa-tab" role="tab" aria-selected="false" data-tab="evidence">EVIDENCE</button>
+        <button class="fa-tab" role="tab" aria-selected="false" data-tab="assist">COPILOT AI</button>
       </div>
-
-      <!-- Lower Pedestal: Electronic Checklist (ECL/QRH) -->
-      <div class="fa-pedestal">
-        <div class="fa-checklist-pane" aria-label="Electronic Checklist (ECL)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <b style="color:var(--fa-cyan);font-size:10px;">ELECTRONIC CHECKLIST (ECL / QRH)</b>
-            <span id="eclFaultTitle" style="color:var(--fa-amber);font-size:9.5px;">NOMINAL FLIGHT PROFILE</span>
-          </div>
-          <div id="eclStepsList">
-            <div class="fa-ecl-step complete"><span>1. SSE TELEMETRY STREAM</span><span>[VERIFIED GREEN]</span></div>
-            <div class="fa-ecl-step complete"><span>2. ACTIVE AGENT CONCURRENCY</span><span>[NORMAL]</span></div>
-            <div class="fa-ecl-step complete"><span>3. ACCEPTANCE GATE RELAYS</span><span>[ARMED]</span></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Right Flight Management System (FMS & Project Plans) -->
-    <aside class="fa-fms-deck" aria-label="Flight Management System and Plans">
-      <div style="padding:8px;border-bottom:1px solid var(--fa-border);display:flex;justify-content:space-between;align-items:center;">
-        <b style="color:var(--fa-cyan);">FMS // PROJECT PLANS</b>
-        <button id="btnNewFlightPlan" class="master-caut-btn" style="color:#00f0ff;border-color:#00f0ff;padding:2px 6px;" type="button">+ NEW</button>
-      </div>
-      <div id="fmsPlansList" style="flex:1;overflow:auto;padding:8px;display:grid;gap:6px;">
+      <div id="inspectorContent" class="fa-tab-content">
         <!-- Rendered by SolidJS / app.js -->
-      </div>
-      <div style="padding:8px;border-top:1px solid var(--fa-border);background:#090c0e;">
-        <div style="font-size:9.5px;color:#64748b;margin-bottom:4px;">UPLINK // PLANNING ASSISTANT</div>
-        <button id="btnLaunchAssist" class="master-caut-btn" style="width:100%;color:#00ff88;border-color:#00ff88;" type="button">START AI COPILOT SESSION</button>
       </div>
     </aside>
   </main>
 
-  <div id="faToast" role="status" aria-live="polite" style="position:fixed;bottom:10px;right:10px;display:none;padding:6px 12px;border-radius:2px;font-size:11px;z-index:999;"></div>
+  <!-- Flight Controls Modal -->
+  <dialog id="commandDialog" class="fa-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--fa-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--fa-cyan);font-weight:800;">FLIGHT CONTROLS & RECOVERY ACTIONS</h3>
+      <button class="fa-btn" type="button" id="btnCloseCommands">CLOSE [X]</button>
+    </div>
+    <div id="commandDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- FMS Plans Modal -->
+  <dialog id="planDialog" class="fa-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--fa-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--fa-cyan);font-weight:800;">FLIGHT MANAGEMENT SYSTEM (FMS) PLANS</h3>
+      <button class="fa-btn" type="button" id="btnClosePlans">CLOSE [X]</button>
+    </div>
+    <div id="planDialogContent" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:1rem;">
+      <!-- Populated by app.js -->
+    </div>
+  </dialog>
+
+  <!-- Help & Manual Modal -->
+  <dialog id="helpDialog" class="fa-dialog">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;border-bottom:1px solid var(--fa-border);padding-bottom:0.5rem;">
+      <h3 style="font-size:1.05rem;color:var(--fa-cyan);font-weight:800;">FLIGHT ANNUNCIATOR OPERATIONAL MANUAL</h3>
+      <button class="fa-btn" type="button" id="btnCloseHelp">CLOSE [X]</button>
+    </div>
+    <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:0.85rem;font-size:0.85rem;line-height:1.6;color:var(--fa-text);">
+      <p><b style="color:var(--fa-cyan);">System Overview:</b> Modeled after modern commercial aerospace cockpits (Boeing 777/787 and Airbus A350), adhering to FAA AC 25.1322-1 and the "Dark Cockpit" philosophy.</p>
+      <h4 style="color:var(--fa-emerald);margin-top:0.5rem;">Glareshield & Annunciator Logic</h4>
+      <ul style="padding-left:1.5rem;display:grid;gap:0.3rem;">
+        <li><b>MASTER WARNING (Red)</b>: Flashes on critical workflow blocks and hard execution halts.</li>
+        <li><b>MASTER CAUTION (Amber)</b>: Flashes on non-blocking warnings or deblock requests.</li>
+        <li><b>Korry Split-Legend Switches</b>: Upper legend indicates subsystem identity; lower legend displays active state.</li>
+        <li><b>Electronic Checklist (ECL)</b>: Step-by-step verification of flight gates and requirements.</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <div id="faToast" role="status" aria-live="polite" style="position:fixed;bottom:1rem;right:1rem;display:none;padding:0.6rem 1.2rem;border-radius:4px;font-size:0.9rem;font-weight:700;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.8);"></div>
 
   <script type="module" src="./app.js"></script>
   <script type="module" src="../../dashboard-directory.js"></script>

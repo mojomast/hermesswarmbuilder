@@ -1,55 +1,103 @@
-/* Robotics Teleoperation Console Styling */
+/* Robotics Teleoperation Workstation Styles */
 :root {
-  --rt-bg: #070a0e;
+  --rt-bg: #07090c;
   --rt-panel: #0d1218;
-  --rt-border: #1a2330;
+  --rt-panel-alt: #131922;
+  --rt-border: #1e2633;
+  --rt-border-light: #323e52;
+  --rt-text: #e2e8f0;
+  --rt-text-dim: #94a3b8;
   --rt-hud-cyan: #00f0ff;
-  --rt-hud-amber: #f59e0b;
   --rt-hud-green: #10b981;
+  --rt-hud-amber: #f59e0b;
   --rt-hud-red: #ef4444;
-  --rt-font: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --rt-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --rt-base-size: clamp(13px, 0.9vw, 16px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 body {
   background: var(--rt-bg);
-  color: #c9d1d9;
-  font-family: var(--rt-font);
-  font-size: 11px;
-  line-height: 1.4;
+  color: var(--rt-text);
+  font-family: var(--rt-font-mono);
+  font-size: var(--rt-base-size);
+  line-height: 1.45;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  user-select: none;
 }
 
-/* Deep Space Network (DSN) Top Rail */
+/* Deep Space Network Top Rail */
 .rt-masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  background: #090e14;
+  padding: 0.6rem 1.25rem;
+  background: var(--rt-panel);
   border-bottom: 2px solid var(--rt-border);
-  gap: 12px;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
-.rt-brand { font-weight: 800; color: var(--rt-hud-cyan); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
-.rt-dsn-status { display: flex; gap: 12px; font-size: 10.5px; }
 
-/* Main Teleop Stage */
+.rt-brand {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rt-brand span { color: var(--rt-hud-cyan); }
+
+.rt-dsn-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+  background: var(--rt-panel-alt);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--rt-border);
+}
+
+.rt-toolbar { display: flex; gap: 0.5rem; }
+
+.rt-btn {
+  padding: 0.4rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid var(--rt-border-light);
+  background: var(--rt-panel-alt);
+  color: var(--rt-text);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.rt-btn:hover { border-color: var(--rt-hud-cyan); background: #1a2430; color: #fff; }
+.rt-btn.primary { background: #0369a1; border-color: var(--rt-hud-cyan); color: #fff; }
+.rt-btn.danger { background: #991b1b; border-color: var(--rt-hud-red); color: #fff; }
+
+/* Main Workbench */
 .rt-workbench {
   display: flex;
   flex: 1;
   min-height: 0;
 }
 
-/* 3D WebGL Kinematics Viewport */
+/* Left 3D Viewport Stage (60% width) */
 .rt-viewport-wrap {
-  flex: 1;
+  flex: 1.4;
   position: relative;
-  background: #040608;
+  border-right: 2px solid var(--rt-border);
   min-width: 0;
+  background: #040608;
 }
 canvas#webglCanvas {
   position: absolute;
@@ -58,60 +106,100 @@ canvas#webglCanvas {
   display: block;
 }
 
-/* HUD Overlay on Viewport */
+/* Floating Heads-Up Display (HUD) */
 .rt-hud-overlay {
   position: absolute;
-  top: 10px; left: 10px;
+  top: 1rem; left: 1rem;
   background: rgba(13, 18, 24, 0.85);
   border: 1px solid var(--rt-hud-cyan);
-  border-radius: 3px;
-  padding: 8px;
-  backdrop-filter: blur(4px);
+  border-radius: 4px;
+  padding: 0.75rem;
+  backdrop-filter: blur(6px);
   pointer-events: none;
-  font-size: 10px;
+  font-size: 0.8rem;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.35rem;
 }
 
-/* Right Staged Uplink & Mission Planner Deck */
+/* Right Teleop Deck (40% width) */
 .rt-teleop-deck {
-  width: 400px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--rt-panel);
-  border-left: 1px solid var(--rt-border);
+  min-width: 380px;
+  max-width: 600px;
 }
 
-.rt-section {
-  padding: 8px;
-  border-bottom: 1px solid var(--rt-border);
+.rt-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--rt-border);
+  background: #080b0f;
 }
-.rt-section-header {
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--rt-hud-cyan);
-  margin-bottom: 6px;
-  letter-spacing: 0.05em;
-}
-
-.rt-btn {
-  padding: 6px 10px;
+.rt-tab {
+  flex: 1;
+  padding: 0.6rem 0.4rem;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--rt-text-dim);
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  border-radius: 2px;
+  font-size: 0.8rem;
+  font-weight: 800;
   cursor: pointer;
-  border: 1px solid #334155;
-  background: #1e293b;
-  color: #fff;
+  text-align: center;
+  transition: all 0.15s ease;
 }
-.rt-btn:hover { border-color: var(--rt-hud-cyan); }
-.rt-btn.primary { background: #0369a1; border-color: var(--rt-hud-cyan); }
-.rt-btn.danger { background: #7f1d1d; border-color: #ef4444; }
+.rt-tab:hover { color: #fff; background: #111822; }
+.rt-tab.active { color: var(--rt-hud-cyan); border-bottom-color: var(--rt-hud-cyan); background: var(--rt-panel); }
 
-@media (max-width: 1024px) {
+.rt-tab-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Modals & Dialogs */
+.rt-dialog {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(850px, 92vw);
+  max-height: 88vh;
+  background: var(--rt-panel);
+  color: var(--rt-text);
+  border: 2px solid var(--rt-hud-cyan);
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+  padding: 1.25rem;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rt-dialog[open] { display: flex; }
+.rt-dialog::backdrop { background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); }
+
+.rt-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+.rt-field label { font-size: 0.8rem; font-weight: 700; color: var(--rt-text-dim); }
+.rt-input, .rt-textarea, .rt-select {
+  padding: 0.5rem 0.75rem;
+  background: #06090e;
+  border: 1px solid var(--rt-border-light);
+  border-radius: 3px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.rt-input:focus, .rt-textarea:focus, .rt-select:focus { border-color: var(--rt-hud-cyan); outline: none; }
+.rt-textarea { resize: vertical; min-height: 80px; }
+
+@media (max-width: 1200px) {
   .rt-workbench { flex-direction: column; }
-  .rt-viewport-wrap { height: 50vh; }
-  .rt-teleop-deck { width: 100%; height: 50vh; border-left: none; border-top: 1px solid var(--rt-border); }
+  .rt-viewport-wrap { height: 55vh; border-right: none; border-bottom: 2px solid var(--rt-border); }
+  .rt-teleop-deck { width: 100%; max-width: none; height: 45vh; }
 }

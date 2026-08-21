@@ -667,8 +667,9 @@ function readVariantArtifact(path:string, variantId:string){
   const value=readRequiredJson(path);
   const mapping=value.objectiveMapping;
   const validMapping=(Array.isArray(mapping)&&mapping.length>0)||(mapping&&typeof mapping==="object"&&!Array.isArray(mapping)&&Object.keys(mapping).length>0&&Object.values(mapping).every(item=>typeof item==="string"&&item.trim()));
-  if(value.schemaVersion!=="apb.variant.v1"||value.variantId!==variantId||typeof value.claim!=="string"||!value.claim.trim()||!Array.isArray(value.acceptedFeatures)||value.acceptedFeatures.length===0||!value.acceptedFeatures.every((item:any)=>typeof item==="string"&&item.trim())||!validMapping||!Array.isArray(value.changes)||!Array.isArray(value.evidence)||!value.budget||!Number.isInteger(value.budget.visualMotifChanges)||!Number.isInteger(value.budget.newSections)||typeof value.budget.techStackChurn!=="boolean"||typeof value.budget.unrelatedFeatures!=="boolean") throw new Error(`malformed variant artifact for ${variantId}: ${path}`);
-  return value;
+  const summary=(item:any)=>typeof item==="string"?!!item.trim():Array.isArray(item)?item.length>0:!!item&&typeof item==="object"&&!Array.isArray(item)&&Object.keys(item).length>0;
+  if(value.schemaVersion!=="apb.variant.v1"||value.variantId!==variantId||typeof value.claim!=="string"||!value.claim.trim()||!Array.isArray(value.acceptedFeatures)||value.acceptedFeatures.length===0||!value.acceptedFeatures.every((item:any)=>typeof item==="string"&&item.trim())||!validMapping||!summary(value.changes)||!summary(value.evidence)||!value.budget||!Number.isInteger(value.budget.visualMotifChanges)||!Number.isInteger(value.budget.newSections)||typeof value.budget.techStackChurn!=="boolean"||typeof value.budget.unrelatedFeatures!=="boolean") throw new Error(`malformed variant artifact for ${variantId}: ${path}`);
+  return {...value,changes:Array.isArray(value.changes)?value.changes:[value.changes],evidence:Array.isArray(value.evidence)?value.evidence:[value.evidence]};
 }
 function readEvaluationArtifact(path:string, variantId:string){
   const value=readRequiredJson(path), scoreNames=["objectiveFit","userValue","visualQuality","implementationQuality","accessibility","performance","total"];

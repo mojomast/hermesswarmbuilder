@@ -36,7 +36,8 @@ const agent=process.env.APB_AGENT_ID, runRoot=process.env.AUTONOMOUS_PROJECT_RUN
 const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
   if(agent.startsWith('variant-')){
   fs.writeFileSync(path.join(process.cwd(),agent+'.txt'),'focused managed change\\n');
-  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',objectiveMapping:['fixture objective'],changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
+  const objectiveMapping=process.env.FAKE_OBJECT_MAPPING==='1'?{fixtureObjective:'Focused fixture implementation'}:['fixture objective'];
+  fs.writeFileSync(path.join(runRoot,'artifacts','variants',agent+'.json'),JSON.stringify({schemaVersion:'apb.variant.v1',variantId:agent,title:'Focused fixture',claim:'Bounded change',objectiveMapping,changes:[agent+'.txt'],risks:[],evidence:['artifacts/variants/'+agent+'.diff'],validationNotes:'runner validates',budget:{visualMotifChanges:0,newSections:0,techStackChurn:false,unrelatedFeatures:false}},null,2));
   if(process.env.FAKE_SCENARIO==='pause') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.pause={requested:true,mode:'checkpoint',reason:'fixture pause'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
   if(process.env.FAKE_SCENARIO==='stop') { const p=path.join(root,'control.json'), c=JSON.parse(fs.readFileSync(p,'utf8')); c.stop={requested:true,mode:'graceful',reason:'fixture stop'}; fs.writeFileSync(p,JSON.stringify(c,null,2)); }
 } else if(agent.startsWith('evaluator-') && process.env.FAKE_SCENARIO!=='missing-evaluator'){
@@ -67,7 +68,7 @@ const args=process.argv.slice(2), query=args[args.indexOf('--query')+1]||'';
 
   const result = spawnSync('bun', ['runner/autonomous-project-midnight-runner.ts'], {
     cwd: sourceRepo,
-    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, APB_DISABLE_AUTO_CONTINUATION:'1' },
+    env: { ...process.env, HOME:home, AUTONOMOUS_PROJECT_STATE_ROOT:root, HERMES_BIN:fakeHermes, FAKE_SCENARIO:options.fakeScenario || name, FAKE_OBJECT_MAPPING:options.objectiveMappingObject?'1':'0', APB_DISABLE_AUTO_CONTINUATION:'1' },
     encoding:'utf8'
   });
   if(result.status !== 0) throw new Error(`${name}: runner exited ${result.status}: ${result.stderr || result.stdout}`);
@@ -92,6 +93,9 @@ try {
   const row=rows.find(x=>x.requestId===success.requestId || x.id===success.requestId);
   if(!row || row.runId!==success.id || row.iterationId!==`iter-${success.id}` || row.status!=='completed') throw new Error('success: request row was not reconciled');
   if(row.sourceRunId!=='source-run' || row.parentIterationId!=='source-iteration') throw new Error('success: source lineage was lost');
+
+  const objectMapping=runScenario('object-mapping',{objectiveMappingObject:true}); fixtures.push(objectMapping.home);
+  if(json(join(objectMapping.root,'run.json')).status!=='completed') throw new Error('object mapping: valid object-form objectiveMapping was blocked');
 
   const missingEval=runScenario('missing-evaluator'); fixtures.push(missingEval.home);
   if(json(join(missingEval.root,'run.json')).status!=='blocked') throw new Error('missing evaluator: run did not block');

@@ -22,7 +22,7 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
 
 5. **Three.js manual, Picking**  
    https://threejs.org/manual/en/picking.html  
-   Applied: telemetry objects and a complete camera-relative operator control grid use explicit raycast registries. Operator controls are tested before the console click shield, so every visible control remains actionable while the readout still prevents click-through to loom geometry.
+   Applied: telemetry objects and a complete camera-relative mechanical key bank use explicit raycast registries. Operator controls are tested before the console click shield, and run-cloth instance IDs resolve to their exact run row, so every visible control and rendered live entity remains actionable.
 
 6. **MDN, WebGL best practices**  
    https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices  
@@ -35,7 +35,7 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
 8. **Three.js documentation, Object3D and MeshBasicMaterial**
    https://threejs.org/docs/#api/en/core/Object3D
    https://threejs.org/docs/#api/en/materials/MeshBasicMaterial
-   Applied: the operator readout and its navigation, action, access, and camera controls are Three.js meshes parented to the perspective camera and fitted from the current FOV/aspect on every render. Controls occupy a separate responsive grid outside the readout. Their unlit materials disable depth test/write, fog, and tone mapping and render last, keeping the interface readable and actionable through orbit, zoom, resize, portrait layout, reduced motion, and context restoration.
+   Applied: the compact-by-default operator readout and its navigation, action, access, camera, detail, and minimize latches are Three.js meshes parented to the perspective camera and fitted from the current FOV/aspect on every render. Fixed-aspect 44px-high keys form a mechanical lever bank rather than stretched cards. Exact reviews temporarily receive detail sizing; the labelled readout latch remains available when the panel is physically hidden. Unlit materials render last through orbit, resize, portrait layout, reduced motion, and context restoration.
 
 9. **W3C WAI, WCAG 2.2, Non-text Content (1.1.1)**
    https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html  
@@ -64,6 +64,6 @@ Research was checked in August 2026. The implementation has no CDN, remote font,
 - Resource reads carry an explicit owning run ID. Selection changes invalidate old resource display; no artifact, log, SPEC, or DEVPLAN is borrowed from another run.
 - Iteration requests include an absolute repository path, base ref, source identity, objective, bounded change, copied gate definitions, evidence policy, and canonical limits. Historical lineage requires an exact retained source iteration and matching run.
 - Plan lifecycle requests use the loaded ledger version plus exact current revision and digest. A mismatch between ledger and loaded revision blocks dispatch.
-- Scene caps: 24 runs, 24 agents, 20 queue items, 20 gates, 30 iterations, 24 plans, 160 event/tool marks, 512 cloth cells, and 192 warp/heddle instances. The operator texture is 1280 square. Eight world labels use one persistent 2048 by 1024 atlas, one material, and one indexed quad mesh; snapshot or selected-label changes redraw that atlas without allocating textures, while console keystrokes update only the console texture.
-- World labels identify the real function and rendered/total inventory of cloth runs, shuttle agents, queue spools, inspection gates, pattern-drum plans, workflow heddles, and punched-card commands. The camera-relative console identifies itself as status-control. The selected label reports label, type, status, and bounded ID and follows an exact entity mesh or cloth-row anchor. Quads use larger mobile dimensions, face the camera at a stable pixel size, reserve the console and every control rectangle, and collapse lower-priority quads when no collision-free placement exists. They disable depth/picking and are rebuilt and disposed with the scene after context restoration.
+- Scene caps: 24 runs, 24 agents, 20 queue items, 20 gates, 30 iterations, 24 plans, 160 event/tool marks, 512 cloth cells, and 192 warp/heddle instances. The operator texture is 1280 by 900. Eight world labels use one persistent 2048 by 1024 atlas, one material, and one indexed quad mesh; snapshot or selected-label changes redraw that atlas without allocating textures, while console keystrokes update only the console texture.
+- World labels identify literal function plus loom metaphor and rendered/total inventory for cloth runs, shuttle agents, queue spools, inspection gates, pattern-drum plans, workflow heddles, and punched-card commands. Status colors distinguish failed/blocked, active/ready, and pending/draft entities. The selected label is placed first, reports the actual record label, type, status, and bounded ID, and follows an exact entity mesh or pickable cloth-row anchor. Labels reserve the readout and every key rectangle and collapse lower-priority labels first when no collision-free placement exists.
 - DPR begins at 1.5 maximum, falls when rolling frame cost exceeds budget, and is also bounded by a 4K internal back buffer. Mobile uses a tighter DPR and farther camera; reduced motion renders only on changes.

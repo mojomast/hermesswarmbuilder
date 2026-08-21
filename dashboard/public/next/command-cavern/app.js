@@ -43,6 +43,7 @@ const motionDemoRequested = new URLSearchParams(globalThis.location?.search || "
 let visualFrozen = !motionDemoRequested || Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 // MINIMIZABLE_TECTONIC_TABLET: the physical SDF screen can collapse to reveal the cavern.
 let tabletMinimized = false;
+let cavernSelection = null;
 const receipts = [];
 const hits = [];
 
@@ -58,7 +59,7 @@ const COMMAND_DEFAULTS = Object.freeze({
   "pause-showcase-loop": { reason: "" }, "resume-showcase-loop": {}, "stop-showcase-loop": { reason: "" }, "set-showcase-target": { targetGenerations: 3 },
   "gate-decision": { gateId: "", runId: "", status: "needs-evidence", decision: "defer", evidenceArtifacts: [], notes: "" }, "attach-gate-evidence": { gateId: "", runId: "", artifacts: [], notes: "" },
   "add-queue-item": { title: "", objective: "", context: "", constraints: "", priority: 50, pin: false, acceptanceGateIds: [], target: {} }, "clear-queue": {}, "pin-queue-item": { itemId: "" }, "archive-queue-item": { itemId: "" },
-  "add-gate": { id: "", phase: "building", severity: "must", description: "", requiredEvidence: "" }, "update-gate": { gateId: "", phase: "building", severity: "must", description: "", requiredEvidence: [], status: "pending" }
+  "add-gate": { id: "", phase: "building", severity: "must", description: "", requiredEvidence: "" }, "update-gate": { gateId: "" }
 });
 const OPERATION_KEYS = Object.freeze({
   pause: ["mode", "reason"], hold: ["reason"], resume: [], unhold: [], stop: ["mode", "reason"], "run-now": [],
@@ -71,7 +72,7 @@ const OPERATION_KEYS = Object.freeze({
   "pause-showcase-loop": ["reason"], "resume-showcase-loop": [], "stop-showcase-loop": ["reason"], "set-showcase-target": ["targetGenerations"],
   "gate-decision": ["gateId", "runId", "status", "decision", "evidenceArtifacts", "notes"], "attach-gate-evidence": ["gateId", "runId", "artifacts", "notes"],
   "add-queue-item": ["title", "objective", "context", "constraints", "priority", "pin", "acceptanceGateIds", "target", "source"], "clear-queue": [], "pin-queue-item": ["itemId"], "archive-queue-item": ["itemId"],
-  "add-gate": ["id", "phase", "severity", "description", "requiredEvidence"], "update-gate": ["gateId", "phase", "severity", "description", "requiredEvidence", "status"]
+  "add-gate": ["id", "phase", "severity", "description", "requiredEvidence"], "update-gate": ["gateId", "phase", "severity", "description", "requiredEvidence"]
 });
 
 function announce(message, error = false) {
@@ -162,6 +163,11 @@ function clearQueueCollateral() {
 
 function commandSeed(type) {
   const seed = clone(COMMAND_DEFAULTS[type]);
+  if (type === "update-gate") {
+    const gate = gates()[0];
+    if (!gate) return seed;
+    return Object.fromEntries([["gateId", gate.id], ["phase", gate.phase], ["severity", gate.severity], ["description", gate.description], ["requiredEvidence", gate.requiredEvidence]].filter(([, value]) => value !== undefined));
+  }
   const run = currentRun();
   const iteration = snapshot.iterations.find((item) => idOf(item) === snapshot.selectedIterationId) || snapshot.iterations.find((item) => item.runId === selectedRunId) || {};
   if ("runId" in seed && !seed.runId) seed.runId = selectedRunId || currentRunId() || "";
@@ -494,6 +500,79 @@ function filteredRecords(kind) {
   return query ? records(kind).filter((record) => json(record).toLowerCase().includes(query)) : records(kind);
 }
 
+const LANDMARK_META = [
+  ["runs", "RUNS / ROCK CORES"], ["agents", "AGENTS / SURVEY DRONES"], ["events", "EVENTS+TOOLS / INCLUSIONS"], ["queue", "QUEUE / SEED CRYSTALS"],
+  ["gates", "GATES / PRESSURE LOCKS"], ["iterations", "ITERATIONS / BRANCHES"], ["plans", "PLANS / TECTONIC TABLETS"], ["operations", "OPERATIONS / MONOLITHS"]
+];
+function recordKey(kind, record) {
+  if (kind === "events") return String(first(record?.id, record?.eventId, [first(record?.ts, record?.timestamp, "event"), record?.runId, record?.agentId, first(record?.type, "record"), first(record?.message, record?.source)].map((part) => String(part || "-")).join(":")));
+  return idOf(record);
+}
+function importantRecord(kind, rows) {
+  if (!rows.length) return null;
+  if (kind === "runs") return rows.find((row) => recordKey(kind, row) === currentRunId()) || rows[0];
+  if (kind === "agents") return rows.find((row) => /error|fail|block|stopp/i.test(String(row.status))) || rows[0];
+  if (kind === "events") return [...rows].reverse().find((row) => row.level === "error") || rows.at(-1);
+  if (kind === "queue") return rows.find((row) => row.id === snapshot.control?.pinnedQueueItemId || row.status === "pinned") || rows[0];
+  if (kind === "gates") return rows.find((row) => /fail|reject|needs-evidence/i.test(String(row.status))) || rows[0];
+  if (kind === "iterations") return rows.find((row) => recordKey(kind, row) === snapshot.selectedIterationId) || rows[0];
+  if (kind === "plans") return rows.find((row) => recordKey(kind, row) === selectedPlanId) || rows[0];
+  return rows[0];
+}
+function sceneLandmarks() {
+  return LANDMARK_META.map(([kind, label], index) => {
+    let rows, record, actualKind = kind;
+    if (kind === "events") {
+      const eventRows = snapshot.events;
+      const toolRows = tools();
+      record = importantRecord("events", eventRows) || toolRows[0] || null;
+      actualKind = record && eventRows.includes(record) ? "events" : "tools";
+      rows = [...eventRows, ...toolRows];
+    } else if (kind === "plans") rows = snapshot.plans;
+    else if (kind === "operations") { rows = OPERATION_COMMANDS; record = selectedCommand; }
+    else rows = records(kind);
+    record ||= importantRecord(kind, rows);
+    const total = rows.length;
+    const rendered = Math.min(2, total);
+    const id = kind === "operations" ? String(record) : record ? recordKey(actualKind, record) : "none";
+    const status = kind === "operations" ? "review only" : first(record?.status, record?.state, record?.level, record?.phase, record?.type, "observed");
+    return { index, kind, actualKind, label, total, rendered, record, id, status: String(status) };
+  });
+}
+function selectCavernLandmark(index) {
+  const landmark = sceneLandmarks()[index];
+  if (!landmark) return;
+  cavernSelection = { category: landmark.kind, kind: landmark.actualKind, id: landmark.id };
+  renderer.sceneFocused = index;
+  if (landmark.kind === "operations") selectedCommand = landmark.id;
+  selectedRecord = landmark.record && landmark.kind !== "operations" ? { kind: landmark.actualKind, data: landmark.record } : null;
+  announce(`${landmark.label}: monitoring ${landmark.id} / ${landmark.status}. Press O to restore its existing workspace.`);
+}
+function resolveCavernSelection() {
+  if (!cavernSelection) return null;
+  const landmark = sceneLandmarks().find((item) => item.kind === cavernSelection.category);
+  if (!landmark) return null;
+  if (landmark.kind === "operations") return { ...landmark, id: cavernSelection.id, record: cavernSelection.id, status: "review only" };
+  const rows = landmark.kind === "plans" ? snapshot.plans : records(cavernSelection.kind);
+  const record = rows.find((item) => recordKey(cavernSelection.kind, item) === cavernSelection.id);
+  return record ? { ...landmark, actualKind: cavernSelection.kind, record, id: cavernSelection.id, status: String(first(record.status, record.state, record.level, record.phase, record.type, "observed")) } : { ...landmark, record: null, id: cavernSelection.id, status: "no longer present" };
+}
+async function openCavernSelection() {
+  const selected = resolveCavernSelection();
+  setTabletMinimized(false);
+  if (!selected) return;
+  cavernSelection = null;
+  if (selected.kind === "operations") { page = "operations"; selectedCommand = selected.id; }
+  else if (selected.kind === "plans") { page = "plans"; if (selected.record) await loadPlan(selected.id); }
+  else {
+    page = "evidence"; evidenceKind = selected.actualKind; listPage = 0;
+    if (selected.actualKind === "runs" && selected.record) await selectRun(selected.id);
+    if (selected.actualKind === "iterations" && selected.record) await client.selectIteration(selected.id);
+    selectedRecord = selected.record ? { kind: selected.actualKind, data: selected.record } : null;
+  }
+  announce(`${selected.label}: opened ${selected.id} in the existing ${page} workspace. No operation was dispatched.`);
+}
+
 async function selectRun(runId) {
   selectedRunId = runId;
   selectedRecord = null;
@@ -537,6 +616,10 @@ async function toggleClientConnection() {
 // The high-resolution offscreen inscription is sampled only at SDF tablet hits.
 const TABLET_TEXTURE_WIDTH = 1600;
 const TABLET_TEXTURE_HEIGHT = 900;
+const PORTRAIT_TEXTURE_WIDTH = 800;
+const PORTRAIT_TEXTURE_HEIGHT = 1800;
+// STATIC_TABLET_SHARPNESS_POLICY: spend pixels on isolated static frames, never unbounded DPR or 10fps motion.
+const RENDER_DENSITY = Object.freeze({ tablet: { scale: 1, pixels: 1_440_000 }, inspection: { scale: .7, pixels: 900_000 }, motion: { scale: .45, pixels: 500_000 } });
 const uiCanvas = document.createElement("canvas");
 uiCanvas.width = TABLET_TEXTURE_WIDTH;
 uiCanvas.height = TABLET_TEXTURE_HEIGHT;
@@ -544,7 +627,7 @@ const ui = uiCanvas.getContext("2d", { alpha: true });
 const uploadCanvas = document.createElement("canvas");
 const upload = uploadCanvas.getContext("2d", { alpha: true });
 function prepareUploadCanvas(portrait, maximum) {
-  const desired = portrait ? [900, 1600] : [TABLET_TEXTURE_WIDTH, TABLET_TEXTURE_HEIGHT];
+  const desired = portrait ? [PORTRAIT_TEXTURE_WIDTH, PORTRAIT_TEXTURE_HEIGHT] : [TABLET_TEXTURE_WIDTH, TABLET_TEXTURE_HEIGHT];
   const scale = Math.min(1, maximum / desired[0], maximum / desired[1]);
   const width = Math.max(1, Math.floor(desired[0] * scale)), height = Math.max(1, Math.floor(desired[1] * scale));
   if (uploadCanvas.width !== width || uploadCanvas.height !== height) { uploadCanvas.width = width; uploadCanvas.height = height; }
@@ -577,7 +660,6 @@ function wrap(value, x, y, width, size = 20, color = C.bone, maxLines = 8) {
 }
 function slab(x, y, w, h, title = "") {
   ui.fillStyle = C.slab; ui.fillRect(x, y, w, h); ui.strokeStyle = C.edge; ui.lineWidth = 2; ui.strokeRect(x, y, w, h);
-  ui.strokeStyle = "rgba(200,245,154,.18)"; ui.beginPath(); ui.moveTo(x + 8, y + 2); ui.lineTo(x + w - 18, y + h - 5); ui.stroke();
   if (title) text(title.toUpperCase(), x + 18, y + 14, 16, C.lime, w - 36, "700");
 }
 function button(label, x, y, w, h, action, options = {}) {
@@ -751,7 +833,7 @@ function drawEvidence() {
 
 function drawHelp() {
   slab(48, 172, 720, 658, "Cave map / keyboard and picking");
-  const help = ["Arrow keys: move among engraved hit regions", "Enter or Space: activate focused engraving", "1-5: Core Samples, Monoliths, Tablets, Excavations, Cave Map", "A: switch to synchronized semantic application", "T: minimize or restore the physical control tablet", "?: open this cave map", "F: freeze or resume nonessential drone/mineral motion", "R: refresh all authoritative telemetry", "Escape: cancel editor or command review", "Pointer/touch: ray-region pick engraved surfaces"];
+  const help = ["Arrow keys: move among engravings or exposed landmarks", "Enter or Space: select the focused landmark/engraving", "O: restore and open the selected landmark workspace", "1-5: Core Samples, Monoliths, Tablets, Excavations, Cave Map", "A: switch to synchronized semantic application", "T: minimize or restore the physical control tablet", "?: open this cave map", "F: freeze or resume nonessential drone/mineral motion", "R: refresh all authoritative telemetry", "Pointer/touch: ray-pick tablet or exposed landmark slabs"];
   help.forEach((line, index) => text(line, 76, 220 + index * 47, 18, index < 5 ? C.bone : C.dim, 650));
   slab(790, 172, 762, 658, "Geology and authority");
   wrap("Runs are stratified rock cores. Agents are bioluminescent survey drones. Events and tool calls are mineral inclusions. Queue items are seed crystals. Gates are pressure locks. Iterations are branching excavations. Plans are engraved tectonic tablets. Commands are physical resonant monoliths.", 820, 220, 700, 19, C.bone, 8);
@@ -799,11 +881,25 @@ function drawMinimizedUi() {
   ui.strokeStyle = C.lime;
   ui.lineWidth = 5;
   ui.strokeRect(24, 24, TABLET_TEXTURE_WIDTH - 48, TABLET_TEXTURE_HEIGHT - 48);
-  text("COMMAND TABLET MINIMIZED", 75, 90, 42, C.lime, 1450, "800");
-  wrap("The live cavern remains visible. Restore this physical tablet for complete swarm controls.", 75, 155, 1420, 25, C.bone, 3);
-  if (renderer?.isPortrait()) button("RESTORE TABLET [T]", 90, 360, 620, 170, () => setTabletMinimized(false), { active: true, key: "tablet:restore" });
-  else button("RESTORE TABLET [T]", 380, 330, 840, 190, () => setTabletMinimized(false), { active: true, key: "tablet:restore" });
-  text("T / RESTORE", 75, 790, 24, C.dim, 500, "700");
+  const portrait = renderer?.isPortrait();
+  text("COMMAND TABLET MINIMIZED", portrait ? 70 : 500, 80, portrait ? 31 : 42, C.lime, portrait ? 660 : 600, "800");
+  wrap("Pick a labeled cavern slab to monitor one exact live record.", portrait ? 70 : 500, 145, portrait ? 660 : 600, 19, C.bone, 3);
+  const selected = resolveCavernSelection();
+  const landmarks = sceneLandmarks();
+  landmarks.forEach((landmark, index) => {
+    const x = index < 4 ? 45 : 1165, y = 285 + (index % 4) * 120;
+    ui.fillStyle = selected?.kind === landmark.kind ? "rgba(160,210,115,.27)" : "rgba(18,25,15,.96)"; ui.fillRect(x, y, 390, 82);
+    ui.strokeStyle = renderer?.sceneFocused === index ? C.lime : C.edge; ui.lineWidth = renderer?.sceneFocused === index ? 4 : 2; ui.strokeRect(x, y, 390, 82);
+    text(landmark.label, x + 10, y + 9, 14, C.lime, 370, "700");
+    text(`${landmark.rendered}/${landmark.total}  ${clipped(landmark.id, 23)}`, x + 10, y + 31, 14, C.bone, 370);
+    text(clipped(landmark.status, 35), x + 10, y + 53, 12, /fail|error|block|no longer/i.test(landmark.status) ? C.red : C.dim, 370);
+  });
+  const centerX = portrait ? 870 : 500, centerWidth = portrait ? 660 : 600;
+  text(selected ? `MONITORING ${selected.label}` : "NO LIVE RECORD SELECTED", centerX, portrait ? 90 : 275, portrait ? 19 : 24, selected ? C.lime : C.dim, centerWidth, "800");
+  if (selected) { text(clipped(selected.id, portrait ? 38 : 52), centerX, portrait ? 132 : 315, 19, C.bone, centerWidth); text(clipped(selected.status, portrait ? 38 : 52), centerX, portrait ? 168 : 347, 16, C.amber, centerWidth); }
+  button("RESTORE TABLET [T]", portrait ? 90 : 500, 430, portrait ? 620 : 600, 95, () => setTabletMinimized(false), { active: !selected, key: "tablet:restore" });
+  button("OPEN SELECTED WORKSPACE [O]", portrait ? 890 : 500, 550, portrait ? 620 : 600, 95, openCavernSelection, { active: Boolean(selected), key: "tablet:open-selected" });
+  text("Selection never dispatches an operation.", centerX, portrait ? 690 : 690, 18, C.amber, centerWidth, "700");
 }
 
 function drawUi() {
@@ -841,8 +937,8 @@ function drawUi() {
 
 class CavernRenderer {
   constructor(canvas) {
-    this.canvas = canvas; this.gl = null; this.program = null; this.texture = null; this.vao = null; this.frame = 0; this.animationTimer = 0; this.hidden = document.hidden; this.lost = false; this.ready = false; this.failureReason = ""; this.focusedHit = 0; this.focusedKey = null; this.uiDirty = true;
-    this.textureWidth = 0; this.textureHeight = 0; this.quality = innerWidth < 700 ? 0.38 : 0.45; this.steps = innerWidth < 700 ? 18 : 22; this.start = performance.now();
+    this.canvas = canvas; this.gl = null; this.program = null; this.texture = null; this.vao = null; this.frame = 0; this.animationTimer = 0; this.hidden = document.hidden; this.lost = false; this.ready = false; this.failureReason = ""; this.focusedHit = 0; this.focusedKey = null; this.sceneFocused = 0; this.uiDirty = true;
+    this.textureWidth = 0; this.textureHeight = 0; this.quality = 1; this.steps = innerWidth < 700 ? 18 : 22; this.start = performance.now();
     this.bind(); this.initialize();
   }
   shader(type, source, label) {
@@ -866,7 +962,7 @@ class CavernRenderer {
       precision highp float; const vec2 P[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
       void main(){gl_Position=vec4(P[gl_VertexID],0.,1.);}`;
     const fs = `#version 300 es
-      precision highp float; out vec4 outColor; uniform vec2 uRes; uniform vec2 uTabletHalf; uniform float uCameraZ; uniform float uTime; uniform float uMotion; uniform int uSteps; uniform sampler2D uUi; uniform vec4 uCounts; uniform vec4 uMore; uniform vec4 uState;
+      precision highp float; out vec4 outColor; uniform vec2 uRes; uniform vec2 uTabletHalf; uniform float uCameraZ; uniform float uTime; uniform float uMotion; uniform float uSelectedCategory; uniform float uLandmarks; uniform float uPortrait; uniform int uSteps; uniform sampler2D uUi; uniform vec4 uCounts; uniform vec4 uMore; uniform vec4 uState;
       float hash(vec3 p){p=fract(p*.1031);p+=dot(p,p.yzx+33.33);return fract((p.x+p.y)*p.z);}
       float box(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
       float sphere(vec3 p,float r){return length(p)-r;} float torus(vec3 p,vec2 t){vec2 q=vec2(length(p.xz)-t.x,p.y);return length(q)-t.y;}
@@ -877,19 +973,21 @@ class CavernRenderer {
         r=take(r,p.y+2.3+.08*sin(p.x*1.7)*sin(p.z*1.2),1.);
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.x,2.))break;float side=mod(fi,2.)<.5?-1.:1.;vec3 q=p-vec3(side*3.9,-1.2+fi*.5,1.35);float core=max(length(q.xz)-(.2+.03*fi),abs(q.y)-.58);r=take(r,core,2.);}
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.y,2.))break;float a=fi*3.14+uTime*.12*uMotion;vec3 center=vec3(cos(a)*3.7,.9+sin(a*1.7)*.28,1.35+sin(a)*.25);r=take(r,sphere(p-center,.09),3.);}
-        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.z,2.))break;vec3 q=p-vec3(-2.1+fi*4.2,1.9,1.6);r=take(r,sphere(q,.065),8.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.z+uMore.w,2.))break;vec3 q=p-vec3(-2.1+fi*4.2,1.9,1.6);r=take(r,sphere(q,.065),8.);}
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.w,2.))break;vec3 q=p-vec3(3.75,-1.7+fi*.5,.45);r=take(r,octa(q,.18),4.);}
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.x,2.))break;vec3 q=p-vec3(-1.3+fi*2.6,2.05,1.55);r=take(r,abs(torus(q.xzy,vec2(.32,.045)))-.008,5.);}
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.y,2.))break;vec3 a=vec3(-1.3+fi*2.6,-2.05,1.5),b=a+vec3((fi-.5)*.55,.65,.3);r=take(r,capsule(p,a,b,.045),9.);}
         for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.z,2.))break;vec3 q=p-vec3(3.8,.35+fi*.65,1.3);r=take(r,box(q,vec3(.2,.13,.045)),10.);}
         vec3 tablet=p-vec3(0.,.05,.55);r=take(r,box(tablet,vec3(uTabletHalf,.10)),6.);
+        if(uLandmarks>.5)for(int i=0;i<8;i++){float fi=float(i),side=i<4?-1.:1.,row=mod(fi,4.),landmarkX=uPortrait>.5?clamp(uRes.x/uRes.y*4.5-.72,.35,1.4):2.45;vec3 q=p-vec3(side*landmarkX,1.4-row*.93,1.);r=take(r,box(q,vec3(.72,.12,.06)),11.+fi);}
         for(int i=0;i<2;i++){float fi=float(i);vec3 q=p-vec3(-1.2+fi*2.4,-2.02,1.2);r=take(r,box(q,vec3(.11,.42+.05*fi,.11)),7.);}return r;}
       vec3 normal(vec3 p){vec2 e=vec2(.002,0.);float d=scene(p).x;return normalize(vec3(scene(p+e.xyy).x-d,scene(p+e.yxy).x-d,scene(p+e.yyx).x-d));}
       void main(){vec2 uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;vec3 ro=vec3(0.,.05,uCameraZ),rd=normalize(vec3(uv,1.42));float travel=0.,mat=0.;bool hit=false;vec3 p=ro;
         for(int i=0;i<144;i++){if(i>=uSteps)break;p=ro+rd*travel;vec2 h=scene(p);if(h.x<.0018){mat=h.y;hit=true;break;}travel+=max(.006,h.x*.68);if(travel>18.)break;}
         vec3 col=vec3(.008,.012,.007);if(hit){vec3 n=normal(p),light=normalize(vec3(-.5,.8,-.45));float dif=max(.06,dot(n,light));float strata=.7+.3*sin(p.y*24.+sin(p.x*3.)*2.);vec3 base=vec3(.13,.14,.10)*strata;
-          if(mat==2.)base=mix(vec3(.32,.24,.14),vec3(.55,.25,.15),uState.x)*strata;if(mat==3.)base=mix(vec3(.25,1.,.58),vec3(1.,.22,.12),uState.y)*(1.1+.25*sin(uTime*3.*uMotion));if(mat==4.)base=mix(vec3(.8,.45,.12),vec3(.55,1.,.3),uState.z);if(mat==5.)base=mix(vec3(.75,.52,.2),vec3(.9,.25,.1),max(uState.x,uState.w));if(mat==6.)base=vec3(.20,.22,.15);if(mat==7.)base=vec3(.28,.18,.09);if(mat==8.)base=mix(vec3(.28,.75,.62),vec3(1.,.24,.12),uState.y);if(mat==9.)base=vec3(.42,.32,.2);if(mat==10.)base=vec3(.38,.3,.18);col=base*dif+base*.16/(.2+travel*travel*.03);col*=1.-.18*hash(floor(p*18.));
-          if(mat==6.){vec3 lp=p-vec3(0.,.05,.55);vec2 panel=vec2(lp.x/(2.*uTabletHalf.x)+.5,.5-lp.y/(2.*uTabletHalf.y));bool front=abs(lp.z+.10)<.025;bool inside=all(greaterThanEqual(panel,vec2(0.)))&&all(lessThanEqual(panel,vec2(1.)));if(front&&inside){vec4 ink=texture(uUi,panel);float chipped=smoothstep(.01,.035,min(min(panel.x,panel.y),min(1.-panel.x,1.-panel.y)));col=mix(col,ink.rgb,ink.a*chipped*.97);}}}
+          if(mat==2.)base=mix(vec3(.32,.24,.14),vec3(.55,.25,.15),uState.x)*strata;if(mat==3.)base=mix(vec3(.25,1.,.58),vec3(1.,.22,.12),uState.y)*(1.1+.25*sin(uTime*3.*uMotion));if(mat==4.)base=mix(vec3(.8,.45,.12),vec3(.55,1.,.3),uState.z);if(mat==5.)base=mix(vec3(.75,.52,.2),vec3(.9,.25,.1),max(uState.x,uState.w));if(mat==6.)base=vec3(.20,.22,.15);if(mat==7.)base=vec3(.28,.18,.09);if(mat==8.)base=mix(vec3(.28,.75,.62),vec3(1.,.24,.12),uState.y);if(mat==9.)base=vec3(.42,.32,.2);if(mat==10.)base=vec3(.38,.3,.18);if(mat>=11.)base=mix(vec3(.12,.18,.10),vec3(.32,.5,.2),1.-step(.4,abs((mat-11.)-uSelectedCategory)));col=base*dif+base*.16/(.2+travel*travel*.03);col*=1.-.18*hash(floor(p*18.));
+           if(mat==6.){vec3 lp=p-vec3(0.,.05,.55);vec2 panel=vec2(lp.x/(2.*uTabletHalf.x)+.5,.5-lp.y/(2.*uTabletHalf.y));bool front=abs(lp.z+.10)<.025;bool inside=all(greaterThanEqual(panel,vec2(0.)))&&all(lessThanEqual(panel,vec2(1.)));if(front&&inside){vec4 ink=texture(uUi,panel);float chipped=smoothstep(.01,.035,min(min(panel.x,panel.y),min(1.-panel.x,1.-panel.y)));col=mix(col,ink.rgb,ink.a*chipped*.97);}}
+            if(mat>=11.){float idx=mat-11.,side=idx<4.?-1.:1.,row=mod(idx,4.),landmarkX=uPortrait>.5?clamp(uRes.x/uRes.y*4.5-.72,.35,1.4):2.45;vec3 lp=p-vec3(side*landmarkX,1.4-row*.93,1.);vec2 panel=vec2(lp.x/1.44+.5,.5-lp.y/.24);bool front=abs(lp.z+.06)<.02,inside=all(greaterThanEqual(panel,vec2(0.)))&&all(lessThanEqual(panel,vec2(1.)));if(front&&inside){vec2 pixel=vec2(idx<4.?45.:1165.,285.+row*120.)+panel*vec2(390.,82.);vec2 atlas=pixel/vec2(1600.,900.);if(uPortrait>.5)atlas=pixel.x<800.?vec2(pixel.x/800.,pixel.y/1800.):vec2((pixel.x-800.)/800.,.5+pixel.y/1800.);vec4 ink=texture(uUi,atlas);col=mix(col,ink.rgb,ink.a*.98);}}}
         col+=vec3(.035,.05,.025)*pow(max(0.,1.-length(uv)),4.);outColor=vec4(pow(max(col,0.),vec3(.84)),1.);}`;
     let vertex, fragment, program;
     try {
@@ -900,7 +998,7 @@ class CavernRenderer {
     gl.deleteShader(vertex); gl.deleteShader(fragment);
     if (this.program) gl.deleteProgram(this.program); if (this.texture) gl.deleteTexture(this.texture); if (this.vao) gl.deleteVertexArray(this.vao);
     this.program = program; this.vao = gl.createVertexArray(); this.texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.texture); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.locations = Object.fromEntries(["uRes", "uTabletHalf", "uCameraZ", "uTime", "uMotion", "uSteps", "uUi", "uCounts", "uMore", "uState"].map((name) => [name, gl.getUniformLocation(program, name)]));
+    this.locations = Object.fromEntries(["uRes", "uTabletHalf", "uCameraZ", "uTime", "uMotion", "uSelectedCategory", "uLandmarks", "uPortrait", "uSteps", "uUi", "uCounts", "uMore", "uState"].map((name) => [name, gl.getUniformLocation(program, name)]));
     drawUi();
     const initialSource = prepareUploadCanvas(this.isPortrait(this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)), this.maxTextureSize);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, initialSource);
@@ -919,6 +1017,12 @@ class CavernRenderer {
     const rect = this.canvas.getBoundingClientRect(), aspect = rect.width / Math.max(1, rect.height), portrait = this.isPortrait(aspect), tablet = this.tabletHalf(aspect), cameraZ = this.cameraZ(aspect);
     const screen = [(event.clientX - rect.left - rect.width * .5) / rect.height, (rect.height * .5 - (event.clientY - rect.top)) / rect.height];
     const length = Math.hypot(screen[0], screen[1], 1.42), rd = [screen[0] / length, screen[1] / length, 1.42 / length];
+    if (tabletMinimized) {
+      const landmarkDistance = (.94 - cameraZ) / rd[2], landmarkPoint = [rd[0] * landmarkDistance, .05 + rd[1] * landmarkDistance];
+      const landmarkX = portrait ? Math.max(.35, Math.min(1.4, aspect * 4.5 - .72)) : 2.45;
+      const landmarkIndex = sceneLandmarks().findIndex((landmark) => { const side = landmark.index < 4 ? -1 : 1, row = landmark.index % 4; return Math.abs(landmarkPoint[0] - side * landmarkX) <= .72 && Math.abs(landmarkPoint[1] - (1.4 - row * .93)) <= .12; });
+      if (landmarkIndex >= 0) { selectCavernLandmark(landmarkIndex); this.requestFrame(); return; }
+    }
     const distance = (.45 - cameraZ) / rd[2], point = [rd[0] * distance, .05 + rd[1] * distance];
     const panel = [point[0] / (2 * tablet[0]) + .5, .5 - (point[1] - .05) / (2 * tablet[1])];
     if (distance <= 0 || panel.some((value) => value < 0 || value > 1)) return announce("That ray missed the tectonic command surface.");
@@ -929,15 +1033,18 @@ class CavernRenderer {
   }
   isPortrait(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return aspect < 1; }
   tabletHalf(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) {
-    if (tabletMinimized) return this.isPortrait(aspect) ? [.62, 1.1] : [1.05, .59];
+    if (tabletMinimized) return this.isPortrait(aspect) ? [.55, 1.24] : [1.05, .59];
     if (!this.isPortrait(aspect)) return [3.25, 1.83];
-    const distance = .45 - this.cameraZ(aspect), halfWidth = Math.min(1.5, distance * aspect / 1.42 * .9);
-    return [halfWidth, halfWidth * (1600 / 900)];
+    const distance = .45 - this.cameraZ(aspect), textureAspect = PORTRAIT_TEXTURE_HEIGHT / PORTRAIT_TEXTURE_WIDTH;
+    const halfWidth = Math.min(distance * aspect / (2 * 1.42) * .92, distance / (2 * 1.42 * textureAspect) * .92);
+    return [halfWidth, halfWidth * textureAspect];
   }
   cameraZ(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return this.isPortrait(aspect) ? -5.6 : -5.2; }
   resize() {
-    const clientWidth = Math.max(1, this.canvas.clientWidth), clientHeight = Math.max(1, this.canvas.clientHeight), dpr = Math.min(1.25, Math.max(1, devicePixelRatio || 1)), requested = Math.min(.65, Math.max(.4, this.quality)) * dpr;
-    const pixelScale = Math.sqrt(500_000 / (clientWidth * clientHeight));
+    const clientWidth = Math.max(1, this.canvas.clientWidth), clientHeight = Math.max(1, this.canvas.clientHeight), dpr = Math.min(1.25, Math.max(1, devicePixelRatio || 1));
+    const policy = visualFrozen ? (tabletMinimized ? RENDER_DENSITY.inspection : RENDER_DENSITY.tablet) : RENDER_DENSITY.motion;
+    const requested = Math.min(policy.scale, this.quality) * dpr;
+    const pixelScale = Math.sqrt(policy.pixels / (clientWidth * clientHeight));
     const uniformScale = Math.min(requested, pixelScale, 1600 / clientWidth, 1200 / clientHeight);
     const width = Math.max(1, Math.round(clientWidth * uniformScale)), height = Math.max(1, Math.round(clientHeight * uniformScale));
     if (width !== this.canvas.width || height !== this.canvas.height) { this.canvas.width = width; this.canvas.height = height; }
@@ -957,7 +1064,8 @@ class CavernRenderer {
     const unhealthy = agentRows.filter((item) => /error|fail|block|stopp/i.test(String(item.status))).length + snapshot.events.slice(-30).filter((event) => event.level === "error").length;
     const pinned = queueRows.filter((item) => item.status === "pinned" || item.id === snapshot.control?.pinnedQueueItemId).length;
     const failedGates = gateRows.filter((gate) => /fail|reject|needs-evidence/i.test(String(gate.status))).length;
-    gl.uniform2f(this.locations.uRes, this.canvas.width, this.canvas.height); gl.uniform2f(this.locations.uTabletHalf, tablet[0], tablet[1]); gl.uniform1f(this.locations.uCameraZ, this.cameraZ(aspect)); gl.uniform1f(this.locations.uTime, (time - this.start) / 1000); gl.uniform1f(this.locations.uMotion, visualFrozen ? 0 : 1); gl.uniform1i(this.locations.uSteps, this.steps); gl.uniform1i(this.locations.uUi, 0); gl.uniform4f(this.locations.uCounts, snapshot.runs.length, agentRows.length, snapshot.events.length, queueRows.length); gl.uniform4f(this.locations.uMore, gateRows.length, snapshot.iterations.length, snapshot.plans.length, tools().length); gl.uniform4f(this.locations.uState, currentBlocker() ? 1 : 0, Math.min(1, unhealthy / Math.max(1, agentRows.length)), Math.min(1, pinned / Math.max(1, queueRows.length)), Math.min(1, failedGates / Math.max(1, gateRows.length))); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const selectedCategory = cavernSelection ? LANDMARK_META.findIndex(([kind]) => kind === cavernSelection.category) : -20;
+    gl.uniform2f(this.locations.uRes, this.canvas.width, this.canvas.height); gl.uniform2f(this.locations.uTabletHalf, tablet[0], tablet[1]); gl.uniform1f(this.locations.uCameraZ, this.cameraZ(aspect)); gl.uniform1f(this.locations.uTime, (time - this.start) / 1000); gl.uniform1f(this.locations.uMotion, visualFrozen ? 0 : 1); gl.uniform1f(this.locations.uSelectedCategory, selectedCategory); gl.uniform1f(this.locations.uLandmarks, tabletMinimized ? 1 : 0); gl.uniform1f(this.locations.uPortrait, this.isPortrait(aspect) ? 1 : 0); gl.uniform1i(this.locations.uSteps, this.steps); gl.uniform1i(this.locations.uUi, 0); gl.uniform4f(this.locations.uCounts, snapshot.runs.length, agentRows.length, snapshot.events.length, queueRows.length); gl.uniform4f(this.locations.uMore, gateRows.length, snapshot.iterations.length, snapshot.plans.length, tools().length); gl.uniform4f(this.locations.uState, currentBlocker() ? 1 : 0, Math.min(1, unhealthy / Math.max(1, agentRows.length)), Math.min(1, pinned / Math.max(1, queueRows.length)), Math.min(1, failedGates / Math.max(1, gateRows.length))); gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!visualFrozen && !this.animationTimer) this.animationTimer = setTimeout(() => { this.animationTimer = 0; this.requestFrame(false); }, 100);
   }
 }
@@ -981,7 +1089,7 @@ function semanticEvidence() {
   return `<h2>Evidence, resources, logs, documents, and lineage</h2><div class="button-row">${["runs", "agents", "events", "tools", "queue", "gates", "iterations", "audit"].map((kind) => `<button data-kind="${kind}">${kind} (${records(kind).length})</button>`).join("")}</div><label>Search current evidence<input id="semanticEvidenceSearch" value="${esc(searchQuery)}"></label><p>Explicit resource run binding: <b>${esc(runId || "none")}</b>. Accepted intent is not evidence of completion.</p><div class="grid"><section class="slab"><h3>${esc(evidenceKind)}</h3><div class="list">${filteredRecords(evidenceKind).map((record) => `<button data-record-kind="${esc(evidenceKind)}" data-record-id="${esc(idOf(record))}">${esc(idOf(record))} / ${esc(first(record.status, record.state, record.type, record.level, "recorded"))}</button>`).join("")}</div></section><section class="slab"><h3>Run-bound resources</h3><div class="button-row"><button data-document="spec" data-run="${esc(runId || "")}">SPEC</button><button data-document="devplan" data-run="${esc(runId || "")}">DEVPLAN</button></div><h3>Artifacts</h3><div class="list">${arr(resources().artifacts).map((item) => `<button data-resource="artifact" data-name="${esc(itemName(item))}" data-run="${esc(runId || "")}">${esc(itemName(item))}</button>`).join("")}</div><h3>Logs</h3><div class="list">${arr(resources().logs).map((item) => `<button data-resource="log" data-name="${esc(itemName(item))}" data-run="${esc(runId || "")}">${esc(itemName(item))}</button>`).join("")}</div></section></div>${selectedRecord ? `<section class="slab"><h3>Selected record or loaded resource</h3><pre>${esc(selectedRecord.text || json(selectedRecord.data || selectedRecord))}</pre></section>` : ""}`;
 }
 function semanticHelp() {
-  return `<h2>Command Cavern help</h2><div class="grid"><article class="slab"><h3>Scene language</h3><p>Runs are rock cores; agents are survey drones; events and tools are mineral inclusions; queue items are seed crystals; gates are pressure locks; iterations are branching excavations; plans are tectonic tablets; commands are resonant monoliths.</p></article><article class="slab"><h3>Safety</h3><p>Requested intent and observed process state are separate. Recovery refreshes current-run ownership. Historical work uses immutable lineage. Plan lifecycle actions carry exact revision, digest, and expectedVersion.</p></article><article class="slab"><h3>Keyboard</h3><p>A switches presentations. Question mark opens help. Keys 1 through 5 select sections. R refreshes. F freezes nonessential scene motion. Canvas arrows navigate hit regions and Enter activates.</p></article><article class="slab"><h3>Coverage</h3><p>All ${OPERATION_COMMANDS.length} operations, all ${PROJECT_PLAN_ACTIONS.length} plan actions, assistance/proposal-to-draft, and every requested data domain are available in both presentations.</p></article></div>`;
+  return `<h2>Command Cavern help</h2><div class="grid"><article class="slab"><h3>Scene language</h3><p>Runs are rock cores; agents are survey drones; events and tools are mineral inclusions; queue items are seed crystals; gates are pressure locks; iterations are branching excavations; plans are tectonic tablets; commands are resonant monoliths.</p></article><article class="slab"><h3>Safety</h3><p>Requested intent and observed process state are separate. Recovery refreshes current-run ownership. Historical work uses immutable lineage. Plan lifecycle actions carry exact revision, digest, and expectedVersion.</p></article><article class="slab"><h3>Keyboard</h3><p>A switches presentations. T minimizes/restores. While exposed, arrows focus category landmarks, Enter selects the exact displayed record, and O restores its existing workspace. Selection never dispatches. R refreshes and F freezes nonessential motion.</p></article><article class="slab"><h3>Coverage</h3><p>All ${OPERATION_COMMANDS.length} operations, all ${PROJECT_PLAN_ACTIONS.length} plan actions, assistance/proposal-to-draft, and every requested data domain are available in both presentations.</p></article></div>`;
 }
 function renderSemantic() {
   if ($("semanticApp").hidden) return;
@@ -1054,16 +1162,21 @@ document.addEventListener("keydown", (event) => {
   if (page === "confirm" && event.key === "Escape") { pending = null; page = "operations"; renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "a") return setMode(true);
   if (event.key.toLowerCase() === "t") { setTabletMinimized(!tabletMinimized); event.preventDefault(); return; }
+  if (tabletMinimized && event.key.toLowerCase() === "o") { event.preventDefault(); activate(openCavernSelection); return; }
   if (event.key === "?") { page = "help"; renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "f") { visualFrozen = !visualFrozen; announce(visualFrozen ? "Nonessential cavern motion frozen." : "Cavern motion resumed."); renderer.requestFrame(); return; }
   if (event.key.toLowerCase() === "r") { client.refresh().then(() => announce("Authoritative telemetry refreshed.")).catch((error) => announce(error.message, true)); return; }
   if (["1", "2", "3", "4", "5"].includes(event.key)) { page = ["overview", "operations", "plans", "evidence", "help"][Number(event.key) - 1]; renderer.requestFrame(); return; }
   if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"].includes(event.key)) {
     event.preventDefault();
+    if (tabletMinimized) {
+      if (event.key === "Home") renderer.sceneFocused = 0; else if (event.key === "End") renderer.sceneFocused = LANDMARK_META.length - 1; else renderer.sceneFocused = (renderer.sceneFocused + (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) + LANDMARK_META.length) % LANDMARK_META.length;
+      const landmark = sceneLandmarks()[renderer.sceneFocused]; announce(`${landmark.label}: ${landmark.rendered} rendered of ${landmark.total}; ${landmark.id}; ${landmark.status}. Press Enter to monitor.`); renderer.requestFrame(); return;
+    }
     if (event.key === "Home") renderer.focusedHit = 0; else if (event.key === "End") renderer.focusedHit = Math.max(0, hits.length - 1); else renderer.focusedHit = (renderer.focusedHit + (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) + hits.length) % Math.max(1, hits.length);
     renderer.focusedKey = hits[renderer.focusedHit]?.key || null; announce(hits[renderer.focusedHit]?.label || "No active engraving"); renderer.requestFrame(); return;
   }
-  if (["Enter", " "].includes(event.key) && document.activeElement === $("cavern")) { event.preventDefault(); const hit = hits[renderer.focusedHit]; if (hit) activate(hit.action); }
+  if (["Enter", " "].includes(event.key) && document.activeElement === $("cavern")) { event.preventDefault(); if (tabletMinimized) selectCavernLandmark(renderer.sceneFocused); else { const hit = hits[renderer.focusedHit]; if (hit) activate(hit.action); } }
 });
 
 const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
@@ -1083,6 +1196,8 @@ client.subscribe((next) => {
   reconcileReceipts();
   if (!selectedRunId) selectedRunId = snapshot.selectedRunId || currentRunId();
   if (selectedPlanId && snapshot.planDetail?.ledger?.planId !== selectedPlanId) selectedPlanId = snapshot.planDetail?.ledger?.planId || selectedPlanId;
+  const monitored = resolveCavernSelection();
+  if (monitored && monitored.kind !== "operations") selectedRecord = monitored.record ? { kind: monitored.actualKind, data: monitored.record } : null;
   const signature = cavernRenderSignature(snapshot), changed = signature !== lastCavernRenderSignature;
   lastCavernRenderSignature = signature;
   renderSemantic();

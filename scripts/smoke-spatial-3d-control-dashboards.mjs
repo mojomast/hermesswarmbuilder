@@ -74,24 +74,34 @@ assert.match(cavern, /texSubImage2D/, 'Command Cavern: in-place tablet updates m
 assert.match(cavern, /motionDemoRequested[\s\S]{0,200}visualFrozen = !motionDemoRequested/, 'Command Cavern: local-only motion demo opt-in missing');
 assert.match(cavern, /\?motion=demo/, 'Command Cavern: motion demo query contract missing');
 assert.match(cavern, /this\.steps = innerWidth < 700 \? 18 : 22/, 'Command Cavern: bounded initial ray steps missing');
-assert.match(cavern, /Math\.sqrt\(500_000 \/ \(clientWidth \* clientHeight\)\)/, 'Command Cavern: bounded pixel budget missing');
-assert.doesNotMatch(cavern, /for\(int i=0;i<(?:[3-9]|1[0-6]);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');
+assert.match(cavern, /STATIC_TABLET_SHARPNESS_POLICY/, 'Command Cavern: static text sharpness policy missing');
+assert.match(cavern, /tablet: \{ scale: 1, pixels: 1_440_000 \}[\s\S]{0,120}motion: \{ scale: \.45, pixels: 500_000 \}/, 'Command Cavern: bounded static and motion pixel budgets missing');
+assert.match(cavern, /this\.quality = 1/, 'Command Cavern: static tablet quality remains capped below the sharpness policy');
+assert.doesNotMatch(cavern, /for\(int i=0;i<(?:9|1[0-6]);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');
 assert.match(cavern, /setTimeout\(\(\) => \{ this\.animationTimer = 0; this\.requestFrame\(false\); \}, 100\)/, 'Command Cavern: bounded optional animation cadence missing');
 assert.match(cavern, /function cavernRenderSignature\(value\)/, 'Command Cavern: snapshot-diff invalidation missing');
 assert.match(cavern, /if \(changed\) renderer\.requestFrame\(\)/, 'Command Cavern: unchanged telemetry still renders');
 assert.match(cavern, /MINIMIZABLE_TECTONIC_TABLET/, 'Command Cavern: minimizable tablet marker missing');
 assert.match(cavern, /function drawMinimizedUi\(\)/, 'Command Cavern: minimized restore inscription missing');
-assert.match(cavern, /tabletMinimized\) return this\.isPortrait\(aspect\) \? \[\.62, 1\.1\] : \[1\.05, \.59\]/, 'Command Cavern: minimized physical SDF bounds missing');
+assert.match(cavern, /tabletMinimized\) return this\.isPortrait\(aspect\) \? \[\.55, 1\.24\] : \[1\.05, \.59\]/, 'Command Cavern: minimized physical SDF bounds missing');
 assert.match(cavern, /RESTORE TABLET \[T\]/, 'Command Cavern: scene-native restore control missing');
 assert.match(cavern, /event\.key\.toLowerCase\(\) === "t"/, 'Command Cavern: tablet keyboard toggle missing');
+assert.match(cavern, /const LANDMARK_META = \[/, 'Command Cavern: exposed scene landmark catalogue missing');
+assert.match(cavern, /function selectCavernLandmark\(index\)/, 'Command Cavern: scene landmark selection missing');
+assert.match(cavern, /if\(uLandmarks>\.5\)for\(int i=0;i<8;i\+\+\)/, 'Command Cavern: scene-native landmark geometry missing');
+assert.doesNotMatch(cavern.match(/function slab\([\s\S]*?\n\}/)?.[0] || '', /lineTo\(/, 'Command Cavern: generic tablet slabs still draw diagonal artifacts');
 
 const palace = readFileSync(resolve(publicRoot, 'next/memory-palace/app.js'), 'utf8');
 for (const marker of ['FOLIO_CLEARANCE_PORTAL', 'WORLD_LABEL_ATLAS', 'BATCHED_LABEL_QUADS', 'FRONT_CAMERA_ENVELOPE', 'RESPONSIVE_FOLIO_GUARD', 'READABLE_PROJECTED_TYPE']) assert(palace.includes(marker), `Memory Palace: ${marker} missing`);
 assert.match(palace, /const FOLIO = Object\.freeze\(/, 'Memory Palace: shared folio descriptor missing');
 assert.match(palace, /center: Object\.freeze\(\[0, 4\.1, 11\.4\]\)/, 'Memory Palace: front clearance portal moved');
-assert.match(palace, /resetCamera\(\)\{const camera=FOLIO\.camera/, 'Memory Palace: camera reset drifted from the certified envelope');
+assert.match(palace, /PHYSICAL_FOLIO_TOGGLE/, 'Memory Palace: physical folio minimizer missing');
+assert.match(palace, /resetCamera\(\)\{const camera=scene\.folioMinimized\?ARCHITECTURE_CAMERA:FOLIO\.camera/, 'Memory Palace: camera reset does not follow the active spatial envelope');
 assert.match(palace, /narrowPortraitRequiresSemantic\(\)/, 'Memory Palace: narrow portrait guard missing');
 assert.match(palace, /gl\.depthMask\(false\)[\s\S]{0,400}gl\.depthMask\(true\)/, 'Memory Palace: label depth-write restoration missing');
+assert.match(palace, /rayBox\(ray,center,size\)/, 'Memory Palace: architecture ray picking missing');
+assert.match(palace, /if\(scene\.folioMinimized\)return/, 'Memory Palace: full folio plane still renders while minimized');
+assert.match(palace, /event\.key\.toLowerCase\(\)==="t"/, 'Memory Palace: folio keyboard toggle missing');
 
 const jacquard = readFileSync(resolve(publicRoot, 'next/jacquard-swarmworks/app.js'), 'utf8');
 for (const marker of ['CAMERA_RELATIVE_OPERATOR_RIG', 'UNOBSTRUCTED_OPERATOR_SCREEN', 'WORLD_LABEL_ATLAS', 'BATCHED_LABEL_QUADS', 'CAMERA_OPERATOR_CONTROLS', 'ENTITY_ANCHORED_SELECTED_LABEL']) assert(jacquard.includes(marker), `Jacquard: ${marker} missing`);
@@ -100,5 +110,10 @@ assert.match(jacquard, /this\.camera\.add\(this\.operatorRig\)/, 'Jacquard: oper
 assert.match(jacquard, /const controlHit=this\.ray\.intersectObjects\(this\.operatorControls/, 'Jacquard: visible operator controls are not pick-prioritized');
 assert.match(jacquard, /const key=`agent:\$\{idOf\(agent\)\}`[\s\S]{0,300}this\.entityAnchors\.set\(key,shuttle\)/, 'Jacquard: entity-anchored agent labels missing');
 assert.match(jacquard, /if\(!force&&signature===this\.worldLabelSignature\)return/, 'Jacquard: unchanged label atlas still uploads');
+assert.match(jacquard, /MINIMIZABLE_LOOM_CONSOLE/, 'Jacquard: minimizable console marker missing');
+assert.match(jacquard, /toggleConsole\(force\)/, 'Jacquard: scene readout toggle missing');
+assert.match(jacquard, /panelWidth=detail\?Math\.min\(width-margin\*2,900\):Math\.min\(width-margin\*2,portrait\?width-24:500\)/, 'Jacquard: compact readout bounds missing');
+assert.match(jacquard, /keyWidth=clamp\([\s\S]{0,100},84,104\)/, 'Jacquard: compact fixed-width loom keys missing');
+assert.match(jacquard, /cloth\.userData\.instanceAction=/, 'Jacquard: run-cloth instance picking missing');
 
 console.log('fully spatial 3D control-plane smoke passed (3 distinct environments)');

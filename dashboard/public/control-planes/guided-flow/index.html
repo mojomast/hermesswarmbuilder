@@ -7,17 +7,17 @@
   <link rel="stylesheet" href="guided-flow.css">
 </head>
 <body>
-  <!-- Header -->
+  <!-- Global Header (Spec §6.2) -->
   <header class="app-header" role="banner">
     <div class="brand-title">
       <span>HERMES CONTROL PLANE</span>
       <span class="authority-pill">GOVERNED WORKSPACE</span>
     </div>
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <button id="btn-ai-assist" class="btn-secondary" style="min-height: 36px; padding: 6px 12px;">
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button id="btn-ai-assist" class="btn-secondary" style="min-height: 36px; padding: 4px 10px; font-size: 11px;">
         💬 Planning Assistant
       </button>
-      <select id="role-select" class="form-select" style="min-height: 36px; padding: 4px 8px; width: auto;" aria-label="Simulated RBAC Role">
+      <select id="role-select" class="form-select" style="min-height: 36px; padding: 4px 8px; width: auto; font-size: 11px;" aria-label="Simulated RBAC Role">
         <option value="Administrator">Role: Administrator</option>
         <option value="Author">Role: Author</option>
         <option value="Approver">Role: Approver</option>
@@ -28,12 +28,15 @@
     </div>
   </header>
 
-  <!-- Progressive Disclosure Stepper Bar -->
+  <!-- Cross-Resource Identity Breadcrumb (Spec §6.4) -->
+  <div id="identity-breadcrumb" class="identity-breadcrumb" aria-label="Resource Lineage Breadcrumb"></div>
+
+  <!-- Stepper Navigation Bar (9 Workspaces) -->
   <nav id="stepper-nav" class="stepper-nav" aria-label="Lifecycle Workflow Steps">
     <ul class="stepper-list">
       <li class="step-item active" data-step="plans" tabindex="0" role="button">
         <span class="step-num">1</span>
-        <span>Plan Authoring</span>
+        <span>Plans & Authoring</span>
       </li>
       <li class="step-item" data-step="review" tabindex="0" role="button">
         <span class="step-num">2</span>
@@ -59,14 +62,22 @@
         <span class="step-num">7</span>
         <span>Terminal Handoff</span>
       </li>
+      <li class="step-item" data-step="queue" tabindex="0" role="button">
+        <span class="step-num">8</span>
+        <span>Candidate Queue</span>
+      </li>
+      <li class="step-item" data-step="system" tabindex="0" role="button">
+        <span class="step-num">9</span>
+        <span>System & Health</span>
+      </li>
     </ul>
   </nav>
 
-  <!-- Main Guided Workspace -->
+  <!-- Main Guided Workspace Container -->
   <main class="guided-container" role="main">
     <!-- View 1: Plans List & Authoring -->
-    <section id="view-plans" class="view-panel active" aria-label="Project Plans">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <section id="view-plans" class="view-panel active" aria-label="Governed Project Plans">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2>Governed Project Plans</h2>
         <button id="btn-new-plan" class="btn-primary">+ Author New Plan</button>
       </div>
@@ -77,7 +88,7 @@
         <form id="plan-form">
           <div class="form-group">
             <label class="form-label" for="plan-title">Project Title</label>
-            <input type="text" id="plan-title" class="form-input" placeholder="e.g. Modern Accessible Control Plane" required>
+            <input type="text" id="plan-title" class="form-input" placeholder="e.g. Accessible Swarm Control Plane" required>
           </div>
           <div class="form-group">
             <label class="form-label" for="plan-pipeline">Execution Pipeline</label>
@@ -89,11 +100,21 @@
           <div class="form-group">
             <label class="form-label" for="plan-repo-path">Target Repository Path (Managed only)</label>
             <input type="text" id="plan-repo-path" class="form-input" placeholder="/home/mojo/projects/target-repo">
-            <div class="form-hint">Must be an absolute local path with clean working tree.</div>
+            <div class="form-hint">Must be an absolute path with clean working tree.</div>
           </div>
           <div class="form-group">
             <label class="form-label" for="plan-objective">Bounded Objective & Acceptance Scope</label>
-            <textarea id="plan-objective" class="form-textarea" placeholder="Define exact requirements and non-goals..." required></textarea>
+            <textarea id="plan-objective" class="form-textarea" placeholder="Define exact requirements, constraints, and acceptance criteria..." required></textarea>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="plan-max-iters">Max Iterations (1 - 10)</label>
+              <input type="number" id="plan-max-iters" class="form-input" min="1" max="10" value="3">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="plan-max-variants">Max Variants / Iteration (1 - 5)</label>
+              <input type="number" id="plan-max-variants" class="form-input" min="1" max="5" value="3">
+            </div>
           </div>
           <div class="btn-deck">
             <button type="submit" class="btn-primary">Save Initial Draft (Revision #1)</button>
@@ -102,71 +123,67 @@
         </form>
       </div>
 
-      <!-- Plan Cards Container -->
-      <div id="plan-list-container">
-        <!-- Rendered Plan Cards -->
-      </div>
+      <div id="plan-list-container"></div>
     </section>
 
     <!-- View 2: Revision Review -->
     <section id="view-review" class="view-panel" aria-label="Plan Revision Review">
       <h2>Immutable Revision Review</h2>
-      <div id="review-container">
-        <!-- Dynamic Review Summary -->
-      </div>
+      <div id="review-container"></div>
     </section>
 
     <!-- View 3: Approval & Launch -->
     <section id="view-approval" class="view-panel" aria-label="Approval Authority">
       <h2>Approval Authority & Launch Gate</h2>
-      <div id="approval-container">
-        <!-- Dynamic Approval Deck -->
-      </div>
+      <div id="approval-container"></div>
     </section>
 
     <!-- View 4: Managed Iterations -->
     <section id="view-iterations" class="view-panel" aria-label="Managed Iterations">
       <h2>Managed Iteration Workspace</h2>
-      <div id="iteration-container">
-        <!-- Dynamic Iterations & Scorecards -->
-      </div>
+      <div id="iteration-container"></div>
     </section>
 
     <!-- View 5: Synthesis -->
     <section id="view-synthesis" class="view-panel" aria-label="Synthesis Selection">
       <h2>Synthesis & Integration</h2>
-      <div id="synthesis-container">
-        <!-- Dynamic Synthesis Detail -->
-      </div>
+      <div id="synthesis-container"></div>
     </section>
 
     <!-- View 6: Acceptance Gates -->
     <section id="view-gates" class="view-panel" aria-label="Acceptance Gates">
       <h2>Quality Gates & Evidence Audit</h2>
-      <div id="gates-container">
-        <!-- Dynamic Gates Detail -->
-      </div>
+      <div id="gates-container"></div>
+      <div id="traceability-container" style="margin-top: 16px;"></div>
     </section>
 
     <!-- View 7: Terminal Handoff -->
     <section id="view-handoff" class="view-panel" aria-label="Terminal Handoff">
       <h2>Handoff & Operator Continuity</h2>
-      <div id="handoff-container">
-        <!-- Dynamic Handoff Actions -->
-      </div>
+      <div id="handoff-container"></div>
+    </section>
+
+    <!-- View 8: Candidate Queue -->
+    <section id="view-queue" class="view-panel" aria-label="Candidate Queue">
+      <h2>Candidate Ideas Queue</h2>
+      <div id="queue-container"></div>
+    </section>
+
+    <!-- View 9: System Health -->
+    <section id="view-system" class="view-panel" aria-label="System Health">
+      <h2>System Administration & Integrity</h2>
+      <div id="system-container"></div>
     </section>
   </main>
 
   <!-- Planning Assistant Modal -->
-  <div id="assistance-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 1000;">
-    <div style="background: var(--bg-card); width: 600px; max-width: 90%; border-radius: 12px; padding: 20px; border: 1px solid var(--border-subtle); display: flex; flex-direction: column; max-height: 80vh;">
+  <div id="assistance-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); align-items: center; justify-content: center; z-index: 1000;">
+    <div style="background: var(--bg-card); width: 620px; max-width: 90%; border-radius: 12px; padding: 20px; border: 1px solid var(--border-subtle); display: flex; flex-direction: column; max-height: 80vh;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0;">Autonomous Planning Assistant</h3>
+        <h3 style="margin: 0; font-size: 15px;">Autonomous Planning Assistant</h3>
         <button id="btn-close-assist" style="background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer;">✕</button>
       </div>
-      <div id="assistance-messages" style="flex: 1; overflow-y: auto; background: var(--bg-input); padding: 12px; border-radius: 6px; min-height: 250px; font-size: 13px;">
-        <!-- Chat history -->
-      </div>
+      <div id="assistance-messages" style="flex: 1; overflow-y: auto; background: var(--bg-input); padding: 12px; border-radius: 6px; min-height: 260px; font-size: 13px;"></div>
       <div style="display: flex; gap: 8px; margin-top: 12px;">
         <input type="text" id="assistance-input" class="form-input" placeholder="Ask planning questions or describe ideas...">
         <button id="btn-assistance-send" class="btn-primary" style="min-height: 44px;">Send</button>

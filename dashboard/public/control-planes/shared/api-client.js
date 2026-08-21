@@ -1,7 +1,7 @@
 /**
- * Hermes Swarm Builder Control Plane API Client & Data Layer
- * Shared typed data-access, SSE streaming, cryptographic verification,
- * and security sanitization engine for clean-slate dashboards.
+ * Hermes Swarm Builder Control Plane API Client & Data Layer (Comprehensive v2)
+ * Shared typed data-access, SSE streaming, cryptographic verification, diffing,
+ * artifact sandboxing, and security sanitization engine for clean-slate dashboards.
  *
  * Grounded in: docs/CONTROL_PLANE_DASHBOARD_SPEC.md
  */
@@ -29,6 +29,8 @@ export const CAPABILITIES = Object.freeze({
   CANONICAL_DISPOSITIONS: { status: "derivable", note: "Normalized from run.status, control.pause/stop, launch.status, handoff.state" },
   PIPELINE_DURATIONS: { status: "derivable", note: "Calculated from stage and tool-call timestamps" },
   SOURCE_INTEGRITY: { status: "derivable", note: "Derived by comparing preflight and post-execution git status" },
+  DIFF_CALCULATION: { status: "derivable", note: "Computed client-side between revisions or variant branches" },
+  IDENTITY_STRIP: { status: "derivable", note: "Linked identity chain Plan -> Revision -> Approval -> Launch -> Request -> Run -> Iteration" },
   
   // Required / Backend-dependent capabilities (clearly labeled as simulated/future)
   LAUNCH_WITHDRAWAL: { status: "required", note: "Needs typed REST endpoint over SQLite launch authority rejectRequested()" },
@@ -88,9 +90,6 @@ export const ROLE_PERMISSIONS = Object.freeze({
 // 2. CRYPTOGRAPHIC & SANITIZATION UTILITIES
 // ==========================================
 
-/**
- * Deterministic canonical JSON serialization (sorted keys, no whitespace outside strings).
- */
 export function canonicalJson(value) {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
     return JSON.stringify(value);
@@ -110,9 +109,6 @@ export function canonicalJson(value) {
   throw new TypeError(`Unsupported value type: ${typeof value}`);
 }
 
-/**
- * Computes canonical SHA-256 digest with domain separation.
- */
 export async function computeDigest(domainPrefix, payload) {
   const canonicalString = `${domainPrefix}\n${canonicalJson(payload)}`;
   const encoder = new TextEncoder();
@@ -133,9 +129,6 @@ export async function computePlanDigest(planId, revision, parentRevision, conten
   });
 }
 
-/**
- * HTML entity escaper.
- */
 export function escapeHtml(str) {
   if (str == null) return "";
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -147,9 +140,6 @@ export function escapeHtml(str) {
   }[c] || c));
 }
 
-/**
- * Strips dangerous OSC/DCS/CSI cursor sequences and formats safe SGR ANSI colors.
- */
 export function sanitizeAnsiToHtml(input) {
   if (!input) return "";
 
@@ -186,13 +176,11 @@ export function sanitizeAnsiToHtml(input) {
         else if (code >= 40 && code <= 47) currentClasses.add(`ansi-bg-${code - 40}`);
         else if (code >= 100 && code <= 107) currentClasses.add(`ansi-bg-bright-${code - 100}`);
         else if ((code === 38 || code === 48) && codes[i + 1] === 5 && codes[i + 2] !== undefined) {
-          // 256 colors
           const isFg = code === 38;
           const colorIdx = Math.min(Math.max(codes[i + 2], 0), 255);
           currentStyles.set(isFg ? "color" : "background-color", `var(--ansi-c-${colorIdx}, #94a3b8)`);
           i += 2;
         } else if ((code === 38 || code === 48) && codes[i + 1] === 2 && codes[i + 4] !== undefined) {
-          // 24-bit RGB
           const isFg = code === 38;
           const r = Math.min(Math.max(codes[i + 2], 0), 255);
           const g = Math.min(Math.max(codes[i + 3], 0), 255);
@@ -217,9 +205,6 @@ export function sanitizeAnsiToHtml(input) {
   return html;
 }
 
-/**
- * Safe, injection-free markdown renderer.
- */
 export function sanitizeMarkdownToHtml(md) {
   if (!md) return "";
   const lines = String(md).split(/\r?\n/);
@@ -245,7 +230,6 @@ export function sanitizeMarkdownToHtml(md) {
       continue;
     }
 
-    // Headers
     if (/^### (.*)/.test(line)) {
       if (inList) { out.push("</ul>"); inList = false; }
       out.push(`<h3>${formatInline(line.slice(4))}</h3>`);
@@ -279,49 +263,73 @@ export function sanitizeMarkdownToHtml(md) {
   return out.join("");
 }
 
+/**
+ * Line-by-line diff engine for comparing text or JSON objects.
+ */
+export function computeLineDiff(oldText, newText) {
+  const oldLines = String(oldText || "").split(/\r?\n/);
+  const newLines = String(newText || "").split(/\r?\n/);
+  const result = [];
+
+  let i = 0, j = 0;
+  while (i < oldLines.length || j < newLines.length) {
+    if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+      result.push({ type: "same", line: oldLines[i], oldNum: i + 1, newNum: j + 1 });
+      i++; j++;
+    } else if (j < newLines.length && (!oldLines.includes(newLines[j]) || i >= oldLines.length)) {
+      result.push({ type: "add", line: newLines[j], oldNum: null, newNum: j + 1 });
+      j++;
+    } else if (i < oldLines.length) {
+      result.push({ type: "del", line: oldLines[i], oldNum: i + 1, newNum: null });
+      i++;
+    }
+  }
+  return result;
+}
+
 // ==========================================
 // 3. NORMALIZED DISPOSITIONS & HELPERS
 // ==========================================
 
 export function deriveCanonicalDisposition(runState, controlState, launchState, handoff) {
   if (launchState === "rejected") {
-    return { id: "rejected-before-claim", label: "Rejected Before Claim", severity: "error", class: "status-rejected" };
+    return { id: "rejected-before-claim", label: "Rejected Before Claim", severity: "error", class: "status-rejected", description: "Launch request failed cryptographic validation or authority conflict before runner acquisition." };
   }
   if (controlState?.runAdmission === "paused" && (!runState || runState.status === "idle")) {
-    return { id: "held-admission", label: "Admission Held", severity: "warning", class: "status-held" };
+    return { id: "held-admission", label: "Admission Held", severity: "warning", class: "status-held", description: "New runner ticket admissions are paused; active jobs continue until checkpoint." };
   }
   if (runState?.status === "on-hold") {
     if (controlState?.pause?.requested || handoff?.state === "paused") {
-      return { id: "paused", label: "Paused at Checkpoint", severity: "warning", class: "status-paused" };
+      return { id: "paused", label: "Paused at Checkpoint", severity: "warning", class: "status-paused", description: "Managed loop paused at a safe checkpoint; worktrees and artifacts preserved." };
     }
     if (controlState?.stop?.requested || handoff?.state === "stopped") {
-      return { id: "stopped", label: "Gracefully Stopped", severity: "neutral", class: "status-stopped" };
+      return { id: "stopped", label: "Gracefully Stopped", severity: "neutral", class: "status-stopped", description: "Run stopped gracefully at boundary; terminal evidence written." };
     }
   }
   if (runState?.status === "blocked") {
     if (runState.blocker?.timeout || runState.block?.timeout || handoff?.blocker?.includes("timed out")) {
-      return { id: "timed-out", label: "Execution Timed Out", severity: "error", class: "status-timeout" };
+      return { id: "timed-out", label: "Execution Timed Out", severity: "error", class: "status-timeout", description: "Execution duration or inactivity budget exceeded limits." };
     }
-    return { id: "blocked", label: "Blocked (Deblock Required)", severity: "error", class: "status-blocked" };
+    return { id: "blocked", label: "Blocked (Deblock Required)", severity: "error", class: "status-blocked", description: "Hard gate failure or tool-call exception requiring operator steering." };
   }
   if (runState?.status === "completed" || runState?.status === "published") {
-    return { id: "completed", label: "Completed & Passed", severity: "success", class: "status-completed" };
+    return { id: "completed", label: "Completed & Passed", severity: "success", class: "status-completed", description: "All acceptance criteria and quality gates verified successfully." };
   }
   if (runState?.status && runState.status !== "idle") {
-    return { id: "running", label: `Running (${runState.phase || runState.status})`, severity: "active", class: "status-running" };
+    return { id: "running", label: `Running (${runState.phase || runState.status})`, severity: "active", class: "status-running", description: "Active subprocess execution and tool telemetry underway." };
   }
-  return { id: "idle", label: "System Idle", severity: "neutral", class: "status-idle" };
+  return { id: "idle", label: "System Idle", severity: "neutral", class: "status-idle", description: "No active runner process. Ready for next scheduled tick or operator launch." };
 }
 
 export function getAssuranceLevel(pipelineType, evidenceType) {
   if (pipelineType === "managed" && evidenceType === "validation") {
-    return { level: "Runner-verified", class: "assurance-runner", note: "Runner executed commands directly in isolated worktree" };
+    return { level: "Runner-verified", class: "assurance-runner", note: "Runner executed commands directly in isolated worktree policy" };
   }
   if (pipelineType === "classic" && evidenceType === "validation") {
     return { level: "Agent-attested", class: "assurance-agent", note: "Reported by Hermes subagent, not independently rerun" };
   }
   if (evidenceType === "decision" || evidenceType === "approval") {
-    return { level: "Operator-attested", class: "assurance-operator", note: "Cryptographically bound to operator action" };
+    return { level: "Operator-attested", class: "assurance-operator", note: "Cryptographically signed by authorized human operator" };
   }
   if (evidenceType === "derived") {
     return { level: "Derived projection", class: "assurance-derived", note: "Computed by dashboard projection engine" };
@@ -336,7 +344,7 @@ export function getAssuranceLevel(pipelineType, evidenceType) {
 export class ControlPlaneClient {
   constructor(baseUrl = "") {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.role = RBAC_ROLES.ADMIN; // Default local administrator
+    this.role = RBAC_ROLES.ADMIN;
     this.actor = "local-operator";
     this.subscribers = new Set();
     this.sseSource = null;
@@ -344,11 +352,15 @@ export class ControlPlaneClient {
     this.lastEventId = null;
     this.reconnectAttempt = 0;
     this.reconnectTimer = null;
-    this.heartbeatTimer = null;
+    
     this.cachedState = null;
     this.cachedPlans = [];
     this.cachedIterations = [];
     this.cachedRuns = [];
+    this.cachedQueue = { items: [] };
+    this.cachedGates = { gates: [] };
+    this.cachedControl = {};
+    this.cachedAudit = [];
   }
 
   setRole(role) {
@@ -455,19 +467,27 @@ export class ControlPlaneClient {
   }
 
   async getControl() {
-    return this.fetchJson("/api/control");
+    const data = await this.fetchJson("/api/control");
+    this.cachedControl = data;
+    return data;
   }
 
   async getQueue() {
-    return this.fetchJson("/api/queue");
+    const data = await this.fetchJson("/api/queue");
+    this.cachedQueue = data;
+    return data;
   }
 
   async getGates() {
-    return this.fetchJson("/api/gates");
+    const data = await this.fetchJson("/api/gates");
+    this.cachedGates = data;
+    return data;
   }
 
   async getAudit(limit = 100) {
-    return this.fetchJson(`/api/audit?limit=${limit}`);
+    const data = await this.fetchJson(`/api/audit?limit=${limit}`);
+    this.cachedAudit = Array.isArray(data) ? data : [];
+    return this.cachedAudit;
   }
 
   async getEvents(limit = 200, after = null) {
@@ -735,7 +755,6 @@ export class ControlPlaneClient {
       this.notifySubscribers({ type: "stream-status", status: "reconnecting" });
       es.close();
 
-      // Exponential backoff with jitter
       const delay = Math.min(30000, 1000 * Math.pow(1.5, this.reconnectAttempt)) * (0.8 + Math.random() * 0.4);
       this.reconnectAttempt++;
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -758,13 +777,17 @@ export class ControlPlaneClient {
 
   async resyncSnapshots() {
     try {
-      const [state, plans, iterations, runs] = await Promise.all([
+      const [state, plans, iterations, runs, queue, gates, control, audit] = await Promise.all([
         this.getState().catch(() => null),
         this.getProjectPlans().catch(() => null),
         this.getIterations().catch(() => null),
-        this.getRuns().catch(() => null)
+        this.getRuns().catch(() => null),
+        this.getQueue().catch(() => null),
+        this.getGates().catch(() => null),
+        this.getControl().catch(() => null),
+        this.getAudit().catch(() => null)
       ]);
-      this.notifySubscribers({ type: "resynchronized", state, plans, iterations, runs });
+      this.notifySubscribers({ type: "resynchronized", state, plans, iterations, runs, queue, gates, control, audit });
     } catch (err) {
       console.warn("[Client] Snapshot resync failed:", err);
     }

@@ -7,18 +7,24 @@
   <link rel="stylesheet" href="temporal-mission.css">
 </head>
 <body>
-  <!-- Top HUD -->
+  <!-- Top Spatiotemporal HUD (Spec §6.2, §6.4) -->
   <header class="temporal-hud-top" role="banner">
-    <div class="hud-title">
-      <span>HERMES 3D TEMPORAL MISSION</span>
-      <span id="hud-status" class="time-badge">ACTIVE CORRIDOR</span>
+    <div class="hud-bar-main">
+      <div style="font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+        <span>HERMES 3D TEMPORAL MISSION</span>
+        <span id="hud-status" class="time-badge">ACTIVE CORRIDOR</span>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
+        <span id="hud-gen" class="time-badge">Gen: 1/10</span>
+      </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
-      <span id="hud-gen" class="time-badge">Gen: 1/10</span>
+    <div id="hud-identity" class="hud-identity-bar" aria-label="Identity Lineage Strip">
+      <!-- Dynamic Breadcrumb -->
     </div>
   </header>
 
+  <!-- Main 3D Longitudinal Workspace (WCAG 2.2 AA) -->
   <main role="main" aria-label="3D Temporal Mission Workspace">
     <!-- 3D Longitudinal Corridor Canvas -->
     <canvas id="temporal-canvas" aria-hidden="true"></canvas>
@@ -36,7 +42,10 @@
 
     <!-- Right Chamber Inspector -->
     <section class="chamber-inspector" aria-label="Stage Chamber Details">
-      <div id="inspector-content">
+      <div id="inspector-header" class="inspector-header">
+        <span>Chamber Inspector</span>
+      </div>
+      <div id="inspector-content" class="inspector-body">
         <!-- Chamber Details -->
       </div>
     </section>
@@ -46,7 +55,7 @@
   <nav class="timeline-scrubber-dock" role="navigation" aria-label="Timeline Scrubber">
     <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft'}))" title="Previous Chamber">◀ Prev</button>
     <input type="range" id="scrubber-slider" class="scrubber-slider" min="-300" max="250" value="0" aria-label="Timeline Z-Axis Position">
-    <span id="slider-label" style="font-family: var(--font-mono); font-size: 11px; min-width: 220px; color: var(--color-time);">3. Variant Arena (Z = 0m)</span>
+    <span id="slider-label" style="font-family: var(--font-mono); font-size: 11px; min-width: 240px; color: var(--color-time);">3. Variant Arena (Z = 0m)</span>
     <button class="btn-time" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}))" title="Next Chamber">Next ▶</button>
   </nav>
 

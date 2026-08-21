@@ -10,7 +10,7 @@
   <!-- Live Screen Reader Announcer (WCAG 2.2 AA) -->
   <div id="live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-  <!-- Persistent Global Header -->
+  <!-- Persistent Global Header (Spec §6.2) -->
   <header class="ops-header" role="banner">
     <div class="header-left">
       <span style="font-weight: 700; color: #fff; letter-spacing: 0.5px;">HERMES OPS CONSOLE</span>
@@ -19,136 +19,356 @@
     </div>
     <div class="header-center">
       <span id="header-admission" class="system-badge badge-active">Admission: ENABLED</span>
+      <span id="header-pending-cmds" class="system-badge badge-neutral">Pending: 0</span>
+      <span id="header-tick" class="system-badge badge-neutral">Tick: ~:00m</span>
       <span id="header-sse" class="system-badge badge-neutral">SSE: CONNECTING</span>
       <span id="header-attention" class="system-badge badge-warning">Attention: 0</span>
     </div>
     <div class="header-right">
-      <span id="header-role" class="role-badge">Role: Admin</span>
-      <button id="btn-cmd-palette" class="cmd-hint" aria-keyshortcuts="Control+K Meta+K :">Ctrl+K / : Commands</button>
+      <select id="header-role-select" class="ops-select" style="width: auto; padding: 2px 6px; font-size: 10px;" aria-label="Simulated RBAC Role">
+        <option value="Administrator">Role: Admin</option>
+        <option value="Operator">Role: Operator</option>
+        <option value="Approver">Role: Approver</option>
+        <option value="Author">Role: Author</option>
+        <option value="Viewer">Role: Viewer</option>
+        <option value="Auditor">Role: Auditor</option>
+      </select>
+      <button id="btn-cmd-palette" class="btn-ops" style="padding: 2px 8px; font-size: 10px;" aria-keyshortcuts="Control+K Meta+K :">Ctrl+K / : Commands</button>
     </div>
   </header>
 
-  <!-- Main 3-Pane Tiled Workspace -->
-  <main class="ops-workspace" role="main">
-    <!-- Left Pane: Attention Queue & Agent Manifest -->
-    <section class="pane" aria-label="Attention Queue and Agent Manifest">
-      <div class="pane-header">
-        <span>Operator Attention</span>
-        <span>Priority 0-2</span>
-      </div>
-      <div id="attention-queue" class="pane-content" style="max-height: 50%;">
-        <!-- Dynamic Attention Cards -->
-      </div>
-      <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-        <span>Agent Manifest</span>
-        <span>Active Workers</span>
-      </div>
-      <div id="agent-manifest" class="pane-content">
-        <!-- Dynamic Agent Cards -->
+  <!-- Cross-Resource Identity Strip (Spec §6.4) -->
+  <div id="identity-strip" class="identity-strip" aria-label="Active Resource Lineage Strip">
+    <!-- Dynamic Identity Breadcrumb -->
+  </div>
+
+  <!-- Primary Top Navigation Bar (Spec §6.1) -->
+  <nav class="ops-nav" role="navigation" aria-label="Console Views">
+    <button class="nav-tab active" data-view="overview">⚡ Overview & Attention</button>
+    <button class="nav-tab" data-view="plans">📋 Work & Plans</button>
+    <button class="nav-tab" data-view="runs">🚀 Runs Console</button>
+    <button class="nav-tab" data-view="iterations">🔬 Managed Iterations</button>
+    <button class="nav-tab" data-view="evidence">🛡️ Evidence Center</button>
+    <button class="nav-tab" data-view="system">⚙️ System & Health</button>
+  </nav>
+
+  <!-- Main Multi-View Workspace Container -->
+  <main class="ops-main" role="main">
+    
+    <!-- VIEW 1: OVERVIEW & ATTENTION (Spec §7) -->
+    <section id="view-overview" class="view-section active" aria-label="Overview and Incident Bay">
+      <div class="overview-grid">
+        <!-- Left Pane: Current Work & Attention Queue -->
+        <section class="pane" aria-label="Active Work and Incidents">
+          <div class="pane-header">
+            <span>Active Work & Pipeline</span>
+            <span>Live Context</span>
+          </div>
+          <div id="current-work-panel" class="pane-content" style="max-height: 42%;">
+            <!-- Dynamic Active Work Card -->
+          </div>
+          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+            <span>Prioritized Attention Queue</span>
+            <span>P0 - P3</span>
+          </div>
+          <div id="attention-queue" class="pane-content">
+            <!-- 9-Tier Attention Cards -->
+          </div>
+        </section>
+
+        <!-- Center Pane: Pipeline Stepper, Logs & Correlated Tools -->
+        <section class="pane" aria-label="Pipeline Stages and Log Stream">
+          <!-- Stage Progression -->
+          <div style="background: var(--bg-secondary); border-bottom: 1px solid var(--border-subtle); padding: 4px 10px;">
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">PIPELINE PROGRESSION</div>
+            <div id="pipeline-stepper" class="pipeline-stepper">
+              <!-- Dynamic Stage Pills -->
+            </div>
+          </div>
+
+          <!-- Streaming Terminal -->
+          <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="pane-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>Live Terminal Stream</span>
+                <span id="log-count" style="color: var(--text-muted);">[0 / 0]</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <input type="text" id="log-search" placeholder="Filter logs..." class="ops-input" style="width: 140px; padding: 2px 6px;">
+                <select id="log-level" class="ops-select" style="width: auto; padding: 2px 6px;">
+                  <option value="all">Level: ALL</option>
+                  <option value="error">Errors</option>
+                  <option value="warn">Warnings</option>
+                  <option value="info">Info</option>
+                </select>
+                <button id="btn-follow-logs" class="btn-ops" style="padding: 2px 6px; color: var(--color-active);">Follow: ON</button>
+              </div>
+            </div>
+            <div id="log-terminal" class="log-terminal" role="log" aria-label="Live swarm execution log"></div>
+          </div>
+
+          <!-- Tool Lifecycles -->
+          <div style="height: 180px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column;">
+            <div class="pane-header">
+              <span>Correlated Tool Lifecycles</span>
+              <span>Telemetry</span>
+            </div>
+            <div style="flex: 1; overflow-y: auto;">
+              <table class="ops-table" role="grid" aria-label="Tool execution records">
+                <thead>
+                  <tr><th>Tool Call ID</th><th>Action / Tool</th><th>Status</th><th>Duration</th><th>Agent</th></tr>
+                </thead>
+                <tbody id="tool-table-body">
+                  <!-- Dynamic Tool Call Rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Pane: Agent Manifest, Evidence Inspector & Control Deck -->
+        <section class="pane" aria-label="Agent Manifest and Checkpoint Controls">
+          <div class="pane-header">
+            <span>Agent Manifest</span>
+            <span>Workers</span>
+          </div>
+          <div id="agent-manifest" class="pane-content" style="max-height: 35%;">
+            <!-- Dynamic Agent Cards -->
+          </div>
+
+          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+            <span>Inspected Evidence / Diffs</span>
+            <span>Provenance</span>
+          </div>
+          <div id="evidence-viewer" class="pane-content" style="flex: 1; font-family: var(--font-mono); font-size: 10px;">
+            <div style="color: var(--text-muted);">Select a tool call or attention incident to inspect raw evidence.</div>
+          </div>
+
+          <!-- Checkpoint Control Deck -->
+          <div class="control-deck" role="toolbar" aria-label="Checkpoint Execution Controls">
+            <button id="btn-hold" class="btn-ops btn-warning" title="Hold future admission and pause active managed work">
+              <span>⏸️</span> Hold & Pause
+            </button>
+            <button id="btn-pause" class="btn-ops btn-warning" title="Request checkpoint pause at next boundary">
+              <span>⏹️</span> Pause Checkpoint
+            </button>
+            <button id="btn-stop" class="btn-ops btn-danger" title="Request graceful stop preserving worktrees">
+              <span>🛑</span> Graceful Stop
+            </button>
+            <button id="btn-resume" class="btn-ops" title="Resume admission and clear hold/stop intents">
+              <span>▶️</span> Resume
+            </button>
+            <button id="btn-run-now" class="btn-ops" style="grid-column: span 2; border-color: var(--color-active); color: var(--color-active);" title="Request runner tick admission immediately">
+              <span>⚡</span> Request Run Now
+            </button>
+          </div>
+        </section>
       </div>
     </section>
 
-    <!-- Center Pane: Real-time Telemetry Logs & Tool Lifecycle Correlation -->
-    <section class="pane" aria-label="Live Telemetry and Tool Execution">
-      <div class="center-split">
-        <!-- Streaming Terminal -->
-        <div style="display: flex; flex-direction: column; overflow: hidden;">
+    <!-- VIEW 2: WORK & PLANS (Spec §8) -->
+    <section id="view-plans" class="view-section" aria-label="Governed Project Plans and Queue">
+      <div class="full-view-layout">
+        <!-- Left Column: Plans Table & Queue Table -->
+        <div class="pane">
           <div class="pane-header">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span>Live Terminal</span>
-              <span id="log-count" style="color: var(--text-muted);">[0 / 0]</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <input type="text" id="log-search" placeholder="Filter logs..." style="background: var(--bg-primary); border: 1px solid var(--border-subtle); color: #fff; padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px;">
-              <select id="log-level" style="background: var(--bg-primary); border: 1px solid var(--border-subtle); color: #fff; padding: 2px 6px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px;">
-                <option value="all">Level: ALL</option>
-                <option value="error">Errors</option>
-                <option value="warn">Warnings</option>
-                <option value="info">Info</option>
-              </select>
-              <button id="btn-follow-logs" class="cmd-hint" style="color: var(--color-active);">Follow: ON</button>
-            </div>
-          </div>
-          <div id="log-terminal" class="log-terminal" role="log" aria-label="Real-time swarm log output"></div>
-        </div>
-
-        <!-- Tool Lifecycles -->
-        <div style="display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--border-subtle);">
-          <div class="pane-header">
-            <span>Correlated Tool Lifecycles</span>
-            <span>Last 20 Calls</span>
+            <span>Governed Plans Ledger</span>
+            <button id="btn-create-plan-trigger" class="btn-ops" style="padding: 2px 8px; font-size: 10px;">+ New Plan</button>
           </div>
           <div style="flex: 1; overflow-y: auto;">
-            <table class="data-table" role="grid" aria-label="Tool execution records">
+            <table class="ops-table">
               <thead>
-                <tr>
-                  <th scope="col">Tool Call ID</th>
-                  <th scope="col">Action / Tool</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Agent</th>
-                </tr>
+                <tr><th>Title</th><th>Pipeline</th><th>State</th><th>Rev</th><th>Digest</th><th>Action</th></tr>
               </thead>
-              <tbody id="tool-table-body">
-                <!-- Tool Call Rows -->
+              <tbody id="plan-list-body">
+                <!-- Dynamic Plans -->
               </tbody>
+            </table>
+          </div>
+
+          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+            <span>Candidate Ideas Queue</span>
+            <span>Priority Order</span>
+          </div>
+          <div style="height: 180px; overflow-y: auto;">
+            <table class="ops-table">
+              <thead><tr><th>Rank</th><th>Objective</th><th>Pri</th><th>State</th><th>Convert</th></tr></thead>
+              <tbody id="queue-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right Column: Plan Detail & Steering -->
+        <div class="pane">
+          <div class="pane-header">
+            <span>Plan Review & Launch Authority</span>
+            <span>Immutable Spec</span>
+          </div>
+          <div id="plan-detail-container" class="pane-content">
+            <div style="color: var(--text-muted);">Select a plan from the ledger to inspect immutable revisions and launch authority.</div>
+          </div>
+          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+            <span>Active Operator Steering</span>
+            <span>Directives</span>
+          </div>
+          <div id="steering-list" class="pane-content" style="max-height: 140px;">
+            <!-- Dynamic Steering Directives -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: RUNS CONSOLE (Spec §10) -->
+    <section id="view-runs" class="view-section" aria-label="Runs History and Detail Console">
+      <div class="full-view-layout">
+        <!-- Left: Runs List -->
+        <div class="pane">
+          <div class="pane-header">
+            <span>Execution Runs History</span>
+            <span>SQLite Records</span>
+          </div>
+          <div style="flex: 1; overflow-y: auto;">
+            <table class="ops-table">
+              <thead><tr><th>Run ID</th><th>Pipeline</th><th>Status</th><th>Phase</th><th>Elapsed</th></tr></thead>
+              <tbody id="runs-list-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: 10-Tab Run Inspector -->
+        <div class="pane">
+          <div class="tab-bar-secondary">
+            <button class="sub-tab run-sub-tab active" data-tab="overview">Overview</button>
+            <button class="sub-tab run-sub-tab" data-tab="pipeline">Pipeline</button>
+            <button class="sub-tab run-sub-tab" data-tab="agents">Agents</button>
+            <button class="sub-tab run-sub-tab" data-tab="activity">Activity</button>
+            <button class="sub-tab run-sub-tab" data-tab="evidence">Evidence</button>
+            <button class="sub-tab run-sub-tab" data-tab="artifacts">Artifacts</button>
+            <button class="sub-tab run-sub-tab" data-tab="logs">Logs</button>
+            <button class="sub-tab run-sub-tab" data-tab="resources">Resources</button>
+            <button class="sub-tab run-sub-tab" data-tab="handoff">Handoff</button>
+            <button class="sub-tab run-sub-tab" data-tab="raw">Raw JSON</button>
+          </div>
+          <div id="run-tab-content" class="pane-content">
+            <!-- Dynamic 10-Tab Content -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: MANAGED ITERATIONS (Spec §13) -->
+    <section id="view-iterations" class="view-section" aria-label="Managed Iterations and Scorecards">
+      <div class="full-view-layout">
+        <!-- Left: Iterations List -->
+        <div class="pane">
+          <div class="pane-header">
+            <span>Managed Iterations</span>
+            <span>Generations</span>
+          </div>
+          <div style="flex: 1; overflow-y: auto;">
+            <table class="ops-table">
+              <thead><tr><th>Iteration ID</th><th>Gen</th><th>Status</th><th>Variants</th></tr></thead>
+              <tbody id="iter-list-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: Scorecard Matrix & Synthesis -->
+        <div class="pane">
+          <div id="scorecard-container" class="pane-content" style="max-height: 55%;"></div>
+          <div id="synthesis-container" class="pane-content" style="border-top: 1px solid var(--border-subtle);"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: EVIDENCE CENTER (Spec §14) -->
+    <section id="view-evidence" class="view-section" aria-label="Evidence Center and Traceability">
+      <div class="pane" style="flex: 1;">
+        <div class="pane-header">
+          <span>Acceptance Gates & Verification Assurance Ledger</span>
+          <span class="system-badge badge-success">Runner-verified</span>
+        </div>
+        <div class="pane-content">
+          <table class="ops-table">
+            <thead><tr><th>Gate ID</th><th>Description</th><th>Severity</th><th>Status</th><th>Required Evidence Path</th></tr></thead>
+            <tbody id="evidence-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 6: SYSTEM & HEALTH (Spec §18) -->
+    <section id="view-system" class="view-section" aria-label="System Administration and Audit">
+      <div class="full-view-layout">
+        <div class="pane">
+          <div class="pane-header">
+            <span>System Health Checks (7/7)</span>
+            <span class="system-badge badge-success">All Passing</span>
+          </div>
+          <div id="system-health-checks" class="pane-content" style="max-height: 50%;"></div>
+          
+          <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
+            <span>Process & Mutex Lock Status</span>
+            <span>Runner State</span>
+          </div>
+          <div id="process-lock-info" class="pane-content"></div>
+        </div>
+
+        <div class="pane">
+          <div class="pane-header">
+            <span>Tamper-Evident Audit Ledger</span>
+            <span>Last 10 Actions</span>
+          </div>
+          <div class="pane-content">
+            <table class="ops-table">
+              <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Payload Summary</th></tr></thead>
+              <tbody id="audit-table-body"></tbody>
             </table>
           </div>
         </div>
       </div>
     </section>
-
-    <!-- Right Pane: Evidence, Diffs & Checkpoint Commands -->
-    <section class="pane" aria-label="Evidence and Checkpoint Control Deck">
-      <div class="pane-header">
-        <span>Inspected Evidence / Input</span>
-        <span>Provenance</span>
-      </div>
-      <div id="evidence-viewer" class="pane-content" style="max-height: 40%; font-family: var(--font-mono); font-size: 11px;">
-        <div style="color: var(--text-muted);">Select a tool call or attention card to inspect raw evidence.</div>
-      </div>
-
-      <div class="pane-header" style="border-top: 1px solid var(--border-subtle);">
-        <span>Worktree Diffs & Validations</span>
-        <span>Runner Checked</span>
-      </div>
-      <div class="pane-content" style="flex: 1;">
-        <div id="diff-viewer" class="diff-viewer">
-          <span class="diff-hunk">@@ -1,5 +1,12 @@ Active Branch Diff</span>
-          <span class="diff-add">+ Verified source branch integrity (HEAD unmodified)</span>
-          <span class="diff-add">+ Isolated worktrees bound to runs/artifacts</span>
-          <span style="color: #64748b;">  No pending uncommitted working tree modifications.</span>
-        </div>
-      </div>
-
-      <!-- Checkpoint Control Deck -->
-      <div class="control-deck" role="toolbar" aria-label="Checkpoint Execution Controls">
-        <button id="btn-hold" class="btn-ctrl btn-warning" title="Hold future admission and pause active managed work">
-          <span>⏸️</span> Hold & Pause
-        </button>
-        <button id="btn-pause" class="btn-ctrl btn-warning" title="Request checkpoint pause at next boundary">
-          <span>⏹️</span> Pause Checkpoint
-        </button>
-        <button id="btn-stop" class="btn-ctrl btn-danger" title="Request graceful stop preserving worktrees">
-          <span>🛑</span> Graceful Stop
-        </button>
-        <button id="btn-resume" class="btn-ctrl" title="Resume admission and clear hold/stop intents">
-          <span>▶️</span> Resume
-        </button>
-        <button id="btn-run-now" class="btn-ctrl" style="grid-column: span 2; border-color: var(--color-active); color: var(--color-active);" title="Request runner tick admission immediately">
-          <span>⚡</span> Request Run Now
-        </button>
-      </div>
-    </section>
   </main>
+
+  <!-- Plan Authoring Modal -->
+  <div id="plan-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Create Governed Plan">
+    <div class="palette-box" style="width: 580px; padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="margin: 0; font-size: 14px;">Author Governed Project Plan</h3>
+        <button id="btn-close-plan-modal" class="btn-ops" style="padding: 2px 6px;">✕</button>
+      </div>
+      <form id="plan-form">
+        <div style="margin-bottom: 10px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Project Title</label>
+          <input type="text" id="form-plan-title" class="ops-input" placeholder="e.g. Swarm Telemetry Hardening" required>
+        </div>
+        <div style="margin-bottom: 10px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Pipeline</label>
+          <select id="form-plan-pipeline" class="ops-select">
+            <option value="classic">Classic Pipeline (Build new project from scratch)</option>
+            <option value="managed">Managed Pipeline (Improve existing Git repository)</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 10px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Target Repository (Managed only)</label>
+          <input type="text" id="form-plan-repo" class="ops-input" placeholder="/home/mojo/projects/target-repo">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; font-weight: 600; margin-bottom: 4px;">Bounded Objective</label>
+          <textarea id="form-plan-objective" class="ops-textarea" placeholder="Exact objective and requirements..." required></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="submit" class="btn-ops" style="border-color: var(--color-active); color: var(--color-active);">Save Revision #1 Draft</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Command Palette Modal -->
   <div id="palette-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-label="Command Palette">
     <div class="palette-box">
-      <input type="text" id="palette-input" class="palette-input" placeholder="Type command (:hold, :pause, :stop, :resume, :role, :clear-queue)...">
-      <div id="palette-results" class="palette-results">
-        <!-- Dynamic command search results -->
-      </div>
+      <input type="text" id="palette-input" class="palette-input" placeholder="Type command (:hold, :pause, :stop, :resume, :steer, :new-plan, :clear-queue)...">
+      <div id="palette-results" class="palette-results"></div>
     </div>
   </div>
 

@@ -7,18 +7,25 @@
   <link rel="stylesheet" href="spatial-topology.css">
 </head>
 <body>
-  <!-- Top Spatial HUD -->
+  <!-- Top Spatial HUD (Spec §6.2, §6.4) -->
   <header class="spatial-hud-top" role="banner">
-    <div class="hud-title">
-      <span>HERMES 3D SPATIAL TOPOLOGY</span>
-      <span id="hud-status" class="hud-pill active">INITIALIZING</span>
+    <div class="hud-bar-main">
+      <div style="font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">
+        <span>HERMES 3D SPATIAL TOPOLOGY</span>
+        <span id="hud-status" class="hud-pill active">INITIALIZING</span>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
+        <span id="hud-admission" class="hud-pill active">Admission: ENABLED</span>
+        <span id="hud-attention" class="hud-pill error">Attention: 0</span>
+      </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <span id="hud-run" style="color: var(--text-secondary);">Run: --</span>
-      <span id="hud-freshness" style="color: var(--text-muted);">Updated: --</span>
+    <div id="hud-identity" class="hud-identity-bar" aria-label="Identity Lineage Strip">
+      <!-- Dynamic Breadcrumb -->
     </div>
   </header>
 
+  <!-- Main 3D Spatial Operations Workspace (WCAG 2.2 AA) -->
   <main role="main" aria-label="3D Spatial Operations Workspace">
     <!-- 3D WebGPU / WebGL2 Canvas -->
     <canvas id="spatial-canvas" aria-hidden="true"></canvas>
@@ -45,15 +52,18 @@
       </div>
     </aside>
 
-    <!-- Right Node Inspector -->
+    <!-- Right Contextual Inspector Drawer -->
     <section class="node-inspector" aria-label="Selected Node Detail">
-      <div id="inspector-content">
-        <div style="color: var(--text-muted); font-size: 12px;">Click a 3D agent polyhedra or select a row in the treegrid to inspect telemetry.</div>
+      <div id="inspector-header" class="inspector-header">
+        <span>Node Inspector</span>
+      </div>
+      <div id="inspector-content" class="inspector-body">
+        <div style="color: var(--text-muted); font-size: 11px;">Click a 3D agent polyhedra or select a row in the treegrid to inspect telemetry.</div>
       </div>
     </section>
   </main>
 
-  <!-- Bottom Camera Dock -->
+  <!-- Bottom Camera Dock & Bookmarks -->
   <nav class="camera-dock" role="navigation" aria-label="Camera Bookmarks">
     <button id="btn-reset-cam" class="btn-cam" aria-keyshortcuts="Home R">Reset View (R)</button>
     <button class="btn-cam" onclick="window.dispatchEvent(new KeyboardEvent('keydown', {key: '1'}))" title="Zone 1: Ingestion">1: Admission</button>

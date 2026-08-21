@@ -38,7 +38,8 @@ let editorOffset = 0;
 let reviewOffset = 0;
 let searchQuery = "";
 let notice = "Synchronizing the cavern with the control plane";
-let visualFrozen = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Start static. Live data still redraws the scene; optional decorative motion is opt-in with F.
+let visualFrozen = true;
 const receipts = [];
 const hits = [];
 
@@ -445,6 +446,13 @@ function setMode(semantic, reason = "") {
   }
 }
 
+function attempt3D() {
+  if (!renderer) return announce("The 3D renderer has not initialized yet.", true);
+  if (!renderer.ready && !renderer.retry()) return announce(renderer.failureReason || "The 3D renderer retry failed. Semantic control remains active.", true);
+  setMode(false);
+  announce("Command Cavern 3D restored in bounded performance mode. Press F to enable optional motion.");
+}
+
 function records(kind) {
   if (kind === "runs") return snapshot.runs;
   if (kind === "agents") return agents();
@@ -502,22 +510,23 @@ async function toggleClientConnection() {
 }
 
 // The high-resolution offscreen inscription is sampled only at SDF tablet hits.
+const TABLET_TEXTURE_WIDTH = 1600;
+const TABLET_TEXTURE_HEIGHT = 900;
 const uiCanvas = document.createElement("canvas");
-uiCanvas.width = 3200;
-uiCanvas.height = 1800;
+uiCanvas.width = TABLET_TEXTURE_WIDTH;
+uiCanvas.height = TABLET_TEXTURE_HEIGHT;
 const ui = uiCanvas.getContext("2d", { alpha: true });
-ui.setTransform(2, 0, 0, 2, 0, 0);
 const uploadCanvas = document.createElement("canvas");
 const upload = uploadCanvas.getContext("2d", { alpha: true });
 function prepareUploadCanvas(portrait, maximum) {
-  const desired = portrait ? [1800, 2800] : [3200, 1800];
+  const desired = portrait ? [900, 1600] : [TABLET_TEXTURE_WIDTH, TABLET_TEXTURE_HEIGHT];
   const scale = Math.min(1, maximum / desired[0], maximum / desired[1]);
   const width = Math.max(1, Math.floor(desired[0] * scale)), height = Math.max(1, Math.floor(desired[1] * scale));
   if (uploadCanvas.width !== width || uploadCanvas.height !== height) { uploadCanvas.width = width; uploadCanvas.height = height; }
   upload.clearRect(0, 0, width, height);
   if (portrait) {
-    upload.drawImage(uiCanvas, 0, 0, 1600, 1800, 0, 0, width, height / 2);
-    upload.drawImage(uiCanvas, 1600, 0, 1600, 1800, 0, height / 2, width, height / 2);
+    upload.drawImage(uiCanvas, 0, 0, 800, 900, 0, 0, width, height / 2);
+    upload.drawImage(uiCanvas, 800, 0, 800, 900, 0, height / 2, width, height / 2);
   } else upload.drawImage(uiCanvas, 0, 0, width, height);
   return uploadCanvas;
 }
@@ -754,7 +763,7 @@ function drawUi() {
   const previousFocusKey = renderer?.focusedKey;
   hits.length = 0;
   ui.save();
-  ui.setTransform(2, 0, 0, 2, 0, 0);
+  ui.setTransform(1, 0, 0, 1, 0, 0);
   ui.clearRect(0, 0, 1600, 900);
   ui.fillStyle = "rgba(7,10,6,.16)"; ui.fillRect(0, 0, 1600, 900);
   drawChrome();
@@ -778,8 +787,8 @@ function drawUi() {
 
 class CavernRenderer {
   constructor(canvas) {
-    this.canvas = canvas; this.gl = null; this.program = null; this.texture = null; this.vao = null; this.frame = 0; this.hidden = document.hidden; this.lost = false; this.ready = false; this.focusedHit = 0; this.focusedKey = null; this.uiDirty = true;
-    this.quality = innerWidth < 700 ? 0.72 : 0.88; this.steps = innerWidth < 700 ? 64 : 92; this.samples = []; this.start = performance.now(); this.lastQualityChange = 0;
+    this.canvas = canvas; this.gl = null; this.program = null; this.texture = null; this.vao = null; this.frame = 0; this.animationTimer = 0; this.hidden = document.hidden; this.lost = false; this.ready = false; this.failureReason = ""; this.focusedHit = 0; this.focusedKey = null; this.uiDirty = true;
+    this.textureWidth = 0; this.textureHeight = 0; this.quality = innerWidth < 700 ? 0.42 : 0.5; this.steps = innerWidth < 700 ? 24 : 28; this.start = performance.now();
     this.bind(); this.initialize();
   }
   shader(type, source, label) {
@@ -787,13 +796,18 @@ class CavernRenderer {
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { const message = gl.getShaderInfoLog(shader) || `${label} shader compilation failed`; gl.deleteShader(shader); throw new Error(message); }
     return shader;
   }
-  fail(message) { this.ready = false; this.program = null; setMode(true, message); return false; }
+  fail(message) { this.ready = false; this.failureReason = message; clearTimeout(this.animationTimer); this.animationTimer = 0; setMode(true, message); return false; }
+  retry() {
+    if (this.lost || this.gl?.isContextLost?.()) { this.failureReason = "The WebGL context is still lost; wait for browser restoration or reload the page."; return false; }
+    this.quality = Math.min(this.quality, 0.42); this.steps = 24; this.uiDirty = true;
+    try { return this.initialize(); } catch (error) { return this.fail(`WebGL retry failed: ${error.message}`); }
+  }
   initialize() {
     const gl = this.canvas.getContext("webgl2", { antialias: false, alpha: true, depth: false, powerPreference: "high-performance" });
     if (!gl) return this.fail("WebGL2 is unavailable. The synchronized semantic application is active.");
     this.gl = gl;
     this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    if (!Number.isInteger(this.maxTextureSize) || this.maxTextureSize < 2048) return this.fail(`WebGL MAX_TEXTURE_SIZE ${this.maxTextureSize || "unknown"} is insufficient for the command tablet.`);
+    if (!Number.isInteger(this.maxTextureSize) || this.maxTextureSize < 1024) return this.fail(`WebGL MAX_TEXTURE_SIZE ${this.maxTextureSize || "unknown"} is insufficient for the command tablet.`);
     const vs = `#version 300 es
       precision highp float; const vec2 P[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
       void main(){gl_Position=vec4(P[gl_VertexID],0.,1.);}`;
@@ -807,15 +821,15 @@ class CavernRenderer {
       vec2 take(vec2 current,float distance,float material){return distance<current.x?vec2(distance,material):current;}
       vec2 scene(vec3 p){float rock=7.2-length(p-vec3(0.,.15,1.2))+.08*sin(p.x*2.7)*sin(p.y*3.1)*sin(p.z*2.3);vec2 r=vec2(rock,1.);
         r=take(r,p.y+2.3+.08*sin(p.x*1.7)*sin(p.z*1.2),1.);
-        for(int i=0;i<12;i++){float fi=float(i);if(fi>=min(uCounts.x,12.))break;float side=mod(fi,2.)<.5?-1.:1.;vec3 q=p-vec3(side*(3.75+floor(fi*.5)*.27),-1.42+mod(fi,3.)*.28,1.15+floor(fi/6.)*.5);float core=max(length(q.xz)-(.15+.025*mod(fi,3.)),abs(q.y)-(.45+.05*mod(fi,2.)));r=take(r,core,2.);}
-        for(int i=0;i<12;i++){float fi=float(i);if(fi>=min(uCounts.y,12.))break;float a=fi*.83+uTime*.16*uMotion;vec3 center=vec3(cos(a)*(3.55+mod(fi,2.)*.3),.85+sin(a*1.7)*.38,1.1+sin(a)*.4);r=take(r,sphere(p-center,.075),3.);}
-        for(int i=0;i<16;i++){float fi=float(i);if(fi>=min(uCounts.z,16.))break;vec3 q=p-vec3(-4.55+mod(fi,8.)*1.3,1.75+floor(fi/8.)*.28,1.55);r=take(r,sphere(q,.045+.015*mod(fi,3.)),8.);}
-        for(int i=0;i<10;i++){float fi=float(i);if(fi>=min(uCounts.w,10.))break;vec3 q=p-vec3(3.65+mod(fi,2.)*.32,-1.95+floor(fi/2.)*.22,.3);r=take(r,octa(q,.15),4.);}
-        for(int i=0;i<8;i++){float fi=float(i);if(fi>=min(uMore.x,8.))break;vec3 q=p-vec3(-3.8+fi*1.08,2.0,1.5);r=take(r,abs(torus(q.xzy,vec2(.28,.035)))-.008,5.);}
-        for(int i=0;i<8;i++){float fi=float(i);if(fi>=min(uMore.y,8.))break;vec3 a=vec3(-3.2+fi*.9,-2.05,1.4),b=a+vec3((mod(fi,2.)-.5)*.8,.7,.4);r=take(r,capsule(p,a,b,.035),9.);}
-        for(int i=0;i<8;i++){float fi=float(i);if(fi>=min(uMore.z,8.))break;vec3 q=p-vec3(3.72+mod(fi,2.)*.45,.15+floor(fi/2.)*.34,1.1);r=take(r,box(q,vec3(.16,.11,.035)),10.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.x,2.))break;float side=mod(fi,2.)<.5?-1.:1.;vec3 q=p-vec3(side*3.9,-1.2+fi*.5,1.35);float core=max(length(q.xz)-(.2+.03*fi),abs(q.y)-.58);r=take(r,core,2.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.y,2.))break;float a=fi*3.14+uTime*.12*uMotion;vec3 center=vec3(cos(a)*3.7,.9+sin(a*1.7)*.28,1.35+sin(a)*.25);r=take(r,sphere(p-center,.09),3.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.z,2.))break;vec3 q=p-vec3(-2.1+fi*4.2,1.9,1.6);r=take(r,sphere(q,.065),8.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uCounts.w,2.))break;vec3 q=p-vec3(3.75,-1.7+fi*.5,.45);r=take(r,octa(q,.18),4.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.x,2.))break;vec3 q=p-vec3(-1.3+fi*2.6,2.05,1.55);r=take(r,abs(torus(q.xzy,vec2(.32,.045)))-.008,5.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.y,2.))break;vec3 a=vec3(-1.3+fi*2.6,-2.05,1.5),b=a+vec3((fi-.5)*.55,.65,.3);r=take(r,capsule(p,a,b,.045),9.);}
+        for(int i=0;i<2;i++){float fi=float(i);if(fi>=min(uMore.z,2.))break;vec3 q=p-vec3(3.8,.35+fi*.65,1.3);r=take(r,box(q,vec3(.2,.13,.045)),10.);}
         vec3 tablet=p-vec3(0.,.05,.55);r=take(r,box(tablet,vec3(uTabletHalf,.10)),6.);
-        for(int i=0;i<8;i++){float fi=float(i);vec3 q=p-vec3(-4.15+fi*1.18,-2.02,1.2);r=take(r,box(q,vec3(.09,.36+.05*mod(fi,3.),.09)),7.);}return r;}
+        for(int i=0;i<2;i++){float fi=float(i);vec3 q=p-vec3(-1.2+fi*2.4,-2.02,1.2);r=take(r,box(q,vec3(.11,.42+.05*fi,.11)),7.);}return r;}
       vec3 normal(vec3 p){vec2 e=vec2(.002,0.);float d=scene(p).x;return normalize(vec3(scene(p+e.xyy).x-d,scene(p+e.yxy).x-d,scene(p+e.yyx).x-d));}
       void main(){vec2 uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;vec3 ro=vec3(0.,.05,uCameraZ),rd=normalize(vec3(uv,1.42));float travel=0.,mat=0.;bool hit=false;vec3 p=ro;
         for(int i=0;i<144;i++){if(i>=uSteps)break;p=ro+rd*travel;vec2 h=scene(p);if(h.x<.0018){mat=h.y;hit=true;break;}travel+=max(.006,h.x*.68);if(travel>18.)break;}
@@ -838,13 +852,13 @@ class CavernRenderer {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, initialSource);
     const allocationError = gl.getError();
     if (allocationError !== gl.NO_ERROR) return this.fail(`Command tablet texture allocation failed with WebGL error 0x${allocationError.toString(16)}.`);
-    this.ready = !gl.isContextLost(); this.uiDirty = false; this.requestFrame(); return this.ready;
+    this.textureWidth = initialSource.width; this.textureHeight = initialSource.height; this.ready = !gl.isContextLost(); this.failureReason = ""; this.uiDirty = false; this.requestFrame(); return this.ready;
   }
   bind() {
     this.canvas.addEventListener("pointerdown", (event) => this.pick(event));
-    this.canvas.addEventListener("webglcontextlost", (event) => { event.preventDefault(); this.lost = true; this.ready = false; cancelAnimationFrame(this.frame); this.frame = 0; setMode(true, "WebGL context lost. Semantic control remains live while recovery recompiles all resources."); });
+    this.canvas.addEventListener("webglcontextlost", (event) => { event.preventDefault(); this.lost = true; this.ready = false; cancelAnimationFrame(this.frame); clearTimeout(this.animationTimer); this.frame = 0; this.animationTimer = 0; setMode(true, "WebGL context lost. Semantic control remains live while recovery recompiles all resources."); });
     this.canvas.addEventListener("webglcontextrestored", () => { this.lost = false; if (this.initialize() && this.ready) announce("WebGL context recovered; shaders, texture, VAO, and tablet projection are ready."); else announce("WebGL recovery did not become ready. Semantic mode remains authoritative.", true); });
-    document.addEventListener("visibilitychange", () => { this.hidden = document.hidden; this.last = 0; if (this.hidden) { cancelAnimationFrame(this.frame); this.frame = 0; } else this.requestFrame(); });
+    document.addEventListener("visibilitychange", () => { this.hidden = document.hidden; if (this.hidden) { cancelAnimationFrame(this.frame); clearTimeout(this.animationTimer); this.frame = 0; this.animationTimer = 0; } else this.requestFrame(); });
     new ResizeObserver(() => this.requestFrame()).observe(this.canvas);
   }
   pick(event) {
@@ -863,22 +877,23 @@ class CavernRenderer {
   tabletHalf(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) {
     if (!this.isPortrait(aspect)) return [3.25, 1.83];
     const distance = .45 - this.cameraZ(aspect), halfWidth = Math.min(1.5, distance * aspect / 1.42 * .9);
-    return [halfWidth, halfWidth * (2800 / 1800)];
+    return [halfWidth, halfWidth * (1600 / 900)];
   }
   cameraZ(aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)) { return this.isPortrait(aspect) ? -5.6 : -5.2; }
   resize() {
-    const clientWidth = Math.max(1, this.canvas.clientWidth), clientHeight = Math.max(1, this.canvas.clientHeight), dpr = Math.min(2, Math.max(1, devicePixelRatio || 1)), requested = Math.min(1, Math.max(.5, this.quality)) * dpr;
-    const uniformScale = Math.min(requested, 3840 / clientWidth, 2160 / clientHeight);
+    const clientWidth = Math.max(1, this.canvas.clientWidth), clientHeight = Math.max(1, this.canvas.clientHeight), dpr = Math.min(1.25, Math.max(1, devicePixelRatio || 1)), requested = Math.min(.65, Math.max(.4, this.quality)) * dpr;
+    const pixelScale = Math.sqrt(800_000 / (clientWidth * clientHeight));
+    const uniformScale = Math.min(requested, pixelScale, 1600 / clientWidth, 1200 / clientHeight);
     const width = Math.max(1, Math.round(clientWidth * uniformScale)), height = Math.max(1, Math.round(clientHeight * uniformScale));
     if (width !== this.canvas.width || height !== this.canvas.height) { this.canvas.width = width; this.canvas.height = height; }
   }
-  requestFrame(redrawUi = true) { if (redrawUi) this.uiDirty = true; if (!this.frame && !this.hidden && !this.lost && this.ready && this.program && !$("cavernMode").hidden) this.frame = requestAnimationFrame((time) => this.render(time)); }
+  requestFrame(redrawUi = true) { if (redrawUi) { this.uiDirty = true; clearTimeout(this.animationTimer); this.animationTimer = 0; } if (!this.frame && !this.hidden && !this.lost && this.ready && this.program && !$("cavernMode").hidden) this.frame = requestAnimationFrame((time) => this.render(time)); }
   render(time) {
     this.frame = 0; if (this.hidden || this.lost || !this.ready || !this.program) return; const gl = this.gl, started = performance.now(); this.resize();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height); gl.useProgram(this.program); gl.bindVertexArray(this.vao); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.texture);
     const aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight), tablet = this.tabletHalf(aspect);
     if (this.uiDirty) {
-      drawUi(); const textureSource = prepareUploadCanvas(this.isPortrait(aspect), this.maxTextureSize); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSource);
+      drawUi(); const textureSource = prepareUploadCanvas(this.isPortrait(aspect), this.maxTextureSize); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); if (textureSource.width === this.textureWidth && textureSource.height === this.textureHeight) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, textureSource); else { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureSource); this.textureWidth = textureSource.width; this.textureHeight = textureSource.height; }
       const allocationError = gl.getError();
       if (allocationError !== gl.NO_ERROR) { this.fail(`Command tablet texture allocation failed with WebGL error 0x${allocationError.toString(16)}.`); return; }
       this.uiDirty = false;
@@ -888,9 +903,8 @@ class CavernRenderer {
     const pinned = queueRows.filter((item) => item.status === "pinned" || item.id === snapshot.control?.pinnedQueueItemId).length;
     const failedGates = gateRows.filter((gate) => /fail|reject|needs-evidence/i.test(String(gate.status))).length;
     gl.uniform2f(this.locations.uRes, this.canvas.width, this.canvas.height); gl.uniform2f(this.locations.uTabletHalf, tablet[0], tablet[1]); gl.uniform1f(this.locations.uCameraZ, this.cameraZ(aspect)); gl.uniform1f(this.locations.uTime, (time - this.start) / 1000); gl.uniform1f(this.locations.uMotion, visualFrozen ? 0 : 1); gl.uniform1i(this.locations.uSteps, this.steps); gl.uniform1i(this.locations.uUi, 0); gl.uniform4f(this.locations.uCounts, snapshot.runs.length, agentRows.length, snapshot.events.length, queueRows.length); gl.uniform4f(this.locations.uMore, gateRows.length, snapshot.iterations.length, snapshot.plans.length, tools().length); gl.uniform4f(this.locations.uState, currentBlocker() ? 1 : 0, Math.min(1, unhealthy / Math.max(1, agentRows.length)), Math.min(1, pinned / Math.max(1, queueRows.length)), Math.min(1, failedGates / Math.max(1, gateRows.length))); gl.drawArrays(gl.TRIANGLES, 0, 3);
-    this.samples.push(performance.now() - started); if (this.samples.length > 40) this.samples.shift();
-    if (this.samples.length === 40 && time - this.lastQualityChange > 2000) { const average = this.samples.reduce((sum, value) => sum + value, 0) / 40; if (average > 25) { this.quality = Math.max(.5, this.quality - .06); this.steps = Math.max(52, this.steps - 6); this.samples.length = 0; this.lastQualityChange = time; } else if (average < 13) { this.quality = Math.min(1, this.quality + .03); this.steps = Math.min(116, this.steps + 3); this.samples.length = 0; this.lastQualityChange = time; } }
-    if (!visualFrozen) this.requestFrame(false);
+    if (performance.now() - started > 22) { this.quality = Math.max(.35, this.quality - .04); this.steps = Math.max(20, this.steps - 2); }
+    if (!visualFrozen && !this.animationTimer) this.animationTimer = setTimeout(() => { this.animationTimer = 0; this.requestFrame(false); }, 100);
   }
 }
 
@@ -972,12 +986,12 @@ $("semanticApp").addEventListener("change", (event) => {
   }
 });
 
-$("returnToCavern").addEventListener("click", () => setMode(false));
+$("returnToCavern").addEventListener("click", attempt3D);
 $("canvasKeyboard").addEventListener("input", (event) => { if (sceneEditor) { sceneEditor.value = event.target.value; renderer.requestFrame(); } });
 $("canvasKeyboard").addEventListener("keydown", (event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); saveEditor(); } });
 
 document.addEventListener("keydown", (event) => {
-  if (!$("semanticApp").hidden && event.key.toLowerCase() === "a" && !event.target.matches("input,textarea,select")) return setMode(false);
+  if (!$("semanticApp").hidden && event.key.toLowerCase() === "a" && !event.target.matches("input,textarea,select")) return attempt3D();
   if ($("cavernMode").hidden) return;
   if (page === "editor") {
     if (event.key === "Escape") { page = sceneEditor?.openedFrom || "operations"; sceneEditor = null; $("cavern").focus(); renderer.requestFrame(); }
@@ -998,7 +1012,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
-const motionChanged = (event) => { visualFrozen = event.matches; renderer.requestFrame(); };
+const motionChanged = (event) => { if (event.matches) visualFrozen = true; renderer.requestFrame(); };
 motionPreference.addEventListener?.("change", motionChanged);
 
 function assertCoverage() {

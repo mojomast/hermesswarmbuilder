@@ -64,4 +64,14 @@ assert.notEqual(clients[1].renderer.join(), clients[2].renderer.join(), 'Jacquar
 const directory = readFileSync(resolve(publicRoot, 'dashboard-directory.js'), 'utf8');
 for (const client of clients) assert(directory.includes(client.route), `directory missing ${client.route}`);
 
+const cavern = readFileSync(resolve(publicRoot, 'next/command-cavern/app.js'), 'utf8');
+assert.match(cavern, /function attempt3D\(\)/, 'Command Cavern: return-to-3D retry path missing');
+assert.match(cavern, /retry\(\)\s*\{/, 'Command Cavern: renderer retry method missing');
+assert.match(cavern, /TABLET_TEXTURE_WIDTH = 1600/, 'Command Cavern: bounded tablet texture missing');
+assert.match(cavern, /texSubImage2D/, 'Command Cavern: in-place tablet updates missing');
+assert.match(cavern, /let visualFrozen = true/, 'Command Cavern: static safe startup missing');
+assert.match(cavern, /this\.steps = innerWidth < 700 \? 24 : 28/, 'Command Cavern: bounded initial ray steps missing');
+assert.doesNotMatch(cavern, /for\(int i=0;i<(?:12|16);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');
+assert.match(cavern, /setTimeout\(\(\) => \{ this\.animationTimer = 0; this\.requestFrame\(false\); \}, 100\)/, 'Command Cavern: bounded optional animation cadence missing');
+
 console.log('fully spatial 3D control-plane smoke passed (3 distinct environments)');

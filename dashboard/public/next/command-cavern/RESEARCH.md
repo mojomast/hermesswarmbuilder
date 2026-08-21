@@ -8,7 +8,7 @@ All sources below were retrieved on August 21, 2026. The implementation is confi
 
 2. **MDN, WebGL Best Practices**
    https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices
-   Applied: one batched draw, no per-frame readback, capped DPR/backbuffer, adaptive internal resolution, bounded texture size, visibility sleep, and deletion of replaced resources.
+   Applied: one batched draw, no per-frame readback, an 800,000-pixel backbuffer budget, low bounded ray-step counts, in-place texture updates, visibility sleep, and deletion of replaced resources.
 
 3. **Inigo Quilez, 3D Signed Distance Functions**
    https://iquilezles.org/articles/distfunctions/
@@ -20,11 +20,11 @@ All sources below were retrieved on August 21, 2026. The implementation is confi
 
 5. **MDN, `webglcontextlost` Event**
    https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/webglcontextlost_event
-   Applied: default loss is prevented, rendering stops, the complete semantic application becomes visible, and restoration recompiles shaders, recreates textures, validates linking, and offers return to the cavern.
+   Applied: default loss is prevented, rendering stops, the complete semantic application becomes visible, and restoration recompiles shaders, recreates textures, and validates linking. The Return control also retries initialization in a conservative performance tier after ordinary compiler or allocation failure.
 
 6. **MDN, `prefers-reduced-motion`**
    https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion
-   Applied: reduced motion disables drone orbit, mineral pulse, and ambient camera drift at startup and tracks preference changes. Operational freshness remains live.
+   Applied: decorative motion is disabled by default and remains off under reduced motion. Operators may opt in with `F`; operational freshness and data-driven redraws remain live without continuous rendering.
 
 7. **W3C WAI, WCAG 2.2 Understanding 1.1.1 Non-text Content**
    https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html
@@ -45,10 +45,10 @@ All sources below were retrieved on August 21, 2026. The implementation is confi
 ## Technical Decisions
 
 - The cavern is ray marched in the fragment shader from signed distance functions. No mesh library, framework, image, font file, or remote asset is used.
-- UI glyphs are generated locally at high resolution, then allocated within the queried `MAX_TEXTURE_SIZE`. Landscape uses a 3200 x 1800 inscription; portrait stacks its two logical strata into a portrait texture and uses the inverse mapping for picking. The texture is sampled only when the ray marcher hits the front face of the lit SDF tectonic tablet.
+- UI glyphs are generated locally into a bounded 1600 x 900 inscription, then allocated within the queried `MAX_TEXTURE_SIZE`. Portrait stacks its two logical halves into a 900 x 1600 texture and uses the inverse mapping for picking. Subsequent updates use `texSubImage2D` rather than reallocating the texture. The texture is sampled only when the ray marcher hits the front face of the lit SDF tectonic tablet.
 - Runs are stratified core columns; agents are orbiting bioluminescent survey drones; events and tool calls are mineral inclusions; queue items are seed crystals; gates are pressure locks; iterations are branching excavations; plans are engraved tablets; operation commands are resonant monoliths. Bounded shader loops receive live counts, while blocker, unhealthy agent/error, pinned queue, and failed gate aggregates alter the corresponding materials.
 - Picking performs an analytic camera-ray/tablet-plane intersection that exactly matches shader camera and tablet dimensions, rejects misses, converts the world hit to tablet UV, applies the active landscape or stacked-portrait inverse transform, and only then resolves an engraving. All decorative entity geometry is behind the tablet front plane.
-- Quality starts from viewport class and reduced-motion preference. A cooldown-controlled rolling frame-time estimate clamps ray steps and render scale; one uniform scale is capped by both 3840 width and 2160 height so the backing-store aspect ratio is preserved.
+- Quality starts conservatively at 24-28 ray steps with an 800,000-pixel backbuffer budget. Slow submissions can only reduce quality; they never increase it automatically. The backing-store uses one uniform scale so its aspect ratio remains identical to the CSS viewport. Optional motion is capped at ten frames per second.
 - Every operation and project-plan action is derived from the imported arrays and checked for exact parity at startup. Generic scene and semantic JSON editors prevent UI drift when payload schemas evolve.
 - Recovery refreshes state/control and verifies the current blocked run before executable recovery or approval; denying pending advice depends only on the refreshed advice record. Lineage is completed before review, frozen with exact gate snapshots and limits, then reloaded and fingerprint-compared before dispatch.
 - Resource requests always pass the selected run ID. Plan lifecycle requests carry exact revision, digest, and ledger `expectedVersion`. Clone/fork add source lineage. Assistance proposals remain inert until explicitly converted to a persisted draft.

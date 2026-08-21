@@ -1,17 +1,17 @@
 /**
- * Dashboard B: 2D Guided Control Plane Stylesheet
- * Calm, approachable, workflow-oriented governance console with progressive disclosure,
- * clear authority separation, and mobile/tablet responsive touch targets.
+ * Dashboard B: 2D Guided Control Plane Stylesheet (Comprehensive v2)
+ * Approachable, workflow-oriented governance console with progressive disclosure,
+ * clear authority separation, side-by-side diffing, and mobile/tablet responsive touch targets.
  */
 
 :root {
-  --bg-app: #0f172a;
-  --bg-card: #1e293b;
-  --bg-card-hover: #273549;
-  --bg-input: #0f172a;
+  --bg-app: #0b0f19;
+  --bg-card: #131b2e;
+  --bg-card-hover: #1c2742;
+  --bg-input: #070a12;
   
-  --border-subtle: #334155;
-  --border-strong: #475569;
+  --border-subtle: #22304e;
+  --border-strong: #33466e;
   
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
@@ -41,7 +41,7 @@ body {
   background-color: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   min-height: 100vh;
   display: flex;
@@ -68,7 +68,7 @@ body {
 .app-header {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 12px 24px;
+  padding: 10px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -76,7 +76,7 @@ body {
 
 .brand-title {
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   color: #fff;
   display: flex;
   align-items: center;
@@ -87,58 +87,76 @@ body {
   background: rgba(139, 92, 246, 0.15);
   border: 1px solid rgba(139, 92, 246, 0.4);
   color: var(--accent-authority);
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 9999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   font-family: var(--font-mono);
 }
 
-/* Progress Stepper Bar */
+.identity-breadcrumb {
+  background: #070a12;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 6px 24px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Stepper Navigation Bar (9 Workspaces) */
 .stepper-nav {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 12px 24px;
+  padding: 8px 24px;
   overflow-x: auto;
 }
 
 .stepper-list {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   list-style: none;
-  min-width: 650px;
+  min-width: 900px;
 }
 
 .step-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   transition: all 0.15s ease;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .step-item:hover {
   background: var(--bg-card-hover);
+  color: var(--text-primary);
 }
 
 .step-item.active {
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid var(--accent-primary);
+  color: #fff;
 }
 
 .step-num {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--border-subtle);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -147,12 +165,12 @@ body {
   color: #fff;
 }
 
-/* Main Container */
+/* Main Container & Panels */
 .guided-container {
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px;
   flex: 1;
 }
 
@@ -169,14 +187,14 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 20px;
-  margin-bottom: 20px;
+  padding: 18px;
+  margin-bottom: 16px;
 }
 
 .card-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -184,35 +202,36 @@ body {
 
 /* Form Controls (Accessible 48px Touch Targets) */
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .form-label {
   display: block;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   color: var(--text-primary);
+  font-size: 12px;
 }
 
 .form-input, .form-textarea, .form-select {
   width: 100%;
-  padding: 10px 14px;
+  padding: 8px 12px;
   min-height: 44px;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .form-textarea {
-  min-height: 90px;
+  min-height: 80px;
   font-family: var(--font-mono);
 }
 
 .form-hint {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -220,19 +239,19 @@ body {
 /* Buttons Deck */
 .btn-deck {
   display: flex;
-  gap: 12px;
-  margin-top: 20px;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .btn-primary {
   background: var(--accent-primary);
   color: #fff;
   border: none;
-  padding: 12px 20px;
-  min-height: 48px;
+  padding: 10px 18px;
+  min-height: 46px;
   border-radius: var(--radius-md);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   transition: opacity 0.15s ease;
 }
@@ -243,55 +262,52 @@ body {
   background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
-  padding: 12px 20px;
-  min-height: 48px;
+  padding: 10px 18px;
+  min-height: 46px;
   border-radius: var(--radius-md);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
 }
 
 .btn-secondary:hover { background: var(--bg-card-hover); }
 
-/* Variant Scorecard Matrix */
+/* Scorecard Matrix */
 .scorecard-matrix {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 16px;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .scorecard-matrix th, .scorecard-matrix td {
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--border-subtle);
   text-align: left;
 }
 
-.scorecard-matrix th {
-  background: var(--bg-input);
-}
+.scorecard-matrix th { background: var(--bg-input); }
 
 .score-bar-container {
   width: 100%;
-  height: 8px;
+  height: 6px;
   background: var(--border-subtle);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
   margin-top: 4px;
 }
 
-.score-bar-fill {
-  height: 100%;
-  background: var(--accent-primary);
-}
+.score-bar-fill { height: 100%; background: var(--accent-primary); }
 
 /* Assurance Badges */
 .badge-assurance {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   font-family: var(--font-mono);
 }
@@ -299,10 +315,24 @@ body {
 .assurance-runner { background: rgba(16, 185, 129, 0.15); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.3); }
 .assurance-agent { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); border: 1px solid rgba(245, 158, 11, 0.3); }
 
-/* Responsive Grid Adjustments */
+/* Side-by-Side Diff Viewer */
+.diff-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #05070c;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
 @media (max-width: 768px) {
-  .app-header { padding: 12px 16px; }
-  .guided-container { padding: 16px; }
+  .app-header { padding: 8px 12px; }
+  .guided-container { padding: 12px; }
   .scorecard-matrix { display: block; overflow-x: auto; }
   .btn-deck { flex-direction: column; }
+  .diff-split { grid-template-columns: 1fr; }
 }

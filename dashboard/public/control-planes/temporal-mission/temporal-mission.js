@@ -280,39 +280,67 @@ const statusClass = (status) => {
 const numberOrNull = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
 const variantColor = (index) => ["#10b981", "#38bdf8", "#f59e0b", "#a855f7"][index % 4];
 
-export function projectTemporalMissionSnapshot({ cachedState, cachedPlans, cachedIterations, cachedRuns, cachedGates, cachedControl, cachedAudit }) {
+const durationBetween = (startedAt, endedAt) => {
+  const start = Date.parse(startedAt), end = Date.parse(endedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return LIVE_EMPTY;
+  const seconds = Math.floor((end - start) / 1000), minutes = Math.floor(seconds / 60);
+  return minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+};
+const runMatches = (item, runId) => !runId || firstValue(item?.runId, item?.run?.id, item?.data?.runId) === runId;
+const boundedRunRecords = (records, runId, limit = 12) => asArray(records).filter((item) => runMatches(item, runId)).slice(-limit);
+const normalizedList = (value) => asArray(value).map((item) => typeof item === "string" ? { name: item } : item || {});
+
+export function projectTemporalMissionSnapshot({ cachedState, cachedPlans, cachedIterations, cachedRuns, cachedGates, cachedControl, cachedAudit, cachedEvents }) {
   const state = cachedState || {}, plans = asArray(cachedPlans), iterations = asArray(cachedIterations), runs = asArray(cachedRuns);
-  const gates = asArray(cachedGates?.gates), audit = asArray(cachedAudit), pointer = cachedControl?.projectLaunchRequest || {};
-  const activeRunId = firstValue(state.currentRunId, pointer.runId, cachedControl?.nextRunRequest?.resultRunId);
-  const activeIterationId = firstValue(state.iterationId, pointer.iterationId, cachedControl?.nextRunRequest?.resultIterationId);
-  const activeRun = runs.find((run) => run.id === activeRunId || run.runId === activeRunId) || runs.find((run) => run.iterationId === activeIterationId) || null;
-  const activeIteration = iterations.find((item) => item.id === activeIterationId || item.iterationId === activeIterationId || item.runId === activeRunId) || null;
+  const gates = asArray(cachedGates?.gates), audit = asArray(cachedAudit), events = asArray(cachedEvents), control = cachedControl || {}, pointer = control.projectLaunchRequest || {};
+  const activeRunId = firstValue(state.currentRunId, pointer.runId, control.nextRunRequest?.resultRunId);
+  const activeIterationId = firstValue(state.iterationId, pointer.iterationId, control.nextRunRequest?.resultIterationId);
+  const activeRun = activeRunId ? runs.find((run) => run.id === activeRunId || run.runId === activeRunId) || null : null;
+  const activeIteration = activeIterationId
+    ? iterations.find((item) => (item.id === activeIterationId || item.iterationId === activeIterationId) && (!activeRunId || item.runId === activeRunId)) || null
+    : activeRunId ? iterations.find((item) => item.runId === activeRunId) || null : null;
   const identitySource = activeIteration?.projectLaunch || activeRun?.projectLaunch || pointer;
   const planId = firstValue(identitySource.planId, activeIteration?.planId, activeRun?.planId, state.planId);
   const plan = plans.find((item) => item.planId === planId) || null;
-  const runStatus = firstValue(activeRun?.status, activeIteration?.status, state.status, pointer.status, "unknown");
-  const phase = firstValue(activeRun?.phase, activeIteration?.phase, state.phase, "unknown");
+  const hasActiveRun = Boolean(activeRunId || activeRun || activeIteration);
+  const runStatus = hasActiveRun ? firstValue(activeRun?.status, activeIteration?.status, state.status, pointer.status, "unknown") : "No active run";
+  const phase = hasActiveRun ? firstValue(activeRun?.phase, activeIteration?.phase, state.phase, LIVE_EMPTY) : LIVE_EMPTY;
   const rawVariants = asArray(activeIteration?.variants).length ? activeIteration.variants : asArray(activeRun?.variants);
   const rawEvaluations = asArray(activeIteration?.evaluations).length ? activeIteration.evaluations : asArray(activeRun?.evaluations);
   const evaluations = new Map(rawEvaluations.map((item) => [firstValue(item.variantId, item.id), item]));
   const variants = rawVariants.map((variant, index) => {
     const evaluation = evaluations.get(firstValue(variant.id, variant.variantId)) || {}, rawScores = evaluation.scores || variant.scores || {};
-    return { id: firstValue(variant.id, variant.variantId, LIVE_EMPTY), name: firstValue(variant.name, variant.label, variant.branch, variant.id, LIVE_EMPTY), branch: firstValue(variant.branch, LIVE_EMPTY), commit: firstValue(variant.commit, LIVE_EMPTY), color: variantColor(index), threeColor: parseInt(variantColor(index).slice(1), 16), isWinner: Boolean(firstValue(evaluation.accepted, evaluation.winner, variant.accepted, variant.winner, false)), recommendation: firstValue(evaluation.recommendation, variant.recommendation, evaluation.status, variant.status, "not evaluated"), totalScore: numberOrNull(firstValue(evaluation.totalScore, evaluation.score, variant.totalScore, variant.score)) ?? 0, rawScores, scores: { ...rawScores }, hardGateViolations: numberOrNull(firstValue(evaluation.hardGateViolations, variant.hardGateViolations)) ?? 0, scopeCompliance: firstValue(variant.scopeCompliance, LIVE_EMPTY), changes: asArray(firstValue(variant.changes, variant.claims, evaluation.claims)), risks: firstValue(evaluation.risks, variant.risks, LIVE_EMPTY), evaluatorRationale: firstValue(evaluation.rationale, evaluation.notes, variant.rationale, LIVE_EMPTY), diffOld: firstValue(variant.diffOld, ""), diffNew: firstValue(variant.diffNew, variant.diff, "") };
+    return { id: firstValue(variant.id, variant.variantId, LIVE_EMPTY), name: firstValue(variant.name, variant.label, variant.branch, variant.id, LIVE_EMPTY), branch: firstValue(variant.branch, LIVE_EMPTY), commit: firstValue(variant.commit, LIVE_EMPTY), color: variantColor(index), threeColor: parseInt(variantColor(index).slice(1), 16), isWinner: Boolean(firstValue(evaluation.accepted, evaluation.winner, variant.accepted, variant.winner, false)), recommendation: firstValue(evaluation.recommendation, variant.recommendation, evaluation.status, variant.status, LIVE_EMPTY), totalScore: numberOrNull(firstValue(evaluation.totalScore, evaluation.score, variant.totalScore, variant.score)) ?? LIVE_EMPTY, rawScores, scores: { ...rawScores }, hardGateViolations: numberOrNull(firstValue(evaluation.hardGateViolations, variant.hardGateViolations)) ?? LIVE_EMPTY, scopeCompliance: firstValue(variant.scopeCompliance, LIVE_EMPTY), changes: asArray(firstValue(variant.changes, variant.claims, evaluation.claims)), risks: firstValue(evaluation.risks, variant.risks, LIVE_EMPTY), evaluatorRationale: firstValue(evaluation.rationale, evaluation.notes, variant.rationale, LIVE_EMPTY), diffOld: firstValue(variant.diffOld, ""), diffNew: firstValue(variant.diffNew, variant.diff, "") };
   });
   const historicalRuns = runs.filter((run) => run !== activeRun).map((run, index) => ({ id: firstValue(run.id, run.runId, LIVE_EMPTY), z: -350 + index * 35, name: firstValue(run.objective, run.id, run.runId, LIVE_EMPTY), status: firstValue(run.status, "unknown"), score: firstValue(run.score, LIVE_EMPTY), date: firstValue(run.completedAt, run.updatedAt, run.startedAt, LIVE_EMPTY), duration: firstValue(run.duration, LIVE_EMPTY), changes: firstValue(run.branch, LIVE_EMPTY), winner: firstValue(run.winner, LIVE_EMPTY) }));
-  const liveGates = gates.map((gate) => ({ id: firstValue(gate.id, LIVE_EMPTY), desc: firstValue(gate.description, gate.title, LIVE_EMPTY), required: gate.severity === "must" || gate.required === true, assurance: getAssuranceLevel(identitySource.pipelineType, "validation").level, status: firstValue(gate.status, "unknown"), path: asArray(gate.requiredEvidence).join(", ") || LIVE_EMPTY, evidence: firstValue(gate.evidence, gate.decisions, []) }));
-  const handoff = firstValue(activeIteration?.handoff, activeRun?.handoff, state.handoff, cachedControl?.handoff, null), artifacts = asArray(firstValue(activeIteration?.artifacts, activeRun?.artifacts, handoff?.artifacts, []));
-  const stageStatus = (id) => ({ history: historicalRuns.length ? "archived" : "unknown", spec: firstValue(plan?.state, identitySource.status, "unknown"), draft: firstValue(pointer.status, identitySource.status, "unknown"), arena: firstValue(activeIteration?.status, activeRun?.status, state.status, "unknown"), eval: rawEvaluations.length ? firstValue(rawEvaluations[0]?.status, "observed") : "unknown", synth: firstValue(activeIteration?.synthesis?.status, activeRun?.synthesis?.status, "unknown"), gate: firstValue(handoff?.state, liveGates[0]?.status, runStatus, "unknown") })[id];
-  const chambers = STAGE_DEFINITIONS.map(([id, name, z]) => ({ id, name, z, status: statusClass(stageStatus(id)), phase: id, desc: `${name}: ${stageStatus(id)}`, duration: firstValue(activeIteration?.updatedAt, activeRun?.updatedAt, state.updatedAt, LIVE_EMPTY), checkpoints: id === "gate" ? `${liveGates.length} observed gate(s)` : firstValue(activeRunId, activeIterationId, LIVE_EMPTY), artifacts: id === "gate" ? artifacts : [] }));
-  return { connected: true, state, control: cachedControl || {}, audit, plan, activeRun, activeIteration, handoff, artifacts, identity: { planId, revision: firstValue(identitySource.revision, activeIteration?.revision, activeRun?.revision, plan?.currentRevision), approvalId: firstValue(identitySource.approvalId, activeIteration?.approvalId, activeRun?.approvalId), approvalDigest: firstValue(identitySource.approvalDigest, activeIteration?.approvalDigest, activeRun?.approvalDigest), launchId: firstValue(identitySource.launchId, activeIteration?.launchId, activeRun?.launchId), requestId: firstValue(identitySource.requestId, activeIteration?.requestId, activeRun?.requestId), runId: firstValue(activeRunId, activeRun?.id, activeRun?.runId), iterationId: firstValue(activeIterationId, activeIteration?.id, activeIteration?.iterationId), pipelineType: firstValue(identitySource.pipelineType, activeIteration?.pipelineType, activeRun?.pipelineType, state.pipeline) }, runStatus, phase, chambers, variants, historicalRuns, gates: liveGates };
+  const liveGates = gates.filter((gate) => !activeRunId || !gate.runId || gate.runId === activeRunId).map((gate) => ({ id: firstValue(gate.id, LIVE_EMPTY), desc: firstValue(gate.description, gate.title, LIVE_EMPTY), required: gate.severity === "must" || gate.required === true, assurance: getAssuranceLevel(identitySource.pipelineType, "validation").level, status: firstValue(gate.status, "unknown"), decision: firstValue(gate.decision, LIVE_EMPTY), decidedAt: firstValue(gate.decidedAt, gate.updatedAt, LIVE_EMPTY), path: asArray(gate.requiredEvidence).join(", ") || LIVE_EMPTY, evidence: firstValue(gate.evidence, gate.decisions, []) }));
+  const handoff = firstValue(activeIteration?.handoff, activeRun?.handoff, hasActiveRun ? state.handoff : null, null);
+  const artifacts = asArray(firstValue(activeIteration?.artifacts, activeRun?.artifacts, handoff?.artifacts, []));
+  const checkpoints = normalizedList(firstValue(activeIteration?.checkpoints, activeRun?.checkpoints, activeRun?.lifecycle?.checkpoints, []));
+  const validation = firstValue(activeIteration?.validation, activeRun?.validation, activeRun?.finalValidation, activeIteration?.synthesis?.validation, activeRun?.synthesis?.validation, null);
+  const currentAgent = firstValue(activeIteration?.currentAgent, activeRun?.currentAgent, state.currentAgent, Object.values(state.agents || {}).find((agent) => agent?.status === "running")?.label, LIVE_EMPTY);
+  const currentTask = firstValue(activeIteration?.currentTask, activeRun?.currentTask, state.currentTask, state.task, LIVE_EMPTY);
+  const blockers = normalizedList(firstValue(activeRun?.blockers, activeRun?.blocker, activeRun?.block, activeIteration?.blockers, activeIteration?.blocker, state.blockers, state.blocker, state.block, state.hold, []));
+  const recentEvents = boundedRunRecords(events, activeRunId), toolActivity = recentEvents.filter((item) => /tool/i.test(String(item.type || "")) || item.toolName || item.data?.toolName);
+  const recentAudit = boundedRunRecords(audit, activeRunId);
+  const startedAt = firstValue(activeRun?.startedAt, activeIteration?.startedAt, state.startedAt), endedAt = firstValue(activeRun?.completedAt, activeRun?.terminalAt, activeIteration?.completedAt, state.completedAt, activeRun?.updatedAt, activeIteration?.updatedAt, state.updatedAt);
+  const progress = { state: hasActiveRun ? "Observed active run" : "No active run", currentAgent, currentTask, active: hasActiveRun && !/(completed|failed|blocked|stopped|cancelled|published)/i.test(String(runStatus)), terminal: hasActiveRun && /(completed|failed|blocked|stopped|cancelled|published)/i.test(String(runStatus)), startedAt: firstValue(startedAt, LIVE_EMPTY), updatedAt: firstValue(activeRun?.updatedAt, activeIteration?.updatedAt, state.updatedAt, LIVE_EMPTY), completedAt: firstValue(activeRun?.completedAt, activeRun?.terminalAt, activeIteration?.completedAt, state.completedAt, LIVE_EMPTY), duration: durationBetween(startedAt, endedAt), checkpoints, validation: validation ? { ...validation, status: firstValue(validation.status, LIVE_EMPTY), startedAt: firstValue(validation.startedAt, LIVE_EMPTY), completedAt: firstValue(validation.completedAt, validation.finishedAt, LIVE_EMPTY), results: normalizedList(firstValue(validation.results, validation.commands, validation.validation, [])) } : { status: LIVE_EMPTY, startedAt: LIVE_EMPTY, completedAt: LIVE_EMPTY, results: [] }, mashup: firstValue(activeIteration?.mashup, activeRun?.mashup, activeIteration?.synthesis, activeRun?.synthesis, null), blockers, events: recentEvents, toolActivity, audit: recentAudit };
+  const stageStatus = (id) => ({ history: historicalRuns.length ? "archived" : "unknown", spec: firstValue(plan?.state, identitySource.status, "unknown"), draft: firstValue(pointer.status, identitySource.status, "unknown"), arena: runStatus, eval: rawEvaluations.length ? firstValue(rawEvaluations[0]?.status, "observed") : "unknown", synth: firstValue(progress.mashup?.status, "unknown"), gate: firstValue(handoff?.state, liveGates[0]?.status, runStatus, "unknown") })[id];
+  const chambers = STAGE_DEFINITIONS.map(([id, name, z]) => ({ id, name, z, status: statusClass(stageStatus(id)), phase: id, desc: `${name}: ${stageStatus(id)}`, duration: progress.duration, checkpoints: id === "gate" ? `${liveGates.length} observed gate(s)` : firstValue(activeRunId, activeIterationId, LIVE_EMPTY), artifacts: id === "gate" ? artifacts : [] }));
+  return { connected: true, state, control, audit, plan, activeRun, activeIteration, handoff, artifacts, progress, identity: { planId, revision: firstValue(identitySource.revision, activeIteration?.revision, activeRun?.revision, plan?.currentRevision), approvalId: firstValue(identitySource.approvalId, activeIteration?.approvalId, activeRun?.approvalId), approvalDigest: firstValue(identitySource.approvalDigest, activeIteration?.approvalDigest, activeRun?.approvalDigest), launchId: firstValue(identitySource.launchId, activeIteration?.launchId, activeRun?.launchId), requestId: firstValue(identitySource.requestId, activeIteration?.requestId, activeRun?.requestId), runId: firstValue(activeRunId, activeRun?.id, activeRun?.runId), iterationId: firstValue(activeIterationId, activeIteration?.id, activeIteration?.iterationId), pipelineType: firstValue(identitySource.pipelineType, activeIteration?.pipelineType, activeRun?.pipelineType, state.pipeline) }, runStatus, phase, chambers, variants, historicalRuns, gates: liveGates };
 }
 
 export function renderTemporalMissionLiveMarkup(live, chamber) {
-  const identity = live.identity, value = (item) => escapeHtml(item == null ? LIVE_EMPTY : String(item));
-  const variants = live.variants.length ? live.variants.map((variant) => `<li><strong>${value(variant.id)}</strong> — ${value(variant.recommendation)}; score: ${value(variant.totalScore)}</li>`).join("") : "<li>No variant snapshot was supplied.</li>";
-  const gates = live.gates.length ? live.gates.map((gate) => `<li><strong>${value(gate.id)}</strong> — ${value(gate.status)} — ${value(gate.desc)}</li>`).join("") : "<li>No gate snapshot was supplied.</li>";
-  const artifacts = live.artifacts.length ? live.artifacts.map((artifact) => `<li>${value(artifact.name || artifact.path || artifact)}</li>`).join("") : "<li>No artifact or handoff snapshot was supplied.</li>";
-  return `<div class="inspector-section"><div class="section-title"><span>Observed backend snapshot</span><span class="status-badge status-${chamber.status}">${value(chamber.status)}</span></div><div class="section-card"><div><strong>Stage:</strong> ${value(chamber.name)}</div><div><strong>Run status / phase:</strong> ${value(live.runStatus)} / ${value(live.phase)}</div><div><strong>Plan:</strong> <code>${value(identity.planId)}</code> rev <code>${value(identity.revision)}</code></div><div><strong>Approval / launch:</strong> <code>${value(identity.approvalId || identity.approvalDigest)}</code> / <code>${value(identity.launchId)}</code></div><div><strong>Request / run / iteration:</strong> <code>${value(identity.requestId)}</code> / <code>${value(identity.runId)}</code> / <code>${value(identity.iterationId)}</code></div></div></div><div class="inspector-section"><div class="section-title">Variants & evaluations</div><div class="section-card"><ul>${variants}</ul></div></div><div class="inspector-section"><div class="section-title">Gates</div><div class="section-card"><ul>${gates}</ul></div></div><div class="inspector-section"><div class="section-title">Artifacts & handoff</div><div class="section-card"><div><strong>Handoff status:</strong> ${value(live.handoff?.state)}</div><ul>${artifacts}</ul></div></div>`;
+  const identity = live.identity, progress = live.progress, value = (item) => escapeHtml(item == null ? LIVE_EMPTY : String(item));
+  const list = (items, renderer, empty) => items.length ? items.map(renderer).join("") : `<li>${value(empty)}</li>`;
+  const variants = list(live.variants, (variant) => `<li><strong>${value(variant.id)}</strong> — ${value(variant.recommendation)}; score: ${value(variant.totalScore)}</li>`, "No variant snapshot was supplied.");
+  const gates = list(live.gates, (gate) => `<li><strong>${value(gate.id)}</strong> — ${value(gate.status)}; decision: ${value(gate.decision)}; at: ${value(gate.decidedAt)}</li>`, "No gate snapshot was supplied.");
+  const artifacts = list(live.artifacts, (artifact) => `<li>${value(artifact.name || artifact.path || artifact)}</li>`, "No artifact or handoff snapshot was supplied.");
+  const checkpoints = list(progress.checkpoints, (checkpoint) => `<li>${value(firstValue(checkpoint.name, checkpoint.id, checkpoint.phase))} — ${value(checkpoint.status)} — ${value(firstValue(checkpoint.at, checkpoint.updatedAt))}</li>`, "No checkpoint snapshot was supplied.");
+  const blockers = list(progress.blockers, (blocker) => `<li><strong>${value(firstValue(blocker.summary, blocker.reason, blocker.message, blocker.status))}</strong><br>Suggested action: ${value(firstValue(blocker.suggestedAction, blocker.operatorNextAction, blocker.action))}</li>`, "No blocker snapshot was supplied.");
+  const activity = list([...progress.events, ...progress.toolActivity].slice(-12), (item) => `<li>${value(firstValue(item.ts, item.at, item.updatedAt))} — ${value(firstValue(item.message, item.action, item.type, item.toolName, item.data?.toolName))}</li>`, "No recent event or tool activity was supplied.");
+  const validationResults = list(progress.validation.results, (result) => `<li>${value(firstValue(result.name, result.argv, result.command, result.id))} — ${value(firstValue(result.status, result.passed === true ? "passed" : result.passed === false ? "failed" : null))}</li>`, "No validation result snapshot was supplied.");
+  return `<div class="inspector-section"><div class="section-title"><span>Observed run progress</span><span class="status-badge status-${chamber.status}">${value(progress.state)}</span></div><div class="section-card"><div><strong>Stage:</strong> ${value(chamber.name)}</div><div><strong>Run status / phase:</strong> ${value(live.runStatus)} / ${value(live.phase)}</div><div><strong>Current agent / task:</strong> ${value(progress.currentAgent)} / ${value(progress.currentTask)}</div><div><strong>Active / terminal:</strong> ${value(progress.active)} / ${value(progress.terminal)}</div><div><strong>Started / updated / completed:</strong> ${value(progress.startedAt)} / ${value(progress.updatedAt)} / ${value(progress.completedAt)}</div><div><strong>Observed duration:</strong> ${value(progress.duration)}</div><div><strong>Plan:</strong> <code>${value(identity.planId)}</code> rev <code>${value(identity.revision)}</code></div><div><strong>Request / run / iteration:</strong> <code>${value(identity.requestId)}</code> / <code>${value(identity.runId)}</code> / <code>${value(identity.iterationId)}</code></div></div></div><div class="inspector-section"><div class="section-title">Checkpoints, variants & mashup</div><div class="section-card"><div><strong>Mashup / synthesis:</strong> ${value(progress.mashup?.status)}</div><ul>${checkpoints}</ul><ul>${variants}</ul></div></div><div class="inspector-section"><div class="section-title">Validation</div><div class="section-card"><div><strong>Status / started / completed:</strong> ${value(progress.validation.status)} / ${value(progress.validation.startedAt)} / ${value(progress.validation.completedAt)}</div><ul>${validationResults}</ul></div></div><div class="inspector-section"><div class="section-title">Gate decisions</div><div class="section-card"><ul>${gates}</ul></div></div><div class="inspector-section"><div class="section-title">Blockers & suggested action</div><div class="section-card"><ul>${blockers}</ul></div></div><div class="inspector-section"><div class="section-title">Recent events & tool activity</div><div class="section-card"><ul>${activity}</ul></div></div><div class="inspector-section"><div class="section-title">Artifacts, handoff & evidence</div><div class="section-card"><div><strong>Handoff status:</strong> ${value(live.handoff?.state)}</div><ul>${artifacts}</ul></div></div>`;
 }
 
 // ==========================================
@@ -325,15 +353,15 @@ class TemporalMissionController {
     this.canvas = document.getElementById("temporal-canvas");
     this.tooltip = document.getElementById("canvas-tooltip");
     
-    this.chambers = DEFAULT_CHAMBERS;
-    this.variants = DEFAULT_VARIANTS;
-    this.historicalRuns = DEFAULT_HISTORICAL_RUNS;
-    this.gates = DEFAULT_GATES;
+    this.liveProjection = projectTemporalMissionSnapshot({});
+    this.chambers = this.liveProjection.chambers;
+    this.variants = this.liveProjection.variants;
+    this.historicalRuns = this.liveProjection.historicalRuns;
+    this.gates = this.liveProjection.gates;
     this.criteriaWeights = { ...DEFAULT_CRITERIA_WEIGHTS };
-    this.liveProjection = null;
     
     this.selectedChamberIndex = 3; // Default to Chamber 3: Variant Exploration Arena (Z=0)
-    this.selectedVariantId = "v1-balanced";
+    this.selectedVariantId = null;
     this.activeInspectorTab = "stage-view"; // Defaults to dynamic stage workspace
     this.isTourRunning = false;
     this.tourZ = 0;
@@ -997,8 +1025,18 @@ class TemporalMissionController {
     if (msg.type === "stream-status") {
       this.el.streamDot.className = `stream-dot ${msg.status === 'live' ? 'connected' : msg.status === 'reconnecting' ? 'reconnecting' : 'offline'}`;
     }
+    if (msg.type === "resynchronized" && this.client.cachedState !== null) this.applyLiveSnapshot();
+    if (msg.type === "state-update") this.refreshLiveProjection();
+  }
 
-    if ((msg.type === "state-update" || msg.type === "resynchronized") && this.client.cachedState !== null) this.applyLiveSnapshot();
+  async refreshLiveProjection() {
+    if (this.resyncing) return;
+    this.resyncing = true;
+    try {
+      await this.client.resyncSnapshots();
+    } finally {
+      this.resyncing = false;
+    }
   }
 
   applyLiveSnapshot() {
@@ -1075,21 +1113,24 @@ class TemporalMissionController {
     const state = live?.state || this.client.cachedState || {};
     const identity = live?.identity || {};
     const display = (value) => value == null ? LIVE_EMPTY : String(value);
-    const planId = live ? display(identity.planId) : "OFFLINE DEFAULT";
-    const rev = live ? display(identity.revision) : "#3";
-    const approval = live ? display(identity.approvalDigest || identity.approvalId) : "sha256:7f4a2...";
-    const launch = live ? display(identity.launchId) : "lnch-002";
-    const request = live ? display(identity.requestId) : "req-11";
-    const run = live ? display(identity.runId) : "run-103-spatial";
-    const iter = live ? display(identity.iterationId) : "iter-004-spatial";
-    const disposition = live ? deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff) : null;
-    this.el.hudStatus.textContent = live ? disposition.label : "OFFLINE / DEFAULT DATA";
-    this.el.hudStatus.className = `status-badge ${live ? (disposition.class || "status-idle") : "status-warning"}`;
+    const planId = display(identity.planId);
+    const rev = display(identity.revision);
+    const approval = display(identity.approvalDigest || identity.approvalId);
+    const launch = display(identity.launchId);
+    const request = display(identity.requestId);
+    const run = display(identity.runId);
+    const iter = display(identity.iterationId);
+    const liveDisposition = deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff);
+    const disposition = live.progress.state === "No active run"
+      ? { label: "NO ACTIVE RUN", class: "status-idle" }
+      : liveDisposition;
+    this.el.hudStatus.textContent = disposition.label;
+    this.el.hudStatus.className = `status-badge ${disposition.class || "status-idle"}`;
     this.el.hudRun.textContent = run;
-    this.el.hudPipeline.textContent = display(live ? identity.pipelineType : state.pipeline || "Managed");
-    this.el.hudGen.textContent = display(live ? firstValue(live.activeIteration?.generation, live.activeIteration?.generationNumber, LIVE_EMPTY) : "1 / 10");
-    this.el.hudAdmission.textContent = display(live ? firstValue(live.control.runAdmission, "unknown") : "ENABLED").toUpperCase();
-    this.el.hudObjective.textContent = display(live ? firstValue(live.activeIteration?.objective, live.activeRun?.objective, state.objective, LIVE_EMPTY) : state.objective || "Offline default dataset — no backend snapshot connected.");
+    this.el.hudPipeline.textContent = display(identity.pipelineType);
+    this.el.hudGen.textContent = display(firstValue(live?.activeIteration?.generation, live?.activeIteration?.generationNumber, LIVE_EMPTY));
+    this.el.hudAdmission.textContent = display(firstValue(live?.control?.runAdmission, LIVE_EMPTY)).toUpperCase();
+    this.el.hudObjective.textContent = display(firstValue(live?.activeIteration?.objective, live?.activeRun?.objective, state.objective, LIVE_EMPTY));
 
     this.el.hudIdentity.innerHTML = `
       <span class="identity-node" title="Plan ID: ${planId}">Plan: <strong>${planId}</strong></span>

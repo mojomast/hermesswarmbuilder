@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ControlPlaneClient, deriveCanonicalDisposition } from "../public/control-planes/shared/api-client.js";
+import { projectTemporalMissionSnapshot, renderTemporalMissionLiveMarkup } from "../public/control-planes/temporal-mission/temporal-mission.js";
 
 const dashboardRoot = resolve(import.meta.dir, "..");
 const serverPath = join(dashboardRoot, "src/server.ts");
@@ -106,4 +107,73 @@ test("Temporal Mission live-data contract resyncs fixture state instead of demo 
   expect(temporalSource).toContain("deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff)");
   expect(temporalSource).not.toContain("this.el.hudRun.textContent = state.currentRunId || 'run-103-spatial'");
   expect(temporalSource).not.toContain('const approval = "sha256:7f4a2..."');
+});
+
+test("Temporal Mission projects one selected run's observed progress without stale iteration data", () => {
+  const live = projectTemporalMissionSnapshot({
+    cachedState: {
+      currentRunId: "run-current",
+      iterationId: "iter-current",
+      status: "blocked",
+      phase: "validation",
+      currentTask: "Run focused smoke",
+      startedAt: "2026-08-21T15:00:00.000Z",
+      updatedAt: "2026-08-21T15:08:00.000Z",
+      blockers: [{ id: "block-1", summary: "Missing evidence", suggestedAction: "Attach audit output" }]
+    },
+    cachedRuns: [
+      {
+        id: "run-stale",
+        iterationId: "iter-stale",
+        status: "completed",
+        phase: "handoff",
+        checkpoints: ["stale checkpoint"],
+        artifacts: ["stale/artifact.json"]
+      },
+      {
+        id: "run-current",
+        iterationId: "iter-current",
+        status: "blocked",
+        phase: "validation",
+        startedAt: "2026-08-21T15:00:00.000Z",
+        updatedAt: "2026-08-21T15:08:00.000Z",
+        checkpoints: [{ name: "after-evaluation", status: "passed", at: "2026-08-21T15:05:00.000Z" }],
+        validation: { status: "failed", startedAt: "2026-08-21T15:06:00.000Z", completedAt: "2026-08-21T15:07:00.000Z", results: [{ name: "focused smoke", status: "failed" }] },
+        artifacts: [{ path: "artifacts/handoff.json" }]
+      }
+    ],
+    cachedIterations: [
+      { id: "iter-stale", runId: "run-stale", variants: [{ id: "stale-variant" }] },
+      {
+        id: "iter-current",
+        runId: "run-current",
+        currentAgent: "evaluator-1",
+        currentTask: "Evaluate candidate-a",
+        variants: [{ id: "candidate-a", status: "complete" }],
+        evaluations: [{ variantId: "candidate-a", status: "passed", recommendation: "accept" }],
+        synthesis: { status: "pending" },
+        mashup: { status: "queued" }
+      }
+    ],
+    cachedGates: { gates: [{ id: "gate-current", status: "failed", decision: "reject", requiredEvidence: ["artifacts/handoff.json"] }] },
+    cachedControl: {},
+    cachedEvents: [
+      { id: "evt-stale", runId: "run-stale", message: "ignore stale event" },
+      { id: "evt-current", runId: "run-current", type: "tool", message: "focused smoke failed", ts: "2026-08-21T15:07:00.000Z" }
+    ],
+    cachedAudit: [{ id: "audit-current", runId: "run-current", action: "gate decision", ts: "2026-08-21T15:08:00.000Z" }]
+  });
+
+  expect(live.identity.runId).toBe("run-current");
+  expect(live.progress.currentAgent).toBe("evaluator-1");
+  expect(live.progress.checkpoints).toEqual([expect.objectContaining({ name: "after-evaluation" })]);
+  expect(live.progress.validation).toMatchObject({ status: "failed", results: [expect.objectContaining({ name: "focused smoke" })] });
+  expect(live.progress.blockers).toEqual([expect.objectContaining({ suggestedAction: "Attach audit output" })]);
+  expect(live.progress.events).toEqual([expect.objectContaining({ id: "evt-current" })]);
+  expect(live.progress.events).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "evt-stale" })]));
+  expect(renderTemporalMissionLiveMarkup(live, live.chambers[3])).toContain("Attach audit output");
+
+  const empty = projectTemporalMissionSnapshot({ cachedState: {}, cachedRuns: [], cachedIterations: [] });
+  expect(empty.progress.state).toBe("No active run");
+  expect(renderTemporalMissionLiveMarkup(empty, empty.chambers[3])).toContain("No active run");
 });

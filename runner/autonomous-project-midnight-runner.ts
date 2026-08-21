@@ -3,7 +3,14 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { createHash, randomUUID } from "crypto";
 import { homedir } from "os";
 import { isAbsolute, join, sep } from "path";
-import { LaunchAuthority, withProjectionLock } from "../dashboard/src/launch-authority";
+import { fileURLToPath, pathToFileURL } from "url";
+
+// The repository keeps this module next to dashboard/, while installation puts
+// the runner in ~/.hermes/scripts and the dashboard in its own directory.
+const sourceLaunchAuthorityPath=fileURLToPath(new URL("../dashboard/src/launch-authority.ts",import.meta.url));
+const installedLaunchAuthorityPath=join(homedir(),".hermes","autonomous-projects-dashboard","src","launch-authority.ts");
+const launchAuthorityPath=existsSync(sourceLaunchAuthorityPath)?sourceLaunchAuthorityPath:installedLaunchAuthorityPath;
+const { LaunchAuthority, withProjectionLock }=await import(pathToFileURL(launchAuthorityPath).href);
 
 // Run artifacts can contain source paths and operational evidence; keep them owner-only.
 process.umask(0o077);

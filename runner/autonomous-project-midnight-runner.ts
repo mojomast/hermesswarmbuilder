@@ -677,7 +677,7 @@ function readEvaluationArtifact(path:string, variantId:string){
   if(value.schemaVersion!=="apb.evaluation.v1"||value.variantId!==variantId||!value.scores||!scoreNames.every(name=>typeof value.scores[name]==="number"&&Number.isFinite(value.scores[name])&&value.scores[name]>=0&&value.scores[name]<=100)||!Array.isArray(value.hardGateViolations)||!Array.isArray(value.evidenceArtifacts)||typeof value.rationale!=="string"||!value.rationale.trim()||!["accept","reject","partial"].includes(value.recommendation)) throw new Error(`malformed or non-finite evaluator artifact for ${variantId}: ${path}`);
   return value;
 }
-function chooseWinner(vars:WorktreeVariant[]){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation.hardGateViolations.length&&v.evaluation.recommendation==="accept"&&Number.isFinite(Number(v.evaluation.scores.total))).sort((a,b)=>Number(b.evaluation.scores.total)-Number(a.evaluation.scores.total))[0]||null; }
+function chooseWinner(vars:WorktreeVariant[], minAcceptedScore=70){ return vars.filter(v=>v.status==="valid"&&v.evaluation&&!v.evaluation.hardGateViolations.length&&["accept","partial"].includes(v.evaluation.recommendation)&&Number.isFinite(Number(v.evaluation.scores.total))&&Number(v.evaluation.scores.total)>=minAcceptedScore).sort((a,b)=>Number(b.evaluation.scores.total)-Number(a.evaluation.scores.total))[0]||null; }
 function artifactEvidence(runRoot:string, requested:string){
   const raw=String(requested||"").replace(/\\/g,"/");
   if(!raw||isAbsolute(raw)||raw.split("/").includes("..")) return {requested,path:null,present:false,reason:"unsafe-or-empty-artifact-path"};
@@ -777,7 +777,7 @@ async function runManagedIterationLoop(runId:string, runRoot:string, req:any, it
       for(const required of [`artifacts/variants/${v.id}.json`,`artifacts/variants/${v.id}.diff`]) if(!refs.has(required)||!artifactEvidence(runRoot,required).present) throw new Error(`evaluator for ${v.id} is missing required evidence reference ${required}`);
     }
     const afterEvaluation=checkpointDisposition(runId,runRoot,req,"after-evaluation"); if(afterEvaluation) return afterEvaluation;
-    const winner=chooseWinner(variants); if(!winner) throw new Error("no valid evaluated variant passed hard gates");
+    const winner=chooseWinner(variants,clampInt(req.limits?.minAcceptedScore,70,0,100)); if(!winner) throw new Error("no valid evaluated variant passed hard gates");
     const beforeMashup=checkpointDisposition(runId,runRoot,req,"before-mashup"); if(beforeMashup) return beforeMashup;
     const mashup:{path:string;branch:string;commit?:string;validation?:any[]}={path:join(wtRoot,"mashup"),branch:`apb/${safeBranchPart(runId)}/mashup`}; await createWorktree(repo.repoRoot,mashup.path,mashup.branch,repo.baseCommit);
     updateAgent(runId,"mashup",{label:"Mashup Integrator",role:"synthesis/mashup",status:"running",currentPhase:"mashup",currentTask:`Cherry-pick ${winner.id}`});

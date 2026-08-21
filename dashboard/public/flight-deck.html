@@ -4,68 +4,56 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Hermes Command Center</title>
+  <meta name="theme-color" content="#090a0a" />
+  <title>Hermes Flight Deck</title>
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/command-center.css" />
+  <link rel="stylesheet" href="/flight-deck.css" />
 </head>
-<body class="command-center">
-  <a class="skip-link" href="#operationsHub">Skip to operations</a>
+<body class="flight-deck">
+  <a class="skip-link" href="#operationsHub">Skip to current mission</a>
   <div id="app" class="app-shell">
     <header class="topbar" aria-live="polite">
-      <div class="command-brand">
-        <span class="brand-mark" aria-hidden="true">H</span>
+      <div class="flight-identity" aria-label="Hermes mission flight deck">
+        <span class="flight-roundel" aria-hidden="true"><i>H</i></span>
         <div>
-          <div class="brand">Hermes</div>
-          <span>Command Center</span>
+          <div class="brand">HERMES / FLIGHT DECK</div>
+          <span>Autonomous mission operations</span>
         </div>
       </div>
 
-      <nav class="command-nav" aria-label="Primary dashboard destinations">
-        <button class="command-nav-item active" data-operations-action="focus-current">Overview</button>
-        <button class="command-nav-item" data-operations-action="mission-control">Control</button>
-        <button class="command-nav-item" data-command-center-target="agents">Agents</button>
-        <button class="command-nav-item" data-operations-action="inspect-run">Evidence</button>
-        <button class="command-nav-item" data-command-center-target="telemetry">Telemetry</button>
-        <button class="command-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
+      <nav class="flight-nav" aria-label="Primary flight deck destinations">
+        <button class="flight-nav-item active" data-operations-action="focus-current">Mission</button>
+        <button class="flight-nav-item" data-operations-action="mission-control">Controls</button>
+        <button class="flight-nav-item" data-command-center-target="agents">Crew</button>
+        <button class="flight-nav-item" data-operations-action="inspect-run">Evidence</button>
+        <button class="flight-nav-item" data-command-center-target="telemetry">Recorder</button>
+        <button class="flight-nav-item plan-project-control" data-operations-action="project-planner">Planning</button>
       </nav>
 
       <div class="top-actions">
-        <label class="command-search">
-          <span class="sr-only">Filter events, tools, and logs</span>
-          <input id="globalFilter" class="filter-input" placeholder="Search telemetry  /" aria-label="Filter events, tools, and logs" />
+        <label class="flight-search">
+          <span>FLT SEARCH</span>
+          <input id="globalFilter" class="filter-input" placeholder="event / tool / log" aria-label="Filter events, tools, and logs" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
         <button id="refreshNow" title="Refresh all dashboard data">Sync</button>
         <button id="pauseEvents">Pause Stream</button>
         <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">New plan</button>
       </div>
-      <div id="topStatus" class="top-status">Loading command state...</div>
+      <div id="topStatus" class="top-status">Loading flight state...</div>
     </header>
 
-    <section class="phase-band" aria-label="Workflow progress">
-      <span class="phase-band-label">Pipeline</span>
+    <section class="phase-band" aria-label="Mission sequence">
+      <div class="phase-band-label"><span>SEQ</span><b>MISSION PROFILE</b></div>
       <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
     </section>
 
     <main class="workspace">
-      <section class="activity-pane panel-scroll" aria-label="Live operations">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck"></section>
-        <section id="steeringCockpit" class="steering-cockpit"></section>
-        <div class="section-title">
-          <div>
-            <span class="section-kicker">Execution</span>
-            <strong>Agent activity</strong>
-          </div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack"></section>
-      </section>
-
-      <aside class="left-rail panel-scroll" aria-label="Run and agent navigation">
+      <aside class="left-rail panel-scroll" aria-label="Crew and run roster">
         <div class="rail-intro">
-          <span class="section-kicker">Context</span>
-          <strong>Run navigator</strong>
+          <span class="section-kicker">FLT 02 / ROSTER</span>
+          <strong>Crew &amp; Agents</strong>
+          <small>Assignment and run context</small>
         </div>
         <section class="rail-section">
           <header>Runs</header>
@@ -76,26 +64,44 @@
           <div id="agentIndex" class="dense-list"></div>
         </section>
         <section class="rail-section">
-          <header>View filter</header>
+          <header>Filters</header>
           <div id="filterChips" class="filter-chips">
             <button data-filter="all" class="active">All</button>
             <button data-filter="active">Active</button>
             <button data-filter="tools">Tools</button>
-            <button data-filter="errors">Errors</button>
-            <button data-filter="artifacts">Artifacts</button>
+            <button data-filter="errors">Faults</button>
+            <button data-filter="artifacts">Evidence</button>
           </div>
         </section>
         <details class="legacy-views">
-          <summary>Legacy views</summary>
+          <summary>Alternate instruments</summary>
           <nav aria-label="Legacy dashboard views">
             <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
           </nav>
         </details>
       </aside>
 
-      <aside class="inspector-pane" aria-label="Evidence inspector">
-        <div class="inspector-heading"><span class="section-kicker">Selected context</span><strong>Inspector</strong></div>
-        <nav class="inspector-tabs" aria-label="Inspector tabs">
+      <section class="activity-pane panel-scroll" aria-label="Current mission and bounded controls">
+        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+        <section id="orchestratorDeck" class="orchestrator-deck"></section>
+        <section id="steeringCockpit" class="steering-cockpit"></section>
+        <div class="section-title">
+          <div>
+            <span class="section-kicker">FLT 03 / CREW ACTIVITY</span>
+            <strong>Agent Flight Detail</strong>
+          </div>
+          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
+        </div>
+        <section id="agentStack" class="agent-stack"></section>
+      </section>
+
+      <aside class="inspector-pane" aria-label="Evidence bay">
+        <div class="inspector-heading">
+          <span class="section-kicker">FLT 04 / EVIDENCE BAY</span>
+          <strong>Mission Evidence</strong>
+          <small>Selected context / immutable record</small>
+        </div>
+        <nav class="inspector-tabs" aria-label="Evidence bay tabs">
           <button data-inspector="agent" class="active">Agent</button>
           <button data-inspector="spec">SPEC</button>
           <button data-inspector="devplan">Plan</button>
@@ -107,10 +113,14 @@
       </aside>
     </main>
 
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize telemetry" role="separator" aria-orientation="horizontal"></div>
-    <section class="bottom-console" aria-label="Telemetry dock">
-      <div class="console-heading"><span class="section-kicker">Live feed</span><strong>Telemetry</strong></div>
-      <nav class="console-tabs" aria-label="Telemetry tabs">
+    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize telemetry recorder" role="separator" aria-label="Resize telemetry recorder" aria-orientation="horizontal"></div>
+    <section class="bottom-console" aria-label="Telemetry recorder">
+      <div class="console-heading">
+        <span class="section-kicker">FLT 05 / DATA</span>
+        <strong>Telemetry Recorder</strong>
+        <small>Time ordered mission trace</small>
+      </div>
+      <nav class="console-tabs" aria-label="Telemetry recorder tabs">
         <button data-console="events" class="active">Events</button>
         <button data-console="tools">Tool calls</button>
         <button data-console="logs">Logs</button>
@@ -125,7 +135,7 @@
 
     <section id="planningWorkspace" class="planning-workspace" role="dialog" aria-modal="true" aria-labelledby="plannerTitle" hidden>
       <header class="planning-header">
-        <div><b id="plannerTitle">Project planning</b><span class="muted"> persisted revision, review, approval, and launch workspace</span></div>
+        <div><b id="plannerTitle">Mission planning</b><span class="muted"> persisted revision, review, approval, and launch workspace</span></div>
         <div class="planning-header-actions"><span id="planSaveState" class="status-pill" role="status" aria-live="polite">saved</span><button id="closePlanner" aria-label="Close project planning workspace">Close</button></div>
       </header>
       <nav class="planning-mobile-tabs" aria-label="Planning workspace sections">
@@ -144,7 +154,7 @@
     </section>
   </div>
   <script src="/app.js" type="module"></script>
-  <script src="/command-center.js" type="module"></script>
+  <script src="/flight-deck.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>
 </body>
 </html>

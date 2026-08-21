@@ -13,14 +13,19 @@ Live steering and observability system for Hermes autonomous project builder run
 
 ## Dynamic dashboard views
 
-The dashboard provides a new primary command surface plus the five preserved legacy views:
+The dashboard provides six full-control interface studies plus five preserved legacy views. A shared **Dashboards** directory in the lower-left corner links every view from every other view.
 
 1. **Command Center (`/command-center.html`)**: primary operator surface with full Studio feature parity, live priorities first, immediately reachable controls, and layouts tuned for 1080p through 4K.
-2. **Studio (`/`)**: preserved original steering cockpit, current-step/live-activity summary, density/layout customization, orchestrator status, subagent stack, event console, and resource inspectors.
-3. **Command Matrix (`/matrix.html`)**: high-density observability grid with swarm node status and tool telemetry.
-4. **Timeline Stream (`/timeline.html`)**: chronological pipeline/event stream with time deltas and bottleneck cues.
-5. **Developer Console (`/console.html`)**: terminal/IDE-style event and artifact inspection.
-6. **Swarm Ops (`/ultimate.html`)**: expanded operational swarm view.
+2. **Flight Deck (`/flight-deck.html`)**: aerospace mission deck with annunciators, crew roster, evidence bay, and telemetry recorder.
+3. **Briefing Room (`/briefing-room.html`)**: editorial intelligence dossier with front-page decisions, correspondents, sources, and live wire.
+4. **Swarm Atlas (`/swarm-atlas.html`)**: cartographic field view with route coordinates, expedition agents, field station, and survey journal.
+5. **Switchyard (`/switchyard.html`)**: industrial dispatch board with route blocks, crews, interlocks, and event recorder.
+6. **Quiet Observatory (`/quiet-observatory.html`)**: spacious low-fatigue surface with observation channels, instrument shelf, notebooks, and time-series record.
+7. **Studio (`/`)**: preserved original steering cockpit, current-step/live-activity summary, density/layout customization, orchestrator status, subagent stack, event console, and resource inspectors.
+8. **Command Matrix (`/matrix.html`)**: high-density observability grid with swarm node status and tool telemetry.
+9. **Timeline Stream (`/timeline.html`)**: chronological pipeline/event stream with time deltas and bottleneck cues.
+10. **Developer Console (`/console.html`)**: terminal/IDE-style event and artifact inspection.
+11. **Swarm Ops (`/ultimate.html`)**: expanded operational swarm view.
 
 The complete UI parity contract is maintained in [`docs/DASHBOARD_FEATURE_MAP.md`](../docs/DASHBOARD_FEATURE_MAP.md).
 

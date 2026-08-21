@@ -4,79 +4,59 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Hermes Command Center</title>
+  <title>Hermes Switchyard</title>
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/command-center.css" />
+  <link rel="stylesheet" href="/switchyard.css" />
 </head>
-<body class="command-center">
-  <a class="skip-link" href="#operationsHub">Skip to operations</a>
+<body class="switchyard">
+  <a class="skip-link" href="#operationsHub">Skip to active route controls</a>
   <div id="app" class="app-shell">
     <header class="topbar" aria-live="polite">
-      <div class="command-brand">
-        <span class="brand-mark" aria-hidden="true">H</span>
-        <div>
-          <div class="brand">Hermes</div>
-          <span>Command Center</span>
-        </div>
+      <div class="yard-brand">
+        <span class="yard-plate" aria-hidden="true">H</span>
+        <div><div class="brand">Hermes</div><span>Switchyard control board</span></div>
       </div>
 
-      <nav class="command-nav" aria-label="Primary dashboard destinations">
-        <button class="command-nav-item active" data-operations-action="focus-current">Overview</button>
-        <button class="command-nav-item" data-operations-action="mission-control">Control</button>
-        <button class="command-nav-item" data-command-center-target="agents">Agents</button>
-        <button class="command-nav-item" data-operations-action="inspect-run">Evidence</button>
-        <button class="command-nav-item" data-command-center-target="telemetry">Telemetry</button>
-        <button class="command-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
+      <nav class="yard-nav" aria-label="Primary dashboard destinations">
+        <button class="yard-nav-item active" data-operations-action="focus-current">Route board</button>
+        <button class="yard-nav-item" data-operations-action="mission-control">Dispatch</button>
+        <a class="yard-nav-item" href="#agentStack" data-command-center-target="agents">Crews</a>
+        <button class="yard-nav-item" data-operations-action="inspect-run">Evidence</button>
+        <a class="yard-nav-item" href="#consoleContent" data-command-center-target="telemetry">Recorder</a>
+        <button class="yard-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
       </nav>
 
       <div class="top-actions">
-        <label class="command-search">
+        <label class="yard-search">
           <span class="sr-only">Filter events, tools, and logs</span>
-          <input id="globalFilter" class="filter-input" placeholder="Search telemetry  /" aria-label="Filter events, tools, and logs" />
+          <input id="globalFilter" class="filter-input" placeholder="Filter recorder  /" aria-label="Filter events, tools, and logs" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
-        <button id="refreshNow" title="Refresh all dashboard data">Sync</button>
-        <button id="pauseEvents">Pause Stream</button>
-        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">New plan</button>
+        <button id="refreshNow" title="Refresh all dashboard data">Sync board</button>
+        <button id="pauseEvents">Pause feed</button>
+        <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">Plan route</button>
       </div>
-      <div id="topStatus" class="top-status">Loading command state...</div>
+      <div id="topStatus" class="top-status">Loading yard state...</div>
     </header>
 
     <section class="phase-band" aria-label="Workflow progress">
-      <span class="phase-band-label">Pipeline</span>
+      <div class="phase-band-label"><span>Track blocks</span><b>Workflow line</b></div>
       <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
     </section>
 
     <main class="workspace">
-      <section class="activity-pane panel-scroll" aria-label="Live operations">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck"></section>
-        <section id="steeringCockpit" class="steering-cockpit"></section>
-        <div class="section-title">
-          <div>
-            <span class="section-kicker">Execution</span>
-            <strong>Agent activity</strong>
-          </div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack"></section>
-      </section>
-
-      <aside class="left-rail panel-scroll" aria-label="Run and agent navigation">
-        <div class="rail-intro">
-          <span class="section-kicker">Context</span>
-          <strong>Run navigator</strong>
-        </div>
-        <section class="rail-section">
+      <aside class="left-rail panel-scroll" aria-label="Route and crew navigation">
+        <div class="rail-intro"><span class="section-kicker">Dispatch ledger</span><strong>Routes &amp; crews</strong></div>
+        <section class="rail-section routes-section">
           <header>Runs</header>
           <div id="runsList" class="dense-list"></div>
         </section>
-        <section class="rail-section grow">
+        <section class="rail-section grow crews-section">
           <header>Agents</header>
           <div id="agentIndex" class="dense-list"></div>
         </section>
-        <section class="rail-section">
-          <header>View filter</header>
+        <section class="rail-section filter-section">
+          <header>Filters</header>
           <div id="filterChips" class="filter-chips">
             <button data-filter="all" class="active">All</button>
             <button data-filter="active">Active</button>
@@ -86,15 +66,26 @@
           </div>
         </section>
         <details class="legacy-views">
-          <summary>Legacy views</summary>
+          <summary>Other control rooms</summary>
           <nav aria-label="Legacy dashboard views">
             <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
           </nav>
         </details>
       </aside>
 
-      <aside class="inspector-pane" aria-label="Evidence inspector">
-        <div class="inspector-heading"><span class="section-kicker">Selected context</span><strong>Inspector</strong></div>
+      <section class="activity-pane panel-scroll" aria-label="Live route operations">
+        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+        <section id="orchestratorDeck" class="orchestrator-deck"></section>
+        <section id="steeringCockpit" class="steering-cockpit"></section>
+        <div class="section-title">
+          <div><span class="section-kicker">Motive power</span><strong>Agent activity</strong></div>
+          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
+        </div>
+        <section id="agentStack" class="agent-stack"></section>
+      </section>
+
+      <aside class="inspector-pane" aria-label="Evidence and interlock inspector">
+        <div class="inspector-heading"><span class="section-kicker">Interlock cabinet</span><strong>Evidence inspector</strong></div>
         <nav class="inspector-tabs" aria-label="Inspector tabs">
           <button data-inspector="agent" class="active">Agent</button>
           <button data-inspector="spec">SPEC</button>
@@ -107,9 +98,9 @@
       </aside>
     </main>
 
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize telemetry" role="separator" aria-orientation="horizontal"></div>
-    <section class="bottom-console" aria-label="Telemetry dock">
-      <div class="console-heading"><span class="section-kicker">Live feed</span><strong>Telemetry</strong></div>
+    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize event recorder" role="separator" aria-orientation="horizontal"></div>
+    <section class="bottom-console" aria-label="Event recorder">
+      <div class="console-heading"><span class="section-kicker">Event recorder</span><strong>Telemetry</strong><small>Continuous route record</small></div>
       <nav class="console-tabs" aria-label="Telemetry tabs">
         <button data-console="events" class="active">Events</button>
         <button data-console="tools">Tool calls</button>
@@ -144,7 +135,6 @@
     </section>
   </div>
   <script src="/app.js" type="module"></script>
-  <script src="/command-center.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>
 </body>
 </html>

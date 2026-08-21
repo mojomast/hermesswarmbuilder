@@ -1,6 +1,17 @@
 # Dashboard Feature Map
 
-This map is the parity contract for the legacy Studio at `/` and the uncluttered Command Center at `/command-center.html`. The Command Center deliberately reuses `dashboard/public/app.js`; every action below therefore has the same API, persistence, safety checks, and live-update behavior in both surfaces.
+This map is the parity contract for the legacy Studio at `/` and the six full-control interface studies. Each study deliberately reuses `dashboard/public/app.js`; every action below therefore has the same API, persistence, safety checks, and live-update behavior across the set.
+
+## Full-Control Interface Studies
+
+- `/command-center.html`: balanced operational command surface.
+- `/flight-deck.html`: aerospace mission flight deck.
+- `/briefing-room.html`: editorial intelligence briefing room.
+- `/swarm-atlas.html`: cartographic expedition atlas.
+- `/switchyard.html`: industrial rail dispatch board.
+- `/quiet-observatory.html`: low-fatigue scientific observatory.
+
+Every dashboard, including the five legacy tools, loads `dashboard-directory.js`. Its fixed directory links all eleven live surfaces without duplicating navigation data in each implementation.
 
 ## Global And Live State
 

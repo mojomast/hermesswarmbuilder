@@ -4,12 +4,12 @@ const destinations = {
 };
 
 document.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-command-center-target]');
+  const button = event.target.closest('[data-observatory-target]');
   if (!button) return;
-  const target = destinations[button.dataset.commandCenterTarget]?.();
+  const target = destinations[button.dataset.observatoryTarget]?.();
   if (!target) return;
-  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  target.scrollIntoView({ behavior, block: 'start' });
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
   const focusTarget = target.querySelector('button, [tabindex]') || target;
   if (!focusTarget.matches('button, a, input, select, textarea, [tabindex]')) focusTarget.tabIndex = -1;
   focusTarget.focus({ preventScroll: true });

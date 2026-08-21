@@ -4,68 +4,56 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Hermes Command Center</title>
+  <meta name="theme-color" content="#17131d" />
+  <title>Hermes Quiet Observatory</title>
   <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/command-center.css" />
+  <link rel="stylesheet" href="/quiet-observatory.css" />
 </head>
-<body class="command-center">
-  <a class="skip-link" href="#operationsHub">Skip to operations</a>
+<body class="command-center quiet-observatory">
+  <a class="skip-link" href="#operationsHub">Skip to current observation</a>
   <div id="app" class="app-shell">
     <header class="topbar" aria-live="polite">
-      <div class="command-brand">
-        <span class="brand-mark" aria-hidden="true">H</span>
+      <div class="command-brand observatory-brand">
+        <span class="brand-mark observatory-mark" aria-hidden="true"><i></i></span>
         <div>
-          <div class="brand">Hermes</div>
-          <span>Command Center</span>
+          <div class="brand">Hermes Observatory</div>
+          <span>Autonomous work, under observation</span>
         </div>
       </div>
 
-      <nav class="command-nav" aria-label="Primary dashboard destinations">
-        <button class="command-nav-item active" data-operations-action="focus-current">Overview</button>
-        <button class="command-nav-item" data-operations-action="mission-control">Control</button>
-        <button class="command-nav-item" data-command-center-target="agents">Agents</button>
-        <button class="command-nav-item" data-operations-action="inspect-run">Evidence</button>
-        <button class="command-nav-item" data-command-center-target="telemetry">Telemetry</button>
-        <button class="command-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
+      <nav class="command-nav observatory-nav" aria-label="Observatory destinations">
+        <button class="command-nav-item observatory-nav-item active" data-operations-action="focus-current">Current</button>
+        <button class="command-nav-item observatory-nav-item" data-operations-action="mission-control">Instruments</button>
+        <button class="command-nav-item observatory-nav-item" data-command-center-target="agents" data-observatory-target="agents">Channels</button>
+        <button class="command-nav-item observatory-nav-item" data-operations-action="inspect-run">Notebooks</button>
+        <button class="command-nav-item observatory-nav-item" data-command-center-target="telemetry" data-observatory-target="telemetry">Record</button>
+        <button class="command-nav-item observatory-nav-item plan-project-control" data-operations-action="project-planner">Plan</button>
       </nav>
 
       <div class="top-actions">
-        <label class="command-search">
+        <label class="command-search observatory-search">
           <span class="sr-only">Filter events, tools, and logs</span>
-          <input id="globalFilter" class="filter-input" placeholder="Search telemetry  /" aria-label="Filter events, tools, and logs" />
+          <input id="globalFilter" class="filter-input" placeholder="Search the record  /" aria-label="Filter events, tools, and logs" />
         </label>
         <span id="streamState" class="chip">Connecting</span>
-        <button id="refreshNow" title="Refresh all dashboard data">Sync</button>
+        <button id="refreshNow" title="Refresh all observatory data">Sync</button>
         <button id="pauseEvents">Pause Stream</button>
         <button id="openPlanner" class="primary plan-project-control" aria-haspopup="dialog">New plan</button>
       </div>
-      <div id="topStatus" class="top-status">Loading command state...</div>
+      <div id="topStatus" class="top-status">Calibrating observatory...</div>
     </header>
 
     <section class="phase-band" aria-label="Workflow progress">
-      <span class="phase-band-label">Pipeline</span>
+      <span class="phase-band-label">Long exposure</span>
       <nav id="workflowStrip" class="workflow-strip" aria-label="Workflow state strip"></nav>
     </section>
 
     <main class="workspace">
-      <section class="activity-pane panel-scroll" aria-label="Live operations">
-        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
-        <section id="orchestratorDeck" class="orchestrator-deck"></section>
-        <section id="steeringCockpit" class="steering-cockpit"></section>
-        <div class="section-title">
-          <div>
-            <span class="section-kicker">Execution</span>
-            <strong>Agent activity</strong>
-          </div>
-          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
-        </div>
-        <section id="agentStack" class="agent-stack"></section>
-      </section>
-
       <aside class="left-rail panel-scroll" aria-label="Run and agent navigation">
         <div class="rail-intro">
-          <span class="section-kicker">Context</span>
-          <strong>Run navigator</strong>
+          <span class="section-kicker">Observation index</span>
+          <strong>Sessions</strong>
+          <p>Choose a run or isolate a channel without disturbing the active work.</p>
         </div>
         <section class="rail-section">
           <header>Runs</header>
@@ -81,21 +69,35 @@
             <button data-filter="all" class="active">All</button>
             <button data-filter="active">Active</button>
             <button data-filter="tools">Tools</button>
-            <button data-filter="errors">Errors</button>
-            <button data-filter="artifacts">Artifacts</button>
+            <button data-filter="errors">Anomalies</button>
+            <button data-filter="artifacts">Evidence</button>
           </div>
         </section>
         <details class="legacy-views">
-          <summary>Legacy views</summary>
-          <nav aria-label="Legacy dashboard views">
+          <summary>Other instruments</summary>
+          <nav aria-label="Other dashboard views">
             <a href="/">Studio</a><a href="/matrix.html">Matrix</a><a href="/timeline.html">Timeline</a><a href="/console.html">Console</a><a href="/ultimate.html">Swarm Ops</a>
           </nav>
         </details>
       </aside>
 
-      <aside class="inspector-pane" aria-label="Evidence inspector">
-        <div class="inspector-heading"><span class="section-kicker">Selected context</span><strong>Inspector</strong></div>
-        <nav class="inspector-tabs" aria-label="Inspector tabs">
+      <section class="activity-pane panel-scroll" aria-label="Current observation and agent channels">
+        <section id="operationsHub" class="operations-hub" aria-labelledby="operationsHubTitle"></section>
+        <section id="orchestratorDeck" class="orchestrator-deck"></section>
+        <section id="steeringCockpit" class="steering-cockpit"></section>
+        <div class="section-title">
+          <div>
+            <span class="section-kicker">Observation channels</span>
+            <strong>Agent activity</strong>
+          </div>
+          <div><button id="collapseAllAgents">Collapse all</button><button id="expandActiveAgents">Expand active</button></div>
+        </div>
+        <section id="agentStack" class="agent-stack"></section>
+      </section>
+
+      <aside class="inspector-pane" aria-label="Evidence notebooks">
+        <div class="inspector-heading"><span class="section-kicker">Evidence notebooks</span><strong>Selected record</strong></div>
+        <nav class="inspector-tabs" aria-label="Evidence notebook tabs">
           <button data-inspector="agent" class="active">Agent</button>
           <button data-inspector="spec">SPEC</button>
           <button data-inspector="devplan">Plan</button>
@@ -107,10 +109,10 @@
       </aside>
     </main>
 
-    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize telemetry" role="separator" aria-orientation="horizontal"></div>
-    <section class="bottom-console" aria-label="Telemetry dock">
-      <div class="console-heading"><span class="section-kicker">Live feed</span><strong>Telemetry</strong></div>
-      <nav class="console-tabs" aria-label="Telemetry tabs">
+    <div id="bottomResizeHandle" class="bottom-resize-handle" title="Drag to resize the time-series record" role="separator" aria-orientation="horizontal"></div>
+    <section class="bottom-console" aria-label="Time-series record">
+      <div class="console-heading"><span class="section-kicker">Time-series record</span><strong>Telemetry</strong></div>
+      <nav class="console-tabs" aria-label="Telemetry record tabs">
         <button data-console="events" class="active">Events</button>
         <button data-console="tools">Tool calls</button>
         <button data-console="logs">Logs</button>
@@ -144,7 +146,7 @@
     </section>
   </div>
   <script src="/app.js" type="module"></script>
-  <script src="/command-center.js" type="module"></script>
   <script src="/dashboard-directory.js" type="module"></script>
+  <script src="/quiet-observatory.js" type="module"></script>
 </body>
 </html>

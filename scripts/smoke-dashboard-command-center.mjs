@@ -4,8 +4,19 @@ import { resolve } from 'node:path';
 
 const repo = resolve(new URL('..', import.meta.url).pathname);
 const publicRoot = resolve(repo, 'dashboard', 'public');
-const html = readFileSync(resolve(publicRoot, 'command-center.html'), 'utf8');
-const css = readFileSync(resolve(publicRoot, 'command-center.css'), 'utf8');
+const interfaceStudies = [
+  ['command-center.html', 'command-center.css'],
+  ['flight-deck.html', 'flight-deck.css'],
+  ['briefing-room.html', 'briefing-room.css'],
+  ['swarm-atlas.html', 'swarm-atlas.css'],
+  ['switchyard.html', 'switchyard.css'],
+  ['quiet-observatory.html', 'quiet-observatory.css'],
+];
+const allDashboards = [
+  'index.html', 'command-center.html', 'flight-deck.html', 'briefing-room.html',
+  'swarm-atlas.html', 'switchyard.html', 'quiet-observatory.html', 'matrix.html',
+  'timeline.html', 'console.html', 'ultimate.html',
+];
 
 function expect(condition, message) {
   if (!condition) throw new Error(message);
@@ -20,14 +31,30 @@ const parityIds = [
   'projectPlanReview', 'collapseAllAgents', 'expandActiveAgents'
 ];
 
-for (const id of parityIds) expect(html.includes(`id="${id}"`), `Command Center parity element #${id} is missing`);
-for (const tab of ['agent', 'spec', 'devplan', 'artifacts', 'logs', 'run']) expect(html.includes(`data-inspector="${tab}"`), `Inspector tab ${tab} is missing`);
-for (const tab of ['events', 'tools', 'logs', 'artifacts', 'raw']) expect(html.includes(`data-console="${tab}"`), `Telemetry tab ${tab} is missing`);
-expect(html.includes('src="/app.js"'), 'Command Center must reuse the parity-critical Studio controller');
-expect(html.includes('href="/"'), 'Legacy Studio must remain linked and available');
-expect(css.includes('@media (min-width: 2300px)'), '4K layout optimization is missing');
-expect(css.includes('@media (max-width: 900px)'), '1080p/narrow responsive layout is missing');
-expect(css.includes(':focus-visible'), 'Visible keyboard focus treatment is missing');
-expect(html.includes('class="skip-link"'), 'Keyboard skip link is missing');
+for (const [htmlFile, cssFile] of interfaceStudies) {
+  const html = readFileSync(resolve(publicRoot, htmlFile), 'utf8');
+  const css = readFileSync(resolve(publicRoot, cssFile), 'utf8');
+  for (const id of parityIds) expect(html.includes(`id="${id}"`), `${htmlFile}: parity element #${id} is missing`);
+  for (const tab of ['agent', 'spec', 'devplan', 'artifacts', 'logs', 'run']) expect(html.includes(`data-inspector="${tab}"`), `${htmlFile}: inspector tab ${tab} is missing`);
+  for (const tab of ['events', 'tools', 'logs', 'artifacts', 'raw']) expect(html.includes(`data-console="${tab}"`), `${htmlFile}: telemetry tab ${tab} is missing`);
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+  expect(new Set(ids).size === ids.length, `${htmlFile}: duplicate IDs are not allowed`);
+  expect(html.includes('src="/app.js"'), `${htmlFile}: must reuse the parity-critical Studio controller`);
+  expect(html.indexOf('src="/app.js"') < html.indexOf('src="/dashboard-directory.js"'), `${htmlFile}: dashboard directory must load after the controller`);
+  expect(/@media\s*\(min-width:\s*(?:2[1-9]\d{2}|[3-9]\d{3})px\)/.test(css), `${cssFile}: 4K layout optimization is missing`);
+  expect(/@media\s*\(max-width:\s*900px\)/.test(css), `${cssFile}: narrow responsive layout is missing`);
+  expect(css.includes(':focus-visible'), `${cssFile}: visible keyboard focus treatment is missing`);
+  expect(css.includes('prefers-reduced-motion'), `${cssFile}: reduced-motion treatment is missing`);
+  expect(html.includes('class="skip-link"'), `${htmlFile}: keyboard skip link is missing`);
+}
 
-console.log('smoke-dashboard-command-center ok');
+for (const htmlFile of allDashboards) {
+  const html = readFileSync(resolve(publicRoot, htmlFile), 'utf8');
+  expect(html.includes('src="/dashboard-directory.js"'), `${htmlFile}: shared dashboard directory is missing`);
+}
+
+const directory = readFileSync(resolve(publicRoot, 'dashboard-directory.js'), 'utf8');
+for (const [htmlFile] of interfaceStudies) expect(directory.includes(`/${htmlFile}`), `Dashboard directory does not link ${htmlFile}`);
+for (const path of ['/', '/matrix.html', '/timeline.html', '/console.html', '/ultimate.html']) expect(directory.includes(`path: '${path}'`), `Dashboard directory does not link ${path}`);
+
+console.log('smoke-dashboard-interface-studies ok');

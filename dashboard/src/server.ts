@@ -317,7 +317,7 @@ function normalizeCommandTarget(type: string, raw: any) {
   if (["gate-decision", "attach-gate-evidence", "update-gate"].includes(type)) return { kind: "gate", id: raw.id || raw.gateId || null, runId: raw.runId || null };
   if (["pin-queue-item", "archive-queue-item"].includes(type)) return { kind: "queue-item", id: raw.id || raw.itemId || null };
   if (type === "add-queue-item") return { kind: "queue-item", id: null };
-  if (["pause", "hold", "resume", "unhold", "stop", "run-now", "steer", "remove-steering", "set-current-objective", "start-next-iteration", "start-showcase-loop", "pause-showcase-loop", "resume-showcase-loop", "stop-showcase-loop", "set-showcase-target"].includes(type)) return { kind: "control", id: null };
+  if (["pause", "hold", "resume", "unhold", "stop", "run-now", "steer", "deblock", "remove-steering", "set-current-objective", "start-next-iteration", "start-showcase-loop", "pause-showcase-loop", "resume-showcase-loop", "stop-showcase-loop", "set-showcase-target"].includes(type)) return { kind: "control", id: null };
   return { kind: "unknown", id: null };
 }
 function makeCommand(body: any, actor: string, type: string, payload: any) {
@@ -437,6 +437,21 @@ function queueItemText(item: any) {
   return [`# ${item.title || "Queued autonomous project"}`, "", `Objective: ${item.objective || ""}`, "", item.context ? `Context: ${item.context}` : "", "", "Constraints:", ...(item.constraints || []).map((x: string) => `- ${x}`), "", "Acceptance gates:", ...gates.map((g: any) => `- ${g.id}: ${g.description || g.title || "gate"}`), "", item.target?.preferredRepo ? `Preferred repo: ${item.target.preferredRepo}` : ""].filter(Boolean).join("\n");
 }
 async function readJsonBody(req: Request) { try { return await req.json(); } catch { return {}; } }
+async function requestDeblockAdvice(prompt: string, blocker: unknown) {
+  const hermes = process.env.HERMES_BIN || join(homedir(), ".local", "bin", "hermes");
+  const query = `You are a local autonomous-workflow recovery adviser. The operator needs advice for a blocked run. Give a concise, safe recovery recommendation: identify the likely cause, the smallest non-destructive repair, what evidence to verify, and whether to continue or fork. Do not claim to execute anything.\n\nBLOCKER_JSON=${JSON.stringify(blocker)}\nOPERATOR_PROMPT_JSON=${JSON.stringify(prompt)}`;
+  const proc = Bun.spawn([hermes, "--profile", "apbplanner", "chat", "--quiet", "--safe-mode", "--source", "autonomous-project-deblock-advice", "--max-turns", "4", "--toolsets", "web", "--query", query], { cwd: STATE_ROOT, env: Object.fromEntries(["PATH", "HOME", "TMPDIR"].filter((key) => process.env[key]).map((key) => [key, process.env[key]!])), stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; try { proc.kill(); } catch {} }, 120_000);
+  try {
+    const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    if (timedOut) throw new Error("advice request timed out after 120 seconds");
+    if (code !== 0) throw new Error(`advice request failed: ${redactString(stderr).slice(0, 500)}`);
+    const answer = redactString(stdout).trim();
+    if (!answer) throw new Error("advice request returned no answer");
+    return answer.slice(0, 24_000);
+  } finally { clearTimeout(timer); }
+}
 async function handleCommand(req: Request) {
   const body = await readJsonBody(req);
   const type = String(body.type || "");
@@ -463,6 +478,44 @@ async function handleCommand(req: Request) {
     upsertIterationFromRequest(req, "requested"); writeControl(control); return json(commandAck(command, { autoIteration: control.autoIteration, nextRunRequest: req, effective: "next_runner_tick" }));
   }
   if (type === "steer") { const steer = { id: uid("steer"), scope: payload.scope || "next_run", priority: payload.priority || "required", text: payload.text || payload.objective || "", createdBy: actor, createdAt: now(), expires: payload.expires || { type: "until_removed" } }; control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20); writeControl(control); return json(commandAck(command, { steeringId: steer.id })); }
+  if (type === "deblock") {
+    const prompt = String(payload.prompt || payload.text || "").trim();
+    if (!prompt) return json({ error: "a deblock prompt is required" }, 400);
+    if (Buffer.byteLength(prompt) > 8_000) return json({ error: "deblock prompt exceeds 8000 bytes" }, 413);
+    const state = readState();
+    const request = { id: uid("deblock"), prompt, runId: payload.runId || state.currentRunId || null, blocker: state.block || state.blocker || state.hold || null, status: "pending", requestedBy: actor, requestedAt: now() };
+    const steer = { id: uid("steer"), scope: "current_run", priority: "required", text: `DEBLOCK REQUEST ${request.id}: ${prompt}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id };
+    control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
+    control.activeSteering = [steer, ...(control.activeSteering || [])].slice(0, 20);
+    control.requestedRunNow = true;
+    writeControl(control);
+    if (state.status === "blocked" || state.status === "on-hold") { state.status = "deblocking"; state.phase = "deblocking"; state.lastAction = `Operator supplied deblock request ${request.id}; runner should evaluate it before further work.`; writeState(state); }
+    return json(commandAck(command, { deblockRequest: request, steeringId: steer.id, effective: "current-run steering queued" }));
+  }
+  if (type === "deblock-advice") {
+    const prompt = String(payload.prompt || "").trim() || "Analyze the reported blocker, inspect the available evidence, and recommend the smallest safe recovery path.";
+    if (Buffer.byteLength(prompt) > 8_000) return json({ error: "advice question exceeds 8000 bytes" }, 413);
+    const state = readState(); const blocker = state.block || state.blocker || state.hold || null;
+    try {
+      const advice = { id: uid("advice"), runId: payload.runId || state.currentRunId || null, prompt, blocker, answer: await requestDeblockAdvice(prompt, blocker), status: "pending", requestedBy: actor, requestedAt: now() };
+      control.deblockAdvice = [advice, ...(Array.isArray(control.deblockAdvice) ? control.deblockAdvice : [])].slice(0, 20);
+      writeControl(control);
+      return json(commandAck(command, { advice, effective: "operator review required" }));
+    } catch (error: any) { return json({ error: `advice request failed: ${error?.message || error}` }, 502); }
+  }
+  if (["approve-deblock-advice", "deny-deblock-advice"].includes(type)) {
+    const advice = (control.deblockAdvice || []).find((item: any) => item.id === payload.adviceId);
+    if (!advice || advice.status !== "pending") return json({ error: "pending deblock advice not found" }, 404);
+    advice.status = type === "approve-deblock-advice" ? "approved" : "denied"; advice.decidedAt = now(); advice.decidedBy = actor;
+    if (advice.status === "approved") {
+      const state = readState(); const request = { id: uid("deblock"), prompt: advice.answer, runId: advice.runId || state.currentRunId || null, blocker: advice.blocker, status: "pending", requestedBy: actor, requestedAt: now(), adviceId: advice.id };
+      control.deblockRequests = [request, ...(Array.isArray(control.deblockRequests) ? control.deblockRequests : [])].slice(0, 20);
+      control.activeSteering = [{ id: uid("steer"), scope: "current_run", priority: "required", text: `APPROVED DEBLOCK ADVICE ${advice.id}: ${advice.answer}`, createdBy: actor, createdAt: request.requestedAt, expires: { type: "until_removed" }, deblockRequestId: request.id }, ...(control.activeSteering || [])].slice(0, 20);
+      control.requestedRunNow = true;
+    }
+    writeControl(control);
+    return json(commandAck(command, { adviceId: advice.id, status: advice.status, effective: advice.status === "approved" ? "current-run steering queued" : "no run changes" }));
+  }
   if (type === "remove-steering") { const id = payload.id || payload.steeringId; control.activeSteering = (control.activeSteering || []).filter((x: any) => x.id !== id); writeControl(control); return json(commandAck(command, { removedSteeringId: id })); }
   if (type === "set-current-objective") { control.currentObjective = { text: payload.text || payload.objective || "", source: payload.source || "operator", queueItemId: payload.queueItemId || null, runId: payload.runId || null, updatedAt: now(), updatedBy: actor }; writeControl(control); return json(commandAck(command, { currentObjective: control.currentObjective })); }
   if (["start-next-iteration", "continue-from-iteration", "fork-from-iteration", "use-as-next-direction"].includes(type)) {

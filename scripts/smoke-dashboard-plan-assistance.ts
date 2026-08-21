@@ -73,6 +73,10 @@ if(query.includes('CASE_TIMEOUT')) { cp.spawn(process.execPath,['-e','setTimeout
 else if(query.includes('CASE_MALFORMED')) process.stdout.write(begin+'\\n{"message":\\n'+end+'\\n');
 else if(query.includes('CASE_UNKNOWN')) process.stdout.write(begin+'\\n'+JSON.stringify({message:'no',unknown:true})+'\\n'+end+'\\n');
 else if(query.includes('CASE_UNMARKED')) process.stdout.write(JSON.stringify({message:'otherwise valid but unmarked'}));
+else if(query.includes('CASE_WRAPPED')) process.stdout.write('provider preface\\r\\n'+begin+'\\r\\n'+JSON.stringify({message:'wrapped contract accepted'})+'\\r\\n'+end+'\\r\\nprovider suffix');
+else if(query.includes('CASE_MISSING_LINEAGE')) { const p={...${JSON.stringify(proposal)}}; delete p.lineage; process.stdout.write(begin+'\\n'+JSON.stringify({message:'server adds safe lineage',proposedContent:p})+'\\n'+end+'\\n'); }
+else if(query.includes('CASE_SEVERITY_ALIAS')) { const p={...${JSON.stringify(proposal)},acceptanceGates:${JSON.stringify(proposal.acceptanceGates)}.map(g=>({...g,severity:'high'}))}; process.stdout.write(begin+'\\n'+JSON.stringify({message:'server normalizes gate severity',proposedContent:p})+'\\n'+end+'\\n'); }
+else if(query.includes('CASE_SPARSE_DRAFT')) process.stdout.write(begin+'\\n'+JSON.stringify({message:'server completes structural defaults',proposedContent:{title:'Sparse draft'}})+'\\n'+end+'\\n');
 else if(query.includes('CASE_EXECUTABLE')) { const p=${JSON.stringify(proposal)}; p.validationPolicy.command='touch ${canary}'; process.stdout.write(begin+'\\n'+JSON.stringify({message:'no',proposedContent:p})+'\\n'+end+'\\n'); }
 else if(query.includes('CASE_CONCURRENT')) setTimeout(()=>process.stdout.write(begin+'\\n'+JSON.stringify({message:'bounded concurrent reply'})+'\\n'+end+'\\n'),100);
 else process.stdout.write(begin+'\\n'+JSON.stringify({message:'password=${outputSecret} and \\"password\\":\\"${quotedOutputSecret}\\"',proposedContent:${JSON.stringify(proposal)}})+'\\n'+end+'\\n');
@@ -98,7 +102,19 @@ else process.stdout.write(begin+'\\n'+JSON.stringify({message:'password=${output
     assert(unchanged.version === 1 && unchanged.messages.length === 0 && unchanged.proposedContent === null, `${name} persisted an invalid turn`);
   }
   const unmarked = await turn(created.id, 1, "CASE_UNMARKED", 502);
-  assert(unmarked.error?.code === "invalid_model_output" && /provider\/model.*No planning turn was saved/i.test(unmarked.error?.message), `unmarked provider failure is not actionable: ${JSON.stringify(unmarked)}`);
+  assert(unmarked.error?.code === "invalid_model_output" && /marked JSON planning contract.*No planning turn was saved/i.test(unmarked.error?.message), `unmarked provider failure is not actionable: ${JSON.stringify(unmarked)}`);
+  const wrappedConversation = await post("/api/plan-assistance", { schemaVersion: "apb.plan-assistance.v1", pipelineType: "classic" }, 201);
+  const wrapped = await turn(wrappedConversation.id, 1, "CASE_WRAPPED");
+  assert(wrapped.version === 2 && wrapped.messages.at(-1)?.content === "wrapped contract accepted", `wrapped marked contract was not accepted: ${JSON.stringify(wrapped)}`);
+  const missingLineageConversation = await post("/api/plan-assistance", { schemaVersion: "apb.plan-assistance.v1", pipelineType: "classic" }, 201);
+  const missingLineage = await turn(missingLineageConversation.id, 1, "CASE_MISSING_LINEAGE");
+  assert(missingLineage.proposedContent.lineage.mode === "new" && missingLineage.proposedContent.lineage.sourcePlanId === null, `server did not add safe lineage: ${JSON.stringify(missingLineage)}`);
+  const severityAliasConversation = await post("/api/plan-assistance", { schemaVersion: "apb.plan-assistance.v1", pipelineType: "classic" }, 201);
+  const severityAlias = await turn(severityAliasConversation.id, 1, "CASE_SEVERITY_ALIAS");
+  assert(severityAlias.proposedContent.acceptanceGates[0].severity === "must", `server did not normalize severity alias: ${JSON.stringify(severityAlias)}`);
+  const sparseDraftConversation = await post("/api/plan-assistance", { schemaVersion: "apb.plan-assistance.v1", pipelineType: "classic" }, 201);
+  const sparseDraft = await turn(sparseDraftConversation.id, 1, "CASE_SPARSE_DRAFT");
+  assert(sparseDraft.proposedContent.title === "Sparse draft" && sparseDraft.proposedContent.limits.maxIterations === 1 && sparseDraft.proposedContent.lineage.mode === "new", `server did not complete sparse draft defaults: ${JSON.stringify(sparseDraft)}`);
 
   const timeoutStarted = Date.now();
   await turn(created.id, 1, "CASE_TIMEOUT", 504);
@@ -133,7 +149,7 @@ else process.stdout.write(begin+'\\n'+JSON.stringify({message:'password=${output
   assert(!disk.includes(inputSecret) && !disk.includes(outputSecret) && !disk.includes(quotedInputSecret) && !disk.includes(quotedOutputSecret) && disk.includes("[REDACTED"), "conversation disk record leaked a secret");
   const callRows = read(calls).trim().split(/\n/).map(JSON.parse);
   const trustedCall = callRows.find((row: any) => row.query.includes("CASE_TRUSTED"));
-  const expectedPrefix = ["chat", "--quiet", "--safe-mode", "--ignore-user-config", "--ignore-rules", "--source", "autonomous-project-planner", "--max-turns", "1", "--toolsets", "", "--query"];
+  const expectedPrefix = ["--profile", "apbplanner", "chat", "--quiet", "--safe-mode", "--source", "autonomous-project-planner", "--max-turns", "4", "--toolsets", "web", "--query"];
   assert(JSON.stringify(trustedCall.args.slice(0, -1)) === JSON.stringify(expectedPrefix) && trustedCall.args.length === expectedPrefix.length + 1, `unsafe Hermes argv: ${JSON.stringify(trustedCall.args)}`);
   assert(trustedCall.args.at(-2) === "--query" && trustedCall.args.at(-1) === trustedCall.query && trustedCall.query.includes(`$(touch ${canary}); & | >`), "query was not passed as one literal argv value");
   assert(!trustedCall.query.includes(inputSecret) && !trustedCall.query.includes(quotedInputSecret) && trustedCall.query.includes("[REDACTED"), "prompt leaked the input secret");

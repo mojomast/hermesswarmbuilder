@@ -92,6 +92,7 @@ Requirements and constraints:
 - Install the runner at ~/.hermes/scripts/autonomous-project-midnight-runner.ts.
 - Install telemetry.py at ~/.hermes/autonomous-projects/telemetry.py.
 - Install runner-prompt.md at ~/.hermes/autonomous-projects/runner-prompt.md.
+- Provision the least-privilege `apbplanner` Hermes profile used only for one-turn planning assistance: no bundled skills, no memory, and no tools. Configure it with a compatible inference provider/model before using the planner.
 - Create/enable/start the user systemd service autonomous-projects-dashboard.service on port 9200.
 - Add the hourly cron entry for the runner, replacing any old autonomous-project-midnight-runner entry. The runner skips launch when a project is still active and waits for the next hourly tick.
 - Do not start a full autonomous project run unless I explicitly ask after installation.

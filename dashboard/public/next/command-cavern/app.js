@@ -38,8 +38,9 @@ let editorOffset = 0;
 let reviewOffset = 0;
 let searchQuery = "";
 let notice = "Synchronizing the cavern with the control plane";
-// Start static. Live data still redraws the scene; optional decorative motion is opt-in with F.
-let visualFrozen = true;
+// Static by default. ?motion=demo enables local-only visual motion without issuing commands or writing swarm state.
+const motionDemoRequested = new URLSearchParams(globalThis.location?.search || "").get("motion") === "demo";
+let visualFrozen = !motionDemoRequested || Boolean(globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 // MINIMIZABLE_TECTONIC_TABLET: the physical SDF screen can collapse to reveal the cavern.
 let tabletMinimized = false;
 const receipts = [];

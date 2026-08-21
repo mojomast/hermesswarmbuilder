@@ -71,7 +71,8 @@ assert.match(cavern, /returnToCavern"\)\.addEventListener\("click", attempt3D\)/
 assert.match(cavern, /if \(!renderer\.ready && !renderer\.retry\(\)\)[\s\S]{0,400}setMode\(false\)/, 'Command Cavern: retry does not enter 3D after readiness');
 assert.match(cavern, /TABLET_TEXTURE_WIDTH = 1600/, 'Command Cavern: bounded tablet texture missing');
 assert.match(cavern, /texSubImage2D/, 'Command Cavern: in-place tablet updates missing');
-assert.match(cavern, /let visualFrozen = true/, 'Command Cavern: static safe startup missing');
+assert.match(cavern, /motionDemoRequested[\s\S]{0,200}visualFrozen = !motionDemoRequested/, 'Command Cavern: local-only motion demo opt-in missing');
+assert.match(cavern, /\?motion=demo/, 'Command Cavern: motion demo query contract missing');
 assert.match(cavern, /this\.steps = innerWidth < 700 \? 18 : 22/, 'Command Cavern: bounded initial ray steps missing');
 assert.match(cavern, /Math\.sqrt\(500_000 \/ \(clientWidth \* clientHeight\)\)/, 'Command Cavern: bounded pixel budget missing');
 assert.doesNotMatch(cavern, /for\(int i=0;i<(?:[3-9]|1[0-6]);i\+\+\)/, 'Command Cavern: expensive SDF entity loops returned');

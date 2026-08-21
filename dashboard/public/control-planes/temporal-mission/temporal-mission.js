@@ -359,6 +359,7 @@ class TemporalMissionController {
     this.historicalRuns = this.liveProjection.historicalRuns;
     this.gates = this.liveProjection.gates;
     this.criteriaWeights = { ...DEFAULT_CRITERIA_WEIGHTS };
+    this.project = { plans: [], selectedPlanId: null, detail: null, assistance: null, assistanceList: [], inspectedRevision: null, selectedIterationId: null, busy: false, notice: "Load live project plans to begin.", error: "" };
     
     this.selectedChamberIndex = 3; // Default to Chamber 3: Variant Exploration Arena (Z=0)
     this.selectedVariantId = null;
@@ -1015,6 +1016,7 @@ class TemporalMissionController {
 
     try {
       await this.client.resyncSnapshots();
+      await this.refreshProjectWorkspace();
       this.client.connectStream();
     } catch (err) {
       console.info("[TemporalController] Running in rich offline/default mode:", err);
@@ -1272,7 +1274,105 @@ class TemporalMissionController {
   }
 
   renderLiveInspector(ch) {
-    this.el.inspectorContent.innerHTML = renderTemporalMissionLiveMarkup(this.liveProjection, ch);
+    this.renderProjectWorkspace();
+  }
+
+  async refreshProjectWorkspace(planId = this.project.selectedPlanId) {
+    this.project.busy = true;
+    this.project.error = "";
+    try {
+      const [plans, assistance] = await Promise.all([this.client.getProjectPlans(), this.client.getPlanAssistance()]);
+      this.project.plans = plans.items || [];
+      this.project.assistanceList = assistance.items || [];
+      this.project.selectedPlanId = planId && this.project.plans.some((plan) => plan.planId === planId) ? planId : this.project.plans[0]?.planId || null;
+      if (this.project.selectedPlanId) {
+        const planId = this.project.selectedPlanId;
+        this.project.detail = await this.client.getProjectPlanDetail(planId);
+      }
+      else this.project.detail = null;
+      if (this.project.assistance?.id) this.project.assistance = await this.client.getPlanAssistanceDetail(this.project.assistance.id);
+      this.project.notice = this.project.detail ? `Loaded exact ledger version ${this.project.detail.ledger.version}.` : "Choose a pipeline to start a persistent planning interview.";
+    } catch (error) {
+      this.project.error = error.message || String(error);
+    } finally {
+      this.project.busy = false;
+      if (this.liveProjection) this.renderProjectWorkspace();
+    }
+  }
+
+  async runProjectOperation(operation) {
+    if (this.project.busy) return;
+    this.project.busy = true;
+    this.project.error = "";
+    this.renderProjectWorkspace();
+    try {
+      await operation();
+    } catch (error) {
+      this.project.error = error.message || String(error);
+    } finally {
+      this.project.busy = false;
+      await this.refreshProjectWorkspace(this.project.selectedPlanId);
+    }
+  }
+
+  retainedLineageIterations(detail) {
+    const planId = detail?.ledger?.planId;
+    return (this.client.cachedIterations || []).filter((iteration) => {
+      const owner = iteration.planId || iteration.projectLaunch?.planId;
+      return owner === planId && iteration.id && iteration.runId;
+    });
+  }
+
+  renderProjectWorkspace() {
+    const project = this.project, detail = project.detail, ledger = detail?.ledger, revision = detail?.revision;
+    const esc = (value) => escapeHtml(value == null ? "" : String(value));
+    const disabled = (allowed) => allowed && !project.busy ? "" : "disabled";
+    const status = project.error ? `<div class="section-card" role="alert"><strong>API error:</strong> ${esc(project.error)}</div>` : `<div class="section-card" role="status">${esc(project.notice)}</div>`;
+    const plans = project.plans.length ? project.plans.map((plan) => `<button class="btn-hud" data-project-select="${esc(plan.planId)}">${esc(plan.title || plan.planId)} · ${esc(plan.state)} · v${esc(plan.version)}</button>`).join(" ") : "<span>No live project plans.</span>";
+    const conversations = project.assistanceList.length ? project.assistanceList.map((item) => `<button class="btn-hud" data-assistance-select="${esc(item.id)}">${esc(item.id)} · ${esc(item.pipelineType)} · v${esc(item.version)} · ${item.hasProposal ? "proposal ready" : "interview"}</button>`).join(" ") : "No persisted conversations.";
+    const messages = project.assistance?.messages?.length ? project.assistance.messages.map((message) => `<div class="section-card"><strong>${esc(message.role)}</strong> · ${esc(message.createdAt)}<br>${sanitizeMarkdownToHtml(message.content || "")}</div>`).join("") : "<p>No interview messages yet. Start a conversation and describe the bounded project.</p>";
+    const proposal = project.assistance?.proposedContent;
+    const revisions = detail?.revisions?.length ? detail.revisions.map((item) => `<li><button class="btn-hud" data-project-revision="${esc(item.revision)}">Revision ${esc(item.revision)} · ${esc(item.contentDigest)}</button></li>`).join("") : "<li>No immutable revisions loaded.</li>";
+    const decisions = detail?.decisions?.length ? detail.decisions.map((item) => `<li>${esc(item.decision)} · ${esc(item.decisionId)} · ${esc(item.planDigest)}</li>`).join("") : "<li>No approvals or rejections recorded.</li>";
+    const launches = detail?.launches?.length ? detail.launches.map((item) => `<li>${esc(item.status)} · ${esc(item.launchId)} · request ${esc(item.requestId)} · run ${esc(item.runId)}</li>`).join("") : "<li>No launch records.</li>";
+    const canEdit = ledger?.state === "draft" && !ledger.activeLaunchId;
+    const canReview = ledger?.state === "draft";
+    const canApprove = ledger?.state === "ready-for-review" && ledger.validation?.valid;
+    const canReject = ["ready-for-review", "approved"].includes(ledger?.state);
+    const canLaunch = ledger?.state === "approved" && ledger.effectiveApprovalId;
+    const requestedLaunch = detail?.launches?.find((launch) => launch.launchId === ledger?.activeLaunchId && launch.status === "requested");
+    const canArchive = ledger && !ledger.activeLaunchId && !["launch-requested", "running", "archived"].includes(ledger.state);
+    const retained = this.retainedLineageIterations(detail);
+    const selectedIteration = retained.find((item) => item.id === project.selectedIterationId) || retained[0];
+    const canLineage = !!(ledger && revision && selectedIteration?.id && selectedIteration?.runId && revision.content?.repository?.baseRef);
+    this.el.inspectorContent.innerHTML = `<div class="inspector-section"><div class="section-title"><span>Project Mission Control</span><button id="btn-create-project" class="btn-hud btn-accent" ${disabled(true)}>Create Project</button><button id="btn-refresh-projects" class="btn-hud" ${disabled(true)}>Refresh live data</button></div>${status}<div class="section-card"><strong>All plans</strong><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${plans}</div></div></div>
+      <div class="inspector-section"><div class="section-title">Persistent Plan Assistance Interview</div><div class="section-card"><label>Pipeline <select id="project-pipeline"><option value="classic">classic</option><option value="managed">managed</option></select></label> <button id="btn-start-assistance" class="btn-hud" ${disabled(true)}>Start interview</button><div>Conversation: ${esc(project.assistance?.id || "none")} · version ${esc(project.assistance?.version || "—")} · proposal ${proposal ? "ready" : "not ready"}</div><div>${conversations}</div></div><div>${messages}</div><form id="project-assistance-form"><textarea name="message" rows="3" ${disabled(!!project.assistance)} placeholder="Describe the proposal, scope, constraints, and acceptance gates."></textarea><button class="btn-hud btn-accent" ${disabled(!!project.assistance)}>Send to live planning conversation</button></form>${proposal ? `<button id="btn-create-proposal" class="btn-hud btn-success" ${disabled(true)}>Create devplan-ready draft from live proposal</button><pre>${esc(JSON.stringify(proposal, null, 2))}</pre>` : "<p>Safe next action: continue the interview until the server returns a valid proposal.</p>"}</div>
+      <div class="inspector-section"><div class="section-title">Selected Plan · immutable ledger</div>${detail ? `<div class="section-card">Plan ${esc(ledger.planId)} · state ${esc(ledger.state)} · version ${esc(ledger.version)} · revision ${esc(ledger.currentRevision)} · digest <code>${esc(ledger.currentDigest)}</code></div><details><summary>Immutable revisions</summary><ul>${revisions}</ul>${project.inspectedRevision ? `<pre>${esc(JSON.stringify(project.inspectedRevision, null, 2))}</pre>` : ""}</details><details><summary>Approvals / rejections</summary><ul>${decisions}</ul></details><details><summary>Launch state</summary><ul>${launches}</ul></details><form id="project-update-form"><label>Draft content JSON<textarea name="content" rows="10" ${disabled(canEdit)}>${esc(JSON.stringify(revision.content, null, 2))}</textarea></label><button class="btn-hud" ${disabled(canEdit)}>Save new draft revision</button></form><label>Decision or withdrawal notes<textarea id="project-notes" rows="2" ${disabled(canReject || !!requestedLaunch)}></textarea></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button data-project-action="ready-for-review" class="btn-hud" ${disabled(canReview)}>Submit review</button><button data-project-action="approve" class="btn-hud btn-success" ${disabled(canApprove)}>Approve exact revision</button><button data-project-action="reject" class="btn-hud" ${disabled(canReject)}>Reject exact revision</button><button data-project-action="launch" class="btn-hud btn-accent" ${disabled(canLaunch)}>Launch exact approval</button><button data-project-action="withdraw-launch" class="btn-hud" ${disabled(!!requestedLaunch)}>Withdraw unclaimed requested launch</button><button data-project-action="archive" class="btn-hud" ${disabled(canArchive)}>Archive eligible plan</button></div><p>Safe next action: ${canEdit ? "edit the draft or submit it for review" : canReview ? "submit the exact draft revision for review" : canApprove ? "approve or reject the validated review revision" : canLaunch ? "launch the effective approval" : requestedLaunch ? "wait for claim, or withdraw the requested launch" : "inspect the immutable history"}.</p><div class="section-card"><strong>Continuation / fork from retained iteration</strong><select id="project-lineage-iteration" ${disabled(retained.length > 0)}>${retained.map((item) => `<option value="${esc(item.id)}" ${item.id === selectedIteration?.id ? "selected" : ""}>${esc(item.id)} · run ${esc(item.runId)}</option>`).join("")}</select><button data-project-action="clone" class="btn-hud" ${disabled(canLineage)}>Create continuation clone</button><button data-project-action="fork" class="btn-hud" ${disabled(canLineage)}>Create fork</button><p>${canLineage ? "Uses the exact selected plan revision/digest and retained run/iteration lineage." : "Disabled: a matching retained iteration, run ID, plan identity, and repository base ref are required."}</p></div>` : "<p>Select a live plan or create one from an assistance proposal.</p>"}</div>`;
+    this.bindProjectWorkspaceEvents();
+  }
+
+  bindProjectWorkspaceEvents() {
+    const root = this.el.inspectorContent;
+    root.querySelector("#btn-refresh-projects")?.addEventListener("click", () => this.refreshProjectWorkspace());
+    root.querySelector("#btn-create-project")?.addEventListener("click", () => root.querySelector("#project-pipeline")?.focus());
+    root.querySelectorAll("[data-project-select]").forEach((button) => button.addEventListener("click", () => this.refreshProjectWorkspace(button.dataset.projectSelect)));
+    root.querySelectorAll("[data-assistance-select]").forEach((button) => button.addEventListener("click", () => this.runProjectOperation(async () => { this.project.assistance = await this.client.getPlanAssistanceDetail(button.dataset.assistanceSelect); this.project.notice = "Loaded the persistent planning conversation."; })));
+    root.querySelector("#btn-start-assistance")?.addEventListener("click", () => this.runProjectOperation(async () => { const pipelineType = root.querySelector("#project-pipeline").value; this.project.assistance = await this.client.createPlanAssistance(pipelineType); this.project.notice = `Started ${pipelineType} planning interview.`; }));
+    root.querySelector("#project-assistance-form")?.addEventListener("submit", (event) => { event.preventDefault(); const message = new FormData(event.currentTarget).get("message")?.trim(); if (!message) return; this.runProjectOperation(async () => { const assistance = this.project.assistance; this.project.assistance = await this.client.sendPlanAssistanceMessage(assistance.id, assistance.version, message); this.project.notice = "Live planning response received; inspect proposal readiness."; }); });
+    root.querySelector("#btn-create-proposal")?.addEventListener("click", () => this.runProjectOperation(async () => { const assistance = this.project.assistance; const result = await this.client.createPlan(assistance.proposedContent); this.project.selectedPlanId = result.planId; this.project.notice = `Created durable draft ${result.planId} from the live proposal.`; }));
+    root.querySelector("#project-update-form")?.addEventListener("submit", (event) => { event.preventDefault(); this.runProjectOperation(async () => { const content = JSON.parse(new FormData(event.currentTarget).get("content")); const ledger = this.project.detail.ledger; await this.client.updatePlan(ledger.planId, content, ledger.version); this.project.notice = "Draft revision saved by the project-plan API."; }); });
+    root.querySelector("#project-lineage-iteration")?.addEventListener("change", (event) => { this.project.selectedIterationId = event.target.value; this.renderProjectWorkspace(); });
+    root.querySelectorAll("[data-project-action]").forEach((button) => button.addEventListener("click", () => this.runProjectOperation(async () => {
+      const action = button.dataset.projectAction, detail = this.project.detail, ledger = detail.ledger, revision = detail.revision, notes = root.querySelector("#project-notes")?.value || "";
+      let payload;
+      if (action === "archive") payload = { planId: ledger.planId };
+      else if (action === "withdraw-launch") payload = { planId: ledger.planId, launchId: ledger.activeLaunchId, notes };
+      else if (["clone", "fork"].includes(action)) { const iteration = this.retainedLineageIterations(detail).find((item) => item.id === this.project.selectedIterationId) || this.retainedLineageIterations(detail)[0]; payload = { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest, sourceRunId: iteration.runId, sourceIterationId: iteration.id, baseRef: revision.content.repository.baseRef }; }
+      else payload = { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest, ...(action === "approve" || action === "reject" ? { notes } : {}) };
+      const result = await this.client.dispatchPlanCommand(action, payload, ledger.version);
+      this.project.selectedPlanId = result.planId || this.project.selectedPlanId; this.project.notice = `${action} was accepted by the live project-plan API.`;
+    })));
+    root.querySelectorAll("[data-project-revision]").forEach((button) => button.addEventListener("click", () => this.runProjectOperation(async () => { const item = await this.client.getPlanRevision(this.project.detail.ledger.planId, Number(button.dataset.projectRevision)); this.project.inspectedRevision = item; this.project.notice = `Loaded immutable revision ${item.revision} with digest ${item.contentDigest}.`; })));
   }
 
   renderDynamicStageWorkspace(ch) {
@@ -1950,11 +2050,11 @@ class TemporalMissionController {
     });
 
     this.el.inspectorContent.querySelector("#btn-continuation-draft")?.addEventListener("click", () => {
-      alert("Continuation plan draft created in state/project-plans/.");
+      if (this.liveProjection) this.renderProjectWorkspace();
     });
 
     this.el.inspectorContent.querySelector("#btn-fork-draft")?.addEventListener("click", () => {
-      alert("Fork draft plan created in state/project-plans/.");
+      if (this.liveProjection) this.renderProjectWorkspace();
     });
   }
 

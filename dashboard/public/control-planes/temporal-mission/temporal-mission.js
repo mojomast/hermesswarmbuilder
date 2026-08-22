@@ -1124,7 +1124,7 @@ class TemporalMissionController {
     this.selectedChamberIndex = selectedIndex >= 0 ? selectedIndex : Math.min(this.selectedChamberIndex, this.chambers.length - 1);
     if (!this.variants.some((variant) => variant.id === this.selectedVariantId)) this.selectedVariantId = this.variants[0]?.id || null;
     this.rebuildDataScene();
-    this.renderTopHud(); this.renderWaterfall(); this.selectChamber(this.selectedChamberIndex);
+    this.renderTopHud(); this.renderWaterfall(); this.selectChamber(this.selectedChamberIndex, { resetTab: false });
   }
 
   rebuildDataScene() {
@@ -1257,7 +1257,7 @@ class TemporalMissionController {
   // 8. NAVIGATION & CAMERA SCRUBBING
   // ==========================================
 
-  selectChamber(idx) {
+  selectChamber(idx, { resetTab = true } = {}) {
     this.selectedChamberIndex = Math.max(0, Math.min(idx, this.chambers.length - 1));
     const ch = this.chambers[this.selectedChamberIndex];
 
@@ -1271,8 +1271,8 @@ class TemporalMissionController {
       btn.classList.toggle("active", Math.abs(bZ - ch.z) < 20);
     });
 
-    // Highlight Stage Workspace tab as active
-    this.setActiveInspectorTab("stage-view");
+    if (resetTab) this.setActiveInspectorTab("stage-view");
+    else this.renderInspectorContent();
     this.renderWaterfall();
     this.scrubToZ(ch.z, true);
   }

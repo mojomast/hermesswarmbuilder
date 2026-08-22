@@ -1351,7 +1351,22 @@ class TemporalMissionController {
   }
 
   renderLiveInspector(ch) {
-    this.el.inspectorContent.innerHTML = renderTemporalMissionLiveMarkup(this.liveProjection, ch);
+    this.renderDynamicStageWorkspace(ch);
+    this.prependLiveStageActivity(ch);
+  }
+
+  prependLiveStageActivity(ch) {
+    const live = this.liveProjection, value = (item) => escapeHtml(item == null ? LIVE_EMPTY : String(item));
+    const stageDetail = ({
+      history: `Retained runs: ${value(live.historicalRuns?.length || 0)} · current run: <code>${value(live.identity.runId)}</code>`,
+      spec: `Plan <code>${value(live.identity.planId)}</code> · revision <code>${value(live.identity.revision)}</code> · approval <code>${value(live.identity.approvalId)}</code>`,
+      draft: `Current agent / task: ${value(live.progress.currentAgent)} / ${value(live.progress.currentTask)}`,
+      arena: `Observed variants: ${value(live.variants?.length || 0)} · run status: ${value(live.runStatus)}`,
+      eval: `Validation: ${value(live.progress.validation?.status)} · completed: ${value(live.progress.validation?.completedAt)}`,
+      synth: `Mashup / synthesis: ${value(live.progress.mashup?.status)} · artifacts: ${value(live.artifacts?.length || 0)}`,
+      gate: `Observed gates: ${value(live.gates?.length || 0)} · handoff: ${value(live.handoff?.state)}`
+    })[ch.id] || "No live stage evidence is available.";
+    this.el.inspectorContent.insertAdjacentHTML("afterbegin", `<div class="inspector-section live-stage-pulse"><div class="section-title"><span>Live Stage Pulse</span><span class="status-badge status-${ch.status}">${value(ch.name)}</span></div><div class="section-card">${stageDetail}</div></div>`);
   }
 
   async refreshProjectWorkspace(planId = this.project.selectedPlanId) {

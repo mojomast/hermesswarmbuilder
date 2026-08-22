@@ -418,6 +418,10 @@ class TemporalMissionController {
       btnResume: document.getElementById("btn-resume"),
       btnRunNow: document.getElementById("btn-run-now"),
       btnSteerModal: document.getElementById("btn-steer-modal"),
+      btnProjectMissionControl: document.getElementById("btn-project-mission-control"),
+      projectDrawer: document.getElementById("project-mission-drawer"),
+      projectDrawerContent: document.getElementById("project-mission-drawer-content"),
+      btnCloseProjectDrawer: document.getElementById("btn-close-project-mission-drawer"),
       steerDialog: document.getElementById("steer-dialog"),
       btnCloseSteerDialog: document.getElementById("btn-close-steer-dialog"),
       btnCancelSteer: document.getElementById("btn-cancel-steer"),
@@ -928,6 +932,8 @@ class TemporalMissionController {
     this.el.btnResume?.addEventListener("click", () => this.handleResumeAdmission());
     this.el.btnRunNow?.addEventListener("click", () => this.handleRunNow());
     this.el.btnSteerModal?.addEventListener("click", () => this.el.steerDialog?.showModal());
+    this.el.btnProjectMissionControl?.addEventListener("click", () => this.openProjectMissionControl());
+    this.el.btnCloseProjectDrawer?.addEventListener("click", () => this.el.projectDrawer?.close());
 
     this.el.btnCloseSteerDialog?.addEventListener("click", () => this.el.steerDialog?.close());
     this.el.btnCancelSteer?.addEventListener("click", () => this.el.steerDialog?.close());
@@ -944,6 +950,12 @@ class TemporalMissionController {
 
     this.canvas.addEventListener("pointermove", (e) => this.handlePointerMove(e));
     this.canvas.addEventListener("click", (e) => this.handleCanvasClick(e));
+  }
+
+  async openProjectMissionControl() {
+    await this.refreshProjectWorkspace(this.project.selectedPlanId);
+    this.renderProjectWorkspace();
+    this.el.projectDrawer?.showModal();
   }
 
   handlePointerMove(e) {
@@ -1274,7 +1286,7 @@ class TemporalMissionController {
   }
 
   renderLiveInspector(ch) {
-    this.renderProjectWorkspace();
+    this.el.inspectorContent.innerHTML = renderTemporalMissionLiveMarkup(this.liveProjection, ch);
   }
 
   async refreshProjectWorkspace(planId = this.project.selectedPlanId) {
@@ -1345,14 +1357,14 @@ class TemporalMissionController {
     const retained = this.retainedLineageIterations(detail);
     const selectedIteration = retained.find((item) => item.id === project.selectedIterationId) || retained[0];
     const canLineage = !!(ledger && revision && selectedIteration?.id && selectedIteration?.runId && revision.content?.repository?.baseRef);
-    this.el.inspectorContent.innerHTML = `<div class="inspector-section"><div class="section-title"><span>Project Mission Control</span><button id="btn-create-project" class="btn-hud btn-accent" ${disabled(true)}>Create Project</button><button id="btn-refresh-projects" class="btn-hud" ${disabled(true)}>Refresh live data</button></div>${status}<div class="section-card"><strong>All plans</strong><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${plans}</div></div></div>
+    this.el.projectDrawerContent.innerHTML = `<div class="inspector-section"><div class="section-title"><span>Project Mission Control</span><button id="btn-create-project" class="btn-hud btn-accent" ${disabled(true)}>Create Project</button><button id="btn-refresh-projects" class="btn-hud" ${disabled(true)}>Refresh live data</button></div>${status}<div class="section-card"><strong>All plans</strong><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${plans}</div></div></div>
       <div class="inspector-section"><div class="section-title">Persistent Plan Assistance Interview</div><div class="section-card"><label>Pipeline <select id="project-pipeline"><option value="classic">classic</option><option value="managed">managed</option></select></label> <button id="btn-start-assistance" class="btn-hud" ${disabled(true)}>Start interview</button><div>Conversation: ${esc(project.assistance?.id || "none")} · version ${esc(project.assistance?.version || "—")} · proposal ${proposal ? "ready" : "not ready"}</div><div>${conversations}</div></div><div>${messages}</div><form id="project-assistance-form"><textarea name="message" rows="3" ${disabled(!!project.assistance)} placeholder="Describe the proposal, scope, constraints, and acceptance gates."></textarea><button class="btn-hud btn-accent" ${disabled(!!project.assistance)}>Send to live planning conversation</button></form>${proposal ? `<button id="btn-create-proposal" class="btn-hud btn-success" ${disabled(true)}>Create devplan-ready draft from live proposal</button><pre>${esc(JSON.stringify(proposal, null, 2))}</pre>` : "<p>Safe next action: continue the interview until the server returns a valid proposal.</p>"}</div>
       <div class="inspector-section"><div class="section-title">Selected Plan · immutable ledger</div>${detail ? `<div class="section-card">Plan ${esc(ledger.planId)} · state ${esc(ledger.state)} · version ${esc(ledger.version)} · revision ${esc(ledger.currentRevision)} · digest <code>${esc(ledger.currentDigest)}</code></div><details><summary>Immutable revisions</summary><ul>${revisions}</ul>${project.inspectedRevision ? `<pre>${esc(JSON.stringify(project.inspectedRevision, null, 2))}</pre>` : ""}</details><details><summary>Approvals / rejections</summary><ul>${decisions}</ul></details><details><summary>Launch state</summary><ul>${launches}</ul></details><form id="project-update-form"><label>Draft content JSON<textarea name="content" rows="10" ${disabled(canEdit)}>${esc(JSON.stringify(revision.content, null, 2))}</textarea></label><button class="btn-hud" ${disabled(canEdit)}>Save new draft revision</button></form><label>Decision or withdrawal notes<textarea id="project-notes" rows="2" ${disabled(canReject || !!requestedLaunch)}></textarea></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button data-project-action="ready-for-review" class="btn-hud" ${disabled(canReview)}>Submit review</button><button data-project-action="approve" class="btn-hud btn-success" ${disabled(canApprove)}>Approve exact revision</button><button data-project-action="reject" class="btn-hud" ${disabled(canReject)}>Reject exact revision</button><button data-project-action="launch" class="btn-hud btn-accent" ${disabled(canLaunch)}>Launch exact approval</button><button data-project-action="withdraw-launch" class="btn-hud" ${disabled(!!requestedLaunch)}>Withdraw unclaimed requested launch</button><button data-project-action="archive" class="btn-hud" ${disabled(canArchive)}>Archive eligible plan</button></div><p>Safe next action: ${canEdit ? "edit the draft or submit it for review" : canReview ? "submit the exact draft revision for review" : canApprove ? "approve or reject the validated review revision" : canLaunch ? "launch the effective approval" : requestedLaunch ? "wait for claim, or withdraw the requested launch" : "inspect the immutable history"}.</p><div class="section-card"><strong>Continuation / fork from retained iteration</strong><select id="project-lineage-iteration" ${disabled(retained.length > 0)}>${retained.map((item) => `<option value="${esc(item.id)}" ${item.id === selectedIteration?.id ? "selected" : ""}>${esc(item.id)} · run ${esc(item.runId)}</option>`).join("")}</select><button data-project-action="clone" class="btn-hud" ${disabled(canLineage)}>Create continuation clone</button><button data-project-action="fork" class="btn-hud" ${disabled(canLineage)}>Create fork</button><p>${canLineage ? "Uses the exact selected plan revision/digest and retained run/iteration lineage." : "Disabled: a matching retained iteration, run ID, plan identity, and repository base ref are required."}</p></div>` : "<p>Select a live plan or create one from an assistance proposal.</p>"}</div>`;
     this.bindProjectWorkspaceEvents();
   }
 
   bindProjectWorkspaceEvents() {
-    const root = this.el.inspectorContent;
+    const root = this.el.projectDrawerContent;
     root.querySelector("#btn-refresh-projects")?.addEventListener("click", () => this.refreshProjectWorkspace());
     root.querySelector("#btn-create-project")?.addEventListener("click", () => root.querySelector("#project-pipeline")?.focus());
     root.querySelectorAll("[data-project-select]").forEach((button) => button.addEventListener("click", () => this.refreshProjectWorkspace(button.dataset.projectSelect)));

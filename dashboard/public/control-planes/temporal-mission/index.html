@@ -44,6 +44,7 @@
         <button id="btn-resume" class="btn-hud btn-success" title="Resume runner admission (Spec §6.3)">⏵ Resume</button>
         <button id="btn-run-now" class="btn-hud btn-accent" title="Request immediate runner admission tick (Spec §6.3)">⚡ Run Now</button>
         <button id="btn-steer-modal" class="btn-hud" title="Inject operator steering directive or deblock (Spec §9.2, §15.4)">🎯 Steer</button>
+        <button id="btn-project-mission-control" class="btn-hud btn-accent" title="Create, interview, and manage project plans">▣ Projects</button>
         <span id="stream-status-dot" class="stream-dot connected" title="Real-time SSE Stream Active" aria-label="SSE Connected"></span>
       </div>
     </div>
@@ -59,6 +60,19 @@
       <!-- Populated dynamically: Plan -> Rev -> Approval -> Launch -> Request -> Run -> Iteration -->
     </div>
   </header>
+
+  <dialog id="project-mission-drawer" class="project-mission-drawer" aria-labelledby="project-mission-drawer-title">
+    <section class="project-mission-drawer-card" aria-label="Project Mission Control">
+      <header class="project-mission-drawer-header">
+        <div>
+          <h2 id="project-mission-drawer-title">Project Mission Control</h2>
+          <p>Create a project, continue its planning interview, and manage exact plan lifecycle actions.</p>
+        </div>
+        <button id="btn-close-project-mission-drawer" class="btn-modal-close" aria-label="Close Project Mission Control">✕</button>
+      </header>
+      <div id="project-mission-drawer-content" class="project-mission-drawer-content" aria-live="polite"></div>
+    </section>
+  </dialog>
 
   <!-- Main 3D Longitudinal Workspace (WCAG 2.2 AA compliant) -->
   <main class="temporal-workspace" role="main" aria-label="3D Temporal Mission Workspace">

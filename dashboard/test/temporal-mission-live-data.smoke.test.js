@@ -111,6 +111,8 @@ test("Temporal Mission live-data contract resyncs fixture state instead of demo 
   expect(temporalSource).toContain('this.selectChamber(this.selectedChamberIndex, { resetTab: false });');
   expect(temporalSource).toContain('selectChamber(idx, { resetTab = true } = {})');
   expect(temporalSource).toContain('if (resetTab) this.setActiveInspectorTab("stage-view");');
+  expect(temporalSource).toContain("const stageFocus =");
+  expect(temporalSource).toContain("Stage-specific observed activity");
 
   expect(temporalSource).toContain("await this.client.resyncSnapshots()");
   expect(temporalSource).toContain("deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff)");

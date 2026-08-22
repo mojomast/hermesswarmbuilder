@@ -337,23 +337,34 @@ body {
 
 .mission-popup-drawer {
   position: fixed;
-  top: 78px;
-  right: 18px;
-  width: min(600px, calc(100vw - 36px));
-  max-height: min(78vh, 860px);
+  top: auto;
+  right: auto;
+  bottom: 92px;
+  left: 24px;
+  width: min(392px, calc(100vw - 48px));
+  max-height: min(390px, calc(100vh - 190px));
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(56, 189, 248, .48);
+  border: 1px solid rgba(56, 189, 248, .58);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  background: linear-gradient(145deg, rgba(10, 18, 33, .99), rgba(8, 13, 25, .99));
-  box-shadow: 0 26px 80px rgba(0, 0, 0, .76);
+  background: linear-gradient(145deg, rgba(8, 22, 36, .96), rgba(6, 12, 24, .96));
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .5), 0 0 0 1px rgba(56, 189, 248, .12) inset;
   overflow: hidden;
-  z-index: 42;
+  z-index: 24;
 }
-.mission-popup-drawer::backdrop { background: rgba(2, 6, 23, .58); backdrop-filter: blur(3px); }
-.mission-popup-card { display: flex; flex-direction: column; max-height: min(78vh, 860px); }
-.mission-popup-content { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; padding: 14px 18px 18px; }
+.mission-popup-drawer.docked-chat-window { border-left: 3px solid var(--color-active); }
+.mission-popup-card { display: flex; flex-direction: column; max-height: min(390px, calc(100vh - 190px)); }
+.mission-popup-content { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; padding: 12px 14px 14px; }
+.mission-dock-header { cursor: grab; user-select: none; padding: 10px 12px 9px; background: linear-gradient(90deg, rgba(56, 189, 248, .16), rgba(168, 85, 247, .05)); }
+.mission-dock-header:active { cursor: grabbing; }
+.docked-chat-label { display: block; margin-bottom: 3px; color: var(--color-active); font: 800 9px var(--font-mono); letter-spacing: .1em; }
+.dock-window-controls { display: flex; gap: 5px; }
+.docked-chat-window.minimized { width: min(300px, calc(100vw - 48px)); max-height: none; }
+.docked-chat-window.minimized .mission-popup-content { display: none; }
+.docked-chat-window.minimized .mission-popup-card { max-height: none; }
+.docked-chat-window.minimized .mission-dock-header p { display: none; }
+.docked-chat-window.minimized [data-dock-minimize] { color: var(--color-success); }
 .conversation-meta { font: 10px var(--font-mono); color: var(--text-muted); }
 .chat-transcript {
   display: flex;
@@ -387,8 +398,8 @@ body {
   .project-mission-drawer-card { max-height: calc(100vh - 16px); }
   .project-mission-drawer-header { padding: 12px; }
   .project-mission-drawer-content { gap: 12px; padding: 12px; }
-  .mission-popup-drawer { top: 8px; right: 8px; width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
-  .mission-popup-card { max-height: calc(100vh - 16px); }
+  .mission-popup-drawer { top: auto; right: auto; bottom: 8px; left: 8px; width: calc(100vw - 16px); max-height: min(52vh, calc(100vh - 96px)); }
+  .mission-popup-card { max-height: min(52vh, calc(100vh - 96px)); }
   .mission-popup-content { padding: 12px; }
   .chat-composer { grid-template-columns: 1fr; }
 }

@@ -387,6 +387,7 @@ class TemporalMissionController {
     this.initElements();
     this.initThreeScene();
     this.bindDOMEvents();
+    this.initializeDockedWindows();
     this.initApp();
   }
 
@@ -970,7 +971,51 @@ class TemporalMissionController {
   async openProjectMissionControl() {
     await this.refreshProjectWorkspace(this.project.selectedPlanId);
     this.renderProjectWorkspace();
-    this.el.projectDrawer?.showModal();
+    this.openDockedWindow(this.el.projectDrawer);
+  }
+
+  initializeDockedWindows() {
+    this.dockedWindows = [...document.querySelectorAll("[data-dock-window]")];
+    this.dockedWindows.forEach((window, index) => {
+      const id = window.dataset.dockWindow;
+      const saved = (() => { try { return JSON.parse(localStorage.getItem(`temporal-mission.dock.${id}`) || "null"); } catch { return null; } })();
+      if (saved?.left != null && saved?.top != null) {
+        window.style.left = `${saved.left}px`; window.style.top = `${saved.top}px`; window.style.right = "auto"; window.style.bottom = "auto"; window.style.transform = "none";
+        window.dataset.positioned = "true";
+      }
+      const minimize = window.querySelector("[data-dock-minimize]");
+      minimize?.addEventListener("click", () => {
+        const minimized = window.classList.toggle("minimized");
+        minimize.setAttribute("aria-expanded", String(!minimized));
+        minimize.textContent = minimized ? "+" : "—";
+      });
+      const handle = window.querySelector("[data-dock-drag-handle]");
+      handle?.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || event.target.closest("button")) return;
+        const rect = window.getBoundingClientRect(), offsetX = event.clientX - rect.left, offsetY = event.clientY - rect.top;
+        const move = (moveEvent) => {
+          const left = Math.max(8, Math.min(globalThis.innerWidth - rect.width - 8, moveEvent.clientX - offsetX));
+          const top = Math.max(8, Math.min(globalThis.innerHeight - Math.min(rect.height, 64) - 8, moveEvent.clientY - offsetY));
+          window.style.left = `${left}px`; window.style.top = `${top}px`; window.style.right = "auto"; window.style.bottom = "auto"; window.style.transform = "none"; window.dataset.positioned = "true";
+        };
+        const end = () => {
+              globalThis.removeEventListener("pointermove", move); globalThis.removeEventListener("pointerup", end);
+          try { localStorage.setItem(`temporal-mission.dock.${id}`, JSON.stringify({ left: parseFloat(window.style.left), top: parseFloat(window.style.top) })); } catch {}
+        };
+        globalThis.addEventListener("pointermove", move); globalThis.addEventListener("pointerup", end, { once: true });
+      });
+      window.dataset.dockIndex = String(index);
+    });
+  }
+
+  openDockedWindow(window) {
+    if (!window) return;
+    if (!window.open) window.show();
+    if (!window.dataset.positioned && window.dataset.dockIndex != null) window.style.bottom = `${92 + Number(window.dataset.dockIndex) * 30}px`;
+    window.classList.remove("minimized");
+    const minimize = window.querySelector("[data-dock-minimize]");
+    if (minimize) { minimize.setAttribute("aria-expanded", "true"); minimize.textContent = "—"; }
+    window.style.zIndex = String(26 + [...document.querySelectorAll("[data-dock-window]")].filter((item) => item.open).length);
   }
 
   handlePointerMove(e) {
@@ -1439,11 +1484,11 @@ class TemporalMissionController {
     try {
       if (conversationId) this.project.assistance = await this.client.getPlanAssistanceDetail(conversationId);
       this.renderPlanningInterview();
-      this.el.planningInterviewDrawer?.showModal();
+      this.openDockedWindow(this.el.planningInterviewDrawer);
     } catch (error) {
       this.project.error = error.message || String(error);
       this.renderPlanningInterview();
-      this.el.planningInterviewDrawer?.showModal();
+      this.openDockedWindow(this.el.planningInterviewDrawer);
     }
   }
 
@@ -1465,7 +1510,7 @@ class TemporalMissionController {
 
   openPlanningReview() {
     this.renderPlanningReview();
-    this.el.planningReviewDrawer?.showModal();
+    this.openDockedWindow(this.el.planningReviewDrawer);
   }
 
   renderPlanningReview() {
@@ -1483,7 +1528,7 @@ class TemporalMissionController {
       catch (error) { this.swarm.error = error.message || String(error); }
     }
     this.renderSwarmAgent();
-    this.el.swarmAgentDrawer?.showModal();
+    this.openDockedWindow(this.el.swarmAgentDrawer);
   }
 
   renderSwarmAgent() {

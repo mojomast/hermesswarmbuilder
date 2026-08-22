@@ -75,31 +75,31 @@
     </section>
   </dialog>
 
-  <dialog id="planning-interview-drawer" class="mission-popup-drawer" aria-labelledby="planning-interview-title">
+  <dialog id="planning-interview-drawer" class="mission-popup-drawer docked-chat-window" data-dock-window="planning-interview" aria-labelledby="planning-interview-title">
     <section class="mission-popup-card">
-      <header class="project-mission-drawer-header">
-        <div><h2 id="planning-interview-title">Planning Interview</h2><p>Build a proposal with the planning service. A proposal is not a project plan until you explicitly create its draft.</p></div>
-        <button id="btn-close-planning-interview" class="btn-modal-close" aria-label="Close Planning Interview">✕</button>
+      <header class="project-mission-drawer-header mission-dock-header" data-dock-drag-handle>
+        <div><span class="docked-chat-label">DOCKED CHAT · PLANNING</span><h2 id="planning-interview-title">Planning Interview</h2><p>Build a proposal with the planning service. A proposal is not a project plan until you explicitly create its draft.</p></div>
+        <div class="dock-window-controls"><button class="btn-modal-close" data-dock-minimize aria-label="Minimize Planning Interview" aria-expanded="true">—</button><button id="btn-close-planning-interview" class="btn-modal-close" aria-label="Close Planning Interview">✕</button></div>
       </header>
       <div id="planning-interview-content" class="mission-popup-content" aria-live="polite"></div>
     </section>
   </dialog>
 
-  <dialog id="planning-review-drawer" class="mission-popup-drawer" aria-labelledby="planning-review-title">
+  <dialog id="planning-review-drawer" class="mission-popup-drawer docked-chat-window" data-dock-window="planning-review" aria-labelledby="planning-review-title">
     <section class="mission-popup-card">
-      <header class="project-mission-drawer-header">
-        <div><h2 id="planning-review-title">Planning Review</h2><p>Review the server-proposed content before creating a durable draft through the project-plan API.</p></div>
-        <button id="btn-close-planning-review" class="btn-modal-close" aria-label="Close Planning Review">✕</button>
+      <header class="project-mission-drawer-header mission-dock-header" data-dock-drag-handle>
+        <div><span class="docked-chat-label">DOCKED CHAT · REVIEW</span><h2 id="planning-review-title">Planning Review</h2><p>Review the server-proposed content before creating a durable draft through the project-plan API.</p></div>
+        <div class="dock-window-controls"><button class="btn-modal-close" data-dock-minimize aria-label="Minimize Planning Review" aria-expanded="true">—</button><button id="btn-close-planning-review" class="btn-modal-close" aria-label="Close Planning Review">✕</button></div>
       </header>
       <div id="planning-review-content" class="mission-popup-content" aria-live="polite"></div>
     </section>
   </dialog>
 
-  <dialog id="swarm-agent-drawer" class="mission-popup-drawer" aria-labelledby="swarm-agent-title">
+  <dialog id="swarm-agent-drawer" class="mission-popup-drawer docked-chat-window" data-dock-window="swarm-agent" aria-labelledby="swarm-agent-title">
     <section class="mission-popup-card">
-      <header class="project-mission-drawer-header">
-        <div><h2 id="swarm-agent-title">Swarm Agent</h2><p>agent answers/control swarm only, cannot edit code/files</p></div>
-        <button id="btn-close-swarm-agent" class="btn-modal-close" aria-label="Close Swarm Agent">✕</button>
+      <header class="project-mission-drawer-header mission-dock-header" data-dock-drag-handle>
+        <div><span class="docked-chat-label">DOCKED CHAT · SWARM ONLY</span><h2 id="swarm-agent-title">Swarm Agent</h2><p>agent answers/control swarm only, cannot edit code/files</p></div>
+        <div class="dock-window-controls"><button class="btn-modal-close" data-dock-minimize aria-label="Minimize Swarm Agent" aria-expanded="true">—</button><button id="btn-close-swarm-agent" class="btn-modal-close" aria-label="Close Swarm Agent">✕</button></div>
       </header>
       <div id="swarm-agent-content" class="mission-popup-content" aria-live="polite"></div>
     </section>

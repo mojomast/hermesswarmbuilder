@@ -11,7 +11,7 @@ test("Temporal Mission project workspace uses live assistance and durable plan c
   expect(html).toContain('id="project-mission-drawer"');
   expect(html).toContain('id="project-mission-drawer-content"');
   expect(source).toContain("renderProjectWorkspace()");
-  expect(source).toContain("this.el.projectDrawer?.showModal()");
+  expect(source).toContain("this.openDockedWindow(this.el.projectDrawer)");
   expect(source).toContain("this.el.projectDrawerContent.innerHTML");
   expect(source).toContain("this.client.createPlanAssistance(pipelineType)");
   expect(source).toContain("this.client.sendPlanAssistanceMessage(assistance.id, assistance.version, message)");
@@ -33,7 +33,13 @@ test("Temporal Mission separates project management, planning interview/review, 
   expect(html).toContain('id="planning-interview-drawer"');
   expect(html).toContain('id="planning-review-drawer"');
   expect(html).toContain('id="swarm-agent-drawer"');
-  expect(source).toContain('["overview", "Overview"]');
+  expect(html).toContain('data-dock-window="planning-interview"');
+  expect(html).toContain('data-dock-window="planning-review"');
+  expect(html).toContain('data-dock-window="swarm-agent"');
+  expect(html).toContain('data-dock-minimize');
+  expect(source).toContain("openDockedWindow(");
+  expect(source).toContain("initializeDockedWindows()");
+  expect(source).toContain("window.show()");
   expect(source).toContain('["plans", "Plans"]');
   expect(source).toContain('["lifecycle", "Lifecycle"]');
   expect(source).toContain('["lineage", "Lineage"]');

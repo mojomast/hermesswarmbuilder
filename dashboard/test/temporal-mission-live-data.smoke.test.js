@@ -115,6 +115,8 @@ test("Temporal Mission live-data contract resyncs fixture state instead of demo 
   expect(temporalSource).toContain("Stage-specific observed activity");
   expect(temporalSource).toContain("this.renderDynamicStageWorkspace(ch);");
   expect(temporalSource).toContain("prependLiveStageActivity(ch);");
+  expect(temporalSource).toContain("if (!selectedVariant)");
+  expect(temporalSource).toContain("if (!winner)");
 
   expect(temporalSource).toContain("await this.client.resyncSnapshots()");
   expect(temporalSource).toContain("deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff)");

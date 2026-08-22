@@ -1970,6 +1970,10 @@ class TemporalMissionController {
    */
   renderVariantsAndDiffsView() {
     const selectedVariant = this.variants.find(v => v.id === this.selectedVariantId) || this.variants[0];
+    if (!selectedVariant) {
+      this.el.inspectorContent.innerHTML = `<div class="inspector-section"><div class="section-title">Variants & Diffs</div><div class="section-card"><strong>No variant artifact is available yet.</strong><p>Variant evidence appears after a generator writes its run-local artifact. The current run may still be preparing, blocked before evidence, or have no retained variant output.</p></div></div>`;
+      return;
+    }
     const lineDiff = computeLineDiff(selectedVariant.diffOld, selectedVariant.diffNew);
 
     const diffHtml = lineDiff.map(d => `
@@ -2070,6 +2074,10 @@ class TemporalMissionController {
    */
   renderSynthesisView() {
     const winner = this.variants.find(v => v.isWinner) || this.variants[0];
+    if (!winner) {
+      this.el.inspectorContent.innerHTML = `<div class="inspector-section"><div class="section-title">Synthesis & Features</div><div class="section-card"><strong>No synthesis candidate is available yet.</strong><p>Synthesis becomes available after at least one evaluated variant is retained. The current run has not produced eligible variant evidence.</p></div></div>`;
+      return;
+    }
 
     this.el.inspectorContent.innerHTML = `
       <div class="inspector-section">

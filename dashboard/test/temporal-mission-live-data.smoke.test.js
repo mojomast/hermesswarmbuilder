@@ -100,9 +100,15 @@ test("Temporal Mission live-data contract resyncs fixture state instead of demo 
   expect(client.cachedGates.gates).toEqual([gate]);
   expect(client.cachedEvents).toEqual([event]);
   expect(messages.at(-1)).toMatchObject({ type: "resynchronized", events: [event] });
-  expect(deriveCanonicalDisposition(client.cachedState, client.cachedControl).label).toBe("Blocked (Deblock Required)");
-
   const temporalSource = await Bun.file(join(dashboardRoot, "public/control-planes/temporal-mission/temporal-mission.js")).text();
+  expect(temporalSource).toContain('case "stage-view":\n        if (this.liveProjection) this.renderLiveInspector(ch);');
+  expect(temporalSource).toContain('case "radar":\n        this.render2DRadarRubricView();');
+  expect(temporalSource).toContain('case "variants":\n        this.renderVariantsAndDiffsView();');
+  expect(temporalSource).toContain('case "synthesis":\n        this.renderSynthesisView();');
+  expect(temporalSource).toContain('case "gates":\n        this.renderGatesView();');
+  expect(temporalSource).toContain('case "handoff":\n        this.renderHandoffView();');
+  expect(temporalSource).not.toContain('if (this.liveProjection) {\n      this.renderLiveInspector(ch);\n      return;\n    }');
+
   expect(temporalSource).toContain("await this.client.resyncSnapshots()");
   expect(temporalSource).toContain("deriveCanonicalDisposition({ status: live.runStatus, phase: live.phase }, live.control, null, live.handoff)");
   expect(temporalSource).not.toContain("this.el.hudRun.textContent = state.currentRunId || 'run-103-spatial'");

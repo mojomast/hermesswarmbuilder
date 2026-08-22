@@ -1314,15 +1314,10 @@ class TemporalMissionController {
 
   renderInspectorContent() {
     const ch = this.chambers[this.selectedChamberIndex];
-
-    if (this.liveProjection) {
-      this.renderLiveInspector(ch);
-      return;
-    }
-
     switch (this.activeInspectorTab) {
       case "stage-view":
-        this.renderDynamicStageWorkspace(ch);
+        if (this.liveProjection) this.renderLiveInspector(ch);
+        else this.renderDynamicStageWorkspace(ch);
         break;
       case "radar":
         this.render2DRadarRubricView();
@@ -1340,7 +1335,8 @@ class TemporalMissionController {
         this.renderHandoffView();
         break;
       default:
-        this.renderDynamicStageWorkspace(ch);
+        if (this.liveProjection) this.renderLiveInspector(ch);
+        else this.renderDynamicStageWorkspace(ch);
         break;
     }
   }

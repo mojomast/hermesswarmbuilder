@@ -44,7 +44,8 @@
         <button id="btn-resume" class="btn-hud btn-success" title="Resume runner admission (Spec §6.3)">⏵ Resume</button>
         <button id="btn-run-now" class="btn-hud btn-accent" title="Request immediate runner admission tick (Spec §6.3)">⚡ Run Now</button>
         <button id="btn-steer-modal" class="btn-hud" title="Inject operator steering directive or deblock (Spec §9.2, §15.4)">🎯 Steer</button>
-        <button id="btn-project-mission-control" class="btn-hud btn-accent" title="Create, interview, and manage project plans">▣ Projects</button>
+        <button id="btn-project-mission-control" class="btn-hud btn-accent" title="View and manage project plans">▣ Projects</button>
+        <button id="btn-swarm-agent" class="btn-hud" title="Ask or steer the swarm agent">◉ Swarm Agent</button>
         <span id="stream-status-dot" class="stream-dot connected" title="Real-time SSE Stream Active" aria-label="SSE Connected"></span>
       </div>
     </div>
@@ -66,11 +67,41 @@
       <header class="project-mission-drawer-header">
         <div>
           <h2 id="project-mission-drawer-title">Project Mission Control</h2>
-          <p>Create a project, continue its planning interview, and manage exact plan lifecycle actions.</p>
+          <p>Project overview and lifecycle management. Planning conversations open in their own workspace.</p>
         </div>
         <button id="btn-close-project-mission-drawer" class="btn-modal-close" aria-label="Close Project Mission Control">✕</button>
       </header>
       <div id="project-mission-drawer-content" class="project-mission-drawer-content" aria-live="polite"></div>
+    </section>
+  </dialog>
+
+  <dialog id="planning-interview-drawer" class="mission-popup-drawer" aria-labelledby="planning-interview-title">
+    <section class="mission-popup-card">
+      <header class="project-mission-drawer-header">
+        <div><h2 id="planning-interview-title">Planning Interview</h2><p>Build a proposal with the planning service. A proposal is not a project plan until you explicitly create its draft.</p></div>
+        <button id="btn-close-planning-interview" class="btn-modal-close" aria-label="Close Planning Interview">✕</button>
+      </header>
+      <div id="planning-interview-content" class="mission-popup-content" aria-live="polite"></div>
+    </section>
+  </dialog>
+
+  <dialog id="planning-review-drawer" class="mission-popup-drawer" aria-labelledby="planning-review-title">
+    <section class="mission-popup-card">
+      <header class="project-mission-drawer-header">
+        <div><h2 id="planning-review-title">Planning Review</h2><p>Review the server-proposed content before creating a durable draft through the project-plan API.</p></div>
+        <button id="btn-close-planning-review" class="btn-modal-close" aria-label="Close Planning Review">✕</button>
+      </header>
+      <div id="planning-review-content" class="mission-popup-content" aria-live="polite"></div>
+    </section>
+  </dialog>
+
+  <dialog id="swarm-agent-drawer" class="mission-popup-drawer" aria-labelledby="swarm-agent-title">
+    <section class="mission-popup-card">
+      <header class="project-mission-drawer-header">
+        <div><h2 id="swarm-agent-title">Swarm Agent</h2><p>agent answers/control swarm only, cannot edit code/files</p></div>
+        <button id="btn-close-swarm-agent" class="btn-modal-close" aria-label="Close Swarm Agent">✕</button>
+      </header>
+      <div id="swarm-agent-content" class="mission-popup-content" aria-live="polite"></div>
     </section>
   </dialog>
 

@@ -24,3 +24,30 @@ test("Temporal Mission project workspace uses live assistance and durable plan c
   expect(source).not.toContain('alert("Continuation plan draft created in state/project-plans/.")');
   expect(source).not.toContain('alert("Fork draft plan created in state/project-plans/.")');
 });
+
+test("Temporal Mission separates project management, planning interview/review, and swarm agent drawers", async () => {
+  const source = await Bun.file(join(dashboardRoot, "public/control-planes/temporal-mission/temporal-mission.js")).text();
+  const html = await Bun.file(join(dashboardRoot, "public/control-planes/temporal-mission/index.html")).text();
+
+  expect(html).toContain('id="btn-swarm-agent"');
+  expect(html).toContain('id="planning-interview-drawer"');
+  expect(html).toContain('id="planning-review-drawer"');
+  expect(html).toContain('id="swarm-agent-drawer"');
+  expect(source).toContain('["overview", "Overview"]');
+  expect(source).toContain('["plans", "Plans"]');
+  expect(source).toContain('["lifecycle", "Lifecycle"]');
+  expect(source).toContain('["lineage", "Lineage"]');
+  expect(html).toContain('agent answers/control swarm only, cannot edit code/files');
+
+  expect(source).toContain("openPlanningInterview(");
+  expect(source).toContain("openPlanningReview(");
+  expect(source).toContain("openSwarmAgent(");
+  expect(source).toContain("this.client.createSwarmAgentSession(");
+  expect(source).toContain("this.client.getSwarmAgentSession(");
+  expect(source).toContain("this.client.sendSwarmAgentMessage(");
+  expect(source).toContain("this.client.executeSwarmAgentAction(");
+  expect(source).toContain("Continue to Plan Review");
+  expect(source).toContain("Create draft from proposed plan");
+  expect(source).toContain("Confirm action");
+  expect(source).not.toContain("Create devplan-ready draft from live proposal");
+});

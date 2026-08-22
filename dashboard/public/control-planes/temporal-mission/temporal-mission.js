@@ -359,7 +359,8 @@ class TemporalMissionController {
     this.historicalRuns = this.liveProjection.historicalRuns;
     this.gates = this.liveProjection.gates;
     this.criteriaWeights = { ...DEFAULT_CRITERIA_WEIGHTS };
-    this.project = { plans: [], selectedPlanId: null, detail: null, assistance: null, assistanceList: [], inspectedRevision: null, selectedIterationId: null, busy: false, notice: "Load live project plans to begin.", error: "" };
+    this.project = { plans: [], selectedPlanId: null, detail: null, assistance: null, assistanceList: [], inspectedRevision: null, selectedIterationId: null, activeTab: "overview", busy: false, notice: "Load live project plans to begin.", error: "" };
+    this.swarm = { session: null, busy: false, error: "", notice: "Open a session to ask or steer the swarm.", pendingAction: null };
     
     this.selectedChamberIndex = 3; // Default to Chamber 3: Variant Exploration Arena (Z=0)
     this.selectedVariantId = null;
@@ -419,9 +420,19 @@ class TemporalMissionController {
       btnRunNow: document.getElementById("btn-run-now"),
       btnSteerModal: document.getElementById("btn-steer-modal"),
       btnProjectMissionControl: document.getElementById("btn-project-mission-control"),
+      btnSwarmAgent: document.getElementById("btn-swarm-agent"),
       projectDrawer: document.getElementById("project-mission-drawer"),
       projectDrawerContent: document.getElementById("project-mission-drawer-content"),
       btnCloseProjectDrawer: document.getElementById("btn-close-project-mission-drawer"),
+      planningInterviewDrawer: document.getElementById("planning-interview-drawer"),
+      planningInterviewContent: document.getElementById("planning-interview-content"),
+      btnClosePlanningInterview: document.getElementById("btn-close-planning-interview"),
+      planningReviewDrawer: document.getElementById("planning-review-drawer"),
+      planningReviewContent: document.getElementById("planning-review-content"),
+      btnClosePlanningReview: document.getElementById("btn-close-planning-review"),
+      swarmAgentDrawer: document.getElementById("swarm-agent-drawer"),
+      swarmAgentContent: document.getElementById("swarm-agent-content"),
+      btnCloseSwarmAgent: document.getElementById("btn-close-swarm-agent"),
       steerDialog: document.getElementById("steer-dialog"),
       btnCloseSteerDialog: document.getElementById("btn-close-steer-dialog"),
       btnCancelSteer: document.getElementById("btn-cancel-steer"),
@@ -934,6 +945,10 @@ class TemporalMissionController {
     this.el.btnSteerModal?.addEventListener("click", () => this.el.steerDialog?.showModal());
     this.el.btnProjectMissionControl?.addEventListener("click", () => this.openProjectMissionControl());
     this.el.btnCloseProjectDrawer?.addEventListener("click", () => this.el.projectDrawer?.close());
+    this.el.btnSwarmAgent?.addEventListener("click", () => this.openSwarmAgent());
+    this.el.btnClosePlanningInterview?.addEventListener("click", () => this.el.planningInterviewDrawer?.close());
+    this.el.btnClosePlanningReview?.addEventListener("click", () => this.el.planningReviewDrawer?.close());
+    this.el.btnCloseSwarmAgent?.addEventListener("click", () => this.el.swarmAgentDrawer?.close());
 
     this.el.btnCloseSteerDialog?.addEventListener("click", () => this.el.steerDialog?.close());
     this.el.btnCancelSteer?.addEventListener("click", () => this.el.steerDialog?.close());
@@ -1358,7 +1373,7 @@ class TemporalMissionController {
     const selectedIteration = retained.find((item) => item.id === project.selectedIterationId) || retained[0];
     const canLineage = !!(ledger && revision && selectedIteration?.id && selectedIteration?.runId && revision.content?.repository?.baseRef);
     this.el.projectDrawerContent.innerHTML = `<div class="inspector-section"><div class="section-title"><span>Project Mission Control</span><button id="btn-create-project" class="btn-hud btn-accent" ${disabled(true)}>Create Project</button><button id="btn-refresh-projects" class="btn-hud" ${disabled(true)}>Refresh live data</button></div>${status}<div class="section-card"><strong>All plans</strong><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${plans}</div></div></div>
-      <div class="inspector-section"><div class="section-title">Persistent Plan Assistance Interview</div><div class="section-card"><label>Pipeline <select id="project-pipeline"><option value="classic">classic</option><option value="managed">managed</option></select></label> <button id="btn-start-assistance" class="btn-hud" ${disabled(true)}>Start interview</button><div>Conversation: ${esc(project.assistance?.id || "none")} · version ${esc(project.assistance?.version || "—")} · proposal ${proposal ? "ready" : "not ready"}</div><div>${conversations}</div></div><div>${messages}</div><form id="project-assistance-form"><textarea name="message" rows="3" ${disabled(!!project.assistance)} placeholder="Describe the proposal, scope, constraints, and acceptance gates."></textarea><button class="btn-hud btn-accent" ${disabled(!!project.assistance)}>Send to live planning conversation</button></form>${proposal ? `<button id="btn-create-proposal" class="btn-hud btn-success" ${disabled(true)}>Create devplan-ready draft from live proposal</button><pre>${esc(JSON.stringify(proposal, null, 2))}</pre>` : "<p>Safe next action: continue the interview until the server returns a valid proposal.</p>"}</div>
+      <div class="inspector-section"><div class="section-title">Planning workspace</div><div class="section-card">Planning interviews are available in the dedicated Planning Interview drawer.</div></div>
       <div class="inspector-section"><div class="section-title">Selected Plan · immutable ledger</div>${detail ? `<div class="section-card">Plan ${esc(ledger.planId)} · state ${esc(ledger.state)} · version ${esc(ledger.version)} · revision ${esc(ledger.currentRevision)} · digest <code>${esc(ledger.currentDigest)}</code></div><details><summary>Immutable revisions</summary><ul>${revisions}</ul>${project.inspectedRevision ? `<pre>${esc(JSON.stringify(project.inspectedRevision, null, 2))}</pre>` : ""}</details><details><summary>Approvals / rejections</summary><ul>${decisions}</ul></details><details><summary>Launch state</summary><ul>${launches}</ul></details><form id="project-update-form"><label>Draft content JSON<textarea name="content" rows="10" ${disabled(canEdit)}>${esc(JSON.stringify(revision.content, null, 2))}</textarea></label><button class="btn-hud" ${disabled(canEdit)}>Save new draft revision</button></form><label>Decision or withdrawal notes<textarea id="project-notes" rows="2" ${disabled(canReject || !!requestedLaunch)}></textarea></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button data-project-action="ready-for-review" class="btn-hud" ${disabled(canReview)}>Submit review</button><button data-project-action="approve" class="btn-hud btn-success" ${disabled(canApprove)}>Approve exact revision</button><button data-project-action="reject" class="btn-hud" ${disabled(canReject)}>Reject exact revision</button><button data-project-action="launch" class="btn-hud btn-accent" ${disabled(canLaunch)}>Launch exact approval</button><button data-project-action="withdraw-launch" class="btn-hud" ${disabled(!!requestedLaunch)}>Withdraw unclaimed requested launch</button><button data-project-action="archive" class="btn-hud" ${disabled(canArchive)}>Archive eligible plan</button></div><p>Safe next action: ${canEdit ? "edit the draft or submit it for review" : canReview ? "submit the exact draft revision for review" : canApprove ? "approve or reject the validated review revision" : canLaunch ? "launch the effective approval" : requestedLaunch ? "wait for claim, or withdraw the requested launch" : "inspect the immutable history"}.</p><div class="section-card"><strong>Continuation / fork from retained iteration</strong><select id="project-lineage-iteration" ${disabled(retained.length > 0)}>${retained.map((item) => `<option value="${esc(item.id)}" ${item.id === selectedIteration?.id ? "selected" : ""}>${esc(item.id)} · run ${esc(item.runId)}</option>`).join("")}</select><button data-project-action="clone" class="btn-hud" ${disabled(canLineage)}>Create continuation clone</button><button data-project-action="fork" class="btn-hud" ${disabled(canLineage)}>Create fork</button><p>${canLineage ? "Uses the exact selected plan revision/digest and retained run/iteration lineage." : "Disabled: a matching retained iteration, run ID, plan identity, and repository base ref are required."}</p></div>` : "<p>Select a live plan or create one from an assistance proposal.</p>"}</div>`;
     this.bindProjectWorkspaceEvents();
   }
@@ -1385,6 +1400,110 @@ class TemporalMissionController {
       this.project.selectedPlanId = result.planId || this.project.selectedPlanId; this.project.notice = `${action} was accepted by the live project-plan API.`;
     })));
     root.querySelectorAll("[data-project-revision]").forEach((button) => button.addEventListener("click", () => this.runProjectOperation(async () => { const item = await this.client.getPlanRevision(this.project.detail.ledger.planId, Number(button.dataset.projectRevision)); this.project.inspectedRevision = item; this.project.notice = `Loaded immutable revision ${item.revision} with digest ${item.contentDigest}.`; })));
+  }
+
+  renderProjectWorkspace() {
+    const { detail, plans, assistanceList, activeTab, busy, error, notice } = this.project;
+    const ledger = detail?.ledger, revision = detail?.revision;
+    const esc = (value) => escapeHtml(value == null ? "—" : String(value));
+    const status = error ? `<div class="mission-notice error" role="alert">${esc(error)}</div>` : `<div class="mission-notice" role="status">${esc(notice)}</div>`;
+    const tabs = [["overview", "Overview"], ["plans", "Plans"], ["lifecycle", "Lifecycle"], ["lineage", "Lineage"]]
+      .map(([id, label]) => `<button class="project-tab ${activeTab === id ? "active" : ""}" data-project-tab="${id}" role="tab" aria-selected="${activeTab === id}">${label}</button>`).join("");
+    const planButtons = plans.length ? plans.map((plan) => `<button class="btn-hud" data-project-select="${esc(plan.planId)}">${esc(plan.title || plan.planId)} · ${esc(plan.state)} · v${esc(plan.version)}</button>`).join("") : "No live project plans.";
+    const conversations = assistanceList.length ? assistanceList.map((item) => `<button class="btn-hud" data-assistance-select="${esc(item.id)}">Continue interview · ${esc(item.id)} · ${esc(item.pipelineType)} · v${esc(item.version)} · ${item.hasProposal ? "proposal available" : "in progress"}</button>`).join("") : "No persisted planning interviews.";
+    const planSummary = ledger ? `<div class="project-summary"><strong>${esc(ledger.planId)}</strong><span>${esc(ledger.state)} · v${esc(ledger.version)} · revision ${esc(ledger.currentRevision)}</span><code>${esc(ledger.currentDigest)}</code></div>` : "No plan selected.";
+    const canReview = ledger?.state === "draft", canApprove = ledger?.state === "ready-for-review" && ledger.validation?.valid, canLaunch = ledger?.state === "approved" && ledger.effectiveApprovalId;
+    const lifecycle = ledger ? `<div class="project-summary">${planSummary}<div class="mission-action-row"><button class="btn-hud" data-project-action="ready-for-review" ${canReview && !busy ? "" : "disabled"}>Submit review</button><button class="btn-hud btn-success" data-project-action="approve" ${canApprove && !busy ? "" : "disabled"}>Approve exact revision</button><button class="btn-hud btn-accent" data-project-action="launch" ${canLaunch && !busy ? "" : "disabled"}>Launch exact approval</button></div><p>Lifecycle actions use the live project-plan API and exact ledger version.</p></div>` : "Select a plan to manage its lifecycle.";
+    const lineage = detail ? `<div class="project-summary"><strong>Immutable revisions</strong><ul>${(detail.revisions || []).map((item) => `<li>Revision ${esc(item.revision)} · <code>${esc(item.contentDigest)}</code></li>`).join("") || "<li>No revisions loaded.</li>"}</ul><strong>Launch records</strong><ul>${(detail.launches || []).map((item) => `<li>${esc(item.status)} · ${esc(item.launchId)} · run ${esc(item.runId)}</li>`).join("") || "<li>No launch records.</li>"}</ul></div>` : "Select a plan to inspect lineage.";
+    const content = activeTab === "overview" ? `<div class="project-summary"><strong>Project portfolio</strong><p>Open planning separately so project management stays focused and the live run inspector is untouched.</p><div class="mission-action-row"><button id="btn-open-planning" class="btn-hud btn-accent" ${busy ? "disabled" : ""}>New Planning Interview</button><button id="btn-refresh-projects" class="btn-hud" ${busy ? "disabled" : ""}>Refresh</button></div></div>${planSummary}` : activeTab === "plans" ? `<div class="project-summary"><strong>Project plans</strong><div class="mission-action-row">${planButtons}</div></div><div class="project-summary"><strong>Planning interviews</strong><div class="mission-action-row">${conversations}</div></div>` : activeTab === "lifecycle" ? lifecycle : lineage;
+    this.el.projectDrawerContent.innerHTML = `<nav class="project-tab-nav" role="tablist" aria-label="Project Mission Control tabs">${tabs}</nav>${status}${content}`;
+    this.bindProjectWorkspaceEvents();
+  }
+
+  bindProjectWorkspaceEvents() {
+    const root = this.el.projectDrawerContent;
+    root.querySelectorAll("[data-project-tab]").forEach((button) => button.addEventListener("click", () => { this.project.activeTab = button.dataset.projectTab; this.renderProjectWorkspace(); }));
+    root.querySelector("#btn-refresh-projects")?.addEventListener("click", () => this.refreshProjectWorkspace());
+    root.querySelector("#btn-open-planning")?.addEventListener("click", () => this.openPlanningInterview());
+    root.querySelectorAll("[data-project-select]").forEach((button) => button.addEventListener("click", () => this.refreshProjectWorkspace(button.dataset.projectSelect)));
+    root.querySelectorAll("[data-assistance-select]").forEach((button) => button.addEventListener("click", () => this.openPlanningInterview(button.dataset.assistanceSelect)));
+    root.querySelectorAll("[data-project-action]").forEach((button) => button.addEventListener("click", () => this.runProjectOperation(async () => {
+      const ledger = this.project.detail.ledger, action = button.dataset.projectAction;
+      await this.client.dispatchPlanCommand(action, { planId: ledger.planId, revision: ledger.currentRevision, planDigest: ledger.currentDigest }, ledger.version);
+      this.project.notice = `${action} was accepted by the live project-plan API.`;
+    })));
+  }
+
+  async openPlanningInterview(conversationId = null) {
+    this.project.error = "";
+    try {
+      if (conversationId) this.project.assistance = await this.client.getPlanAssistanceDetail(conversationId);
+      this.renderPlanningInterview();
+      this.el.planningInterviewDrawer?.showModal();
+    } catch (error) {
+      this.project.error = error.message || String(error);
+      this.renderPlanningInterview();
+      this.el.planningInterviewDrawer?.showModal();
+    }
+  }
+
+  renderPlanningInterview() {
+    const assistance = this.project.assistance, esc = (value) => escapeHtml(value == null ? "—" : String(value));
+    const messages = assistance?.messages?.length ? assistance.messages.map((message) => `<article class="chat-bubble ${esc(message.role).toLowerCase() === "user" ? "user" : "assistant"}"><strong>${esc(message.role)}</strong><div>${sanitizeMarkdownToHtml(message.content || "")}</div></article>`).join("") : `<div class="mission-empty">Choose classic or managed to start a new interview, or open an existing conversation from Projects → Plans.</div>`;
+    const review = assistance?.proposedContent ? `<button id="btn-open-planning-review" class="btn-hud btn-success">Continue to Plan Review</button>` : "";
+    const status = this.project.error ? `<div class="mission-notice error" role="alert">${esc(this.project.error)}</div>` : "";
+    this.el.planningInterviewContent.innerHTML = `${status}<div class="conversation-meta">Conversation <code>${esc(assistance?.id)}</code> · version ${esc(assistance?.version)} · status ${esc(assistance?.status || (assistance ? "active" : "not started"))}</div><div class="mission-action-row"><select id="planning-pipeline" ${assistance ? "disabled" : ""}><option value="classic">Classic</option><option value="managed">Managed</option></select><button id="btn-start-assistance" class="btn-hud" ${assistance ? "disabled" : ""}>Start new interview</button>${review}</div><div class="chat-transcript">${messages}</div><form id="planning-composer" class="chat-composer"><textarea name="message" rows="3" ${assistance ? "" : "disabled"} placeholder="Describe scope, constraints, and acceptance gates."></textarea><button class="btn-hud btn-accent" ${assistance ? "" : "disabled"}>Send</button></form>`;
+    const root = this.el.planningInterviewContent;
+    root.querySelector("#btn-start-assistance")?.addEventListener("click", () => this.runProjectOperation(async () => { this.project.assistance = await this.client.createPlanAssistance(root.querySelector("#planning-pipeline").value); this.project.notice = "Planning interview started; continue with the live service."; this.renderPlanningInterview(); }));
+    root.querySelector("#planning-composer")?.addEventListener("submit", (event) => { event.preventDefault(); const message = new FormData(event.currentTarget).get("message")?.trim(); if (!message || !this.project.assistance) return; this.runProjectOperation(async () => { const item = this.project.assistance; this.project.assistance = await this.client.sendPlanAssistanceMessage(item.id, item.version, message); this.project.notice = "Received the live planning response."; this.renderPlanningInterview(); }); });
+    root.querySelector("#btn-open-planning-review")?.addEventListener("click", () => this.openPlanningReview());
+  }
+
+  normalizeProposedPlan(proposedContent) {
+    return JSON.stringify(proposedContent || {}, null, 2);
+  }
+
+  openPlanningReview() {
+    this.renderPlanningReview();
+    this.el.planningReviewDrawer?.showModal();
+  }
+
+  renderPlanningReview() {
+    const assistance = this.project.assistance, proposal = assistance?.proposedContent, esc = (value) => escapeHtml(value == null ? "" : String(value));
+    const unavailable = !proposal ? `<div class="mission-notice error" role="alert">No server-proposed content is available for review.</div>` : `<p>This is read-only proposed content. No project plan exists until the project-plan API confirms draft creation.</p><pre class="proposal-preview">${esc(this.normalizeProposedPlan(proposal))}</pre><button id="btn-create-proposal" class="btn-hud btn-accent">Create draft from proposed plan</button>`;
+    this.el.planningReviewContent.innerHTML = `<div class="conversation-meta">Conversation <code>${esc(assistance?.id)}</code> · version ${esc(assistance?.version)} · status ${esc(assistance?.status || "proposal ready")}</div>${unavailable}`;
+    this.el.planningReviewContent.querySelector("#btn-create-proposal")?.addEventListener("click", () => this.runProjectOperation(async () => { const result = await this.client.createPlan(this.project.assistance.proposedContent); this.project.selectedPlanId = result.planId; this.project.notice = `Draft ${result.planId} was created by the project-plan API.`; this.el.planningReviewDrawer?.close(); }));
+  }
+
+  async openSwarmAgent() {
+    this.swarm.error = "";
+    if (typeof this.client.createSwarmAgentSession !== "function") this.swarm.error = "Swarm Agent is unavailable on this control-plane client.";
+    else if (this.swarm.session?.id && typeof this.client.getSwarmAgentSession === "function") {
+      try { this.swarm.session = await this.client.getSwarmAgentSession(this.swarm.session.id); }
+      catch (error) { this.swarm.error = error.message || String(error); }
+    }
+    this.renderSwarmAgent();
+    this.el.swarmAgentDrawer?.showModal();
+  }
+
+  renderSwarmAgent() {
+    const session = this.swarm.session, available = typeof this.client.createSwarmAgentSession === "function", esc = (value) => escapeHtml(value == null ? "—" : String(value));
+    const messages = session?.messages?.length ? session.messages.map((message) => `<article class="chat-bubble ${esc(message.role).toLowerCase() === "user" ? "user" : "assistant"}"><strong>${esc(message.role)}</strong><div>${sanitizeMarkdownToHtml(message.content || "")}</div></article>`).join("") : `<div class="mission-empty">Start a session to ask questions or propose bounded swarm steering.</div>`;
+    const actions = (session?.actions || session?.actionCards || []).map((action, index) => `<article class="swarm-action-card"><strong>${esc(action.title || action.type || "Proposed swarm action")}</strong><p>${esc(action.description || action.summary)}</p><button class="btn-hud" data-swarm-action="${esc(action.id || index)}">Review action</button></article>`).join("");
+    this.el.swarmAgentContent.innerHTML = `${this.swarm.error ? `<div class="mission-notice error" role="alert">${esc(this.swarm.error)}</div>` : `<div class="mission-notice" role="status">${esc(this.swarm.notice)}</div>`}<p class="scope-note">Scope: agent answers/control swarm only, cannot edit code/files.</p><div class="conversation-meta">Session <code>${esc(session?.id)}</code> · version ${esc(session?.version)} · status ${esc(session?.status || "not started")}</div><div class="mission-action-row"><button id="btn-start-swarm-session" class="btn-hud btn-accent" ${this.swarm.busy || session || !available ? "disabled" : ""}>Start swarm session</button></div><div class="chat-transcript">${messages}</div><form id="swarm-composer" class="chat-composer"><textarea name="message" rows="3" ${session ? "" : "disabled"} placeholder="Ask the swarm or propose steering."></textarea><button class="btn-hud btn-accent" ${session ? "" : "disabled"}>Send</button></form><div class="swarm-actions">${actions}</div>`;
+    const root = this.el.swarmAgentContent;
+    root.querySelector("#btn-start-swarm-session")?.addEventListener("click", () => this.runSwarmOperation(async () => { this.swarm.session = await this.client.createSwarmAgentSession(); this.swarm.notice = "Swarm session opened."; }));
+    root.querySelector("#swarm-composer")?.addEventListener("submit", (event) => { event.preventDefault(); const message = new FormData(event.currentTarget).get("message")?.trim(); if (!message || !this.swarm.session) return; this.runSwarmOperation(async () => { const current = this.swarm.session; this.swarm.session = await this.client.sendSwarmAgentMessage(current.id, current.version, message); this.swarm.notice = "Swarm response received."; }); });
+    root.querySelectorAll("[data-swarm-action]").forEach((button) => button.addEventListener("click", () => { this.swarm.pendingAction = button.dataset.swarmAction; this.renderSwarmAgent(); }));
+    if (this.swarm.pendingAction) root.insertAdjacentHTML("beforeend", `<div class="mission-notice">Action selected. <button id="btn-execute-swarm-action" class="btn-hud btn-warning">Confirm action</button></div>`);
+    root.querySelector("#btn-execute-swarm-action")?.addEventListener("click", () => this.runSwarmOperation(async () => { const current = this.swarm.session; this.swarm.session = await this.client.executeSwarmAgentAction(current.id, current.version, this.swarm.pendingAction); this.swarm.pendingAction = null; this.swarm.notice = "Swarm action execution was requested."; }));
+  }
+
+  async runSwarmOperation(operation) {
+    if (this.swarm.busy) return;
+    this.swarm.busy = true; this.swarm.error = ""; this.renderSwarmAgent();
+    try { await operation(); } catch (error) { this.swarm.error = error.message || String(error); }
+    finally { this.swarm.busy = false; this.renderSwarmAgent(); }
   }
 
   renderDynamicStageWorkspace(ch) {

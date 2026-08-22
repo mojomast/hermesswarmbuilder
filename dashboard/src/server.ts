@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { basename, extname, isAbsolute, join, resolve, sep } from "path";
 import { ProjectPlanError, ProjectPlanStore } from "./project-plans";
 import { PlanAssistanceError, PlanAssistanceStore } from "./plan-assistance";
+import { SwarmAgentError, SwarmAgentStore } from "./swarm-agent";
 import { withProjectionLock } from "./launch-authority";
 
 const HOME = homedir();
@@ -44,6 +45,7 @@ const paths = {
 };
 const projectPlans = new ProjectPlanStore(STATE_ROOT);
 const planAssistance = new PlanAssistanceStore(STATE_ROOT);
+const swarmAgent = new SwarmAgentStore(STATE_ROOT, () => ({ state: readState(), control: readControl(), iterations: listIterations().slice(0, 20), events: readEvents(50).events }));
 
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/eyJ[a-zA-Z0-9._-]{20,}/g, "[REDACTED_JWT]"],
@@ -680,6 +682,24 @@ async function route(req: Request): Promise<Response> {
     if (url.pathname === "/api/project-plans" && req.method === "GET") return json(projectPlans.list());
     if (url.pathname === "/api/plan-assistance" && req.method === "GET") return json(planAssistance.list());
     if (url.pathname === "/api/plan-assistance" && req.method === "POST") return json(planAssistance.create(await readJsonBody(req)), 201);
+    if (url.pathname === "/api/swarm-agent/sessions" && req.method === "POST") return json(swarmAgent.create(await readJsonBody(req)), 201);
+    const swarmAgentMessageMatch = url.pathname.match(/^\/api\/swarm-agent\/sessions\/([^/]+)\/messages$/);
+    if (swarmAgentMessageMatch && req.method === "POST") return json(await swarmAgent.message(decodeURIComponent(swarmAgentMessageMatch[1]), await readJsonBody(req)));
+    const swarmAgentExecuteMatch = url.pathname.match(/^\/api\/swarm-agent\/sessions\/([^/]+)\/actions\/execute$/);
+    if (swarmAgentExecuteMatch && req.method === "POST") {
+      const sessionId = decodeURIComponent(swarmAgentExecuteMatch[1]);
+      const result = await swarmAgent.execute(sessionId, await readJsonBody(req), async (action, actor, correlationId) => {
+        const commandRequest = new Request("http://localhost/api/commands", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: action.type, payload: action.payload, actor, correlationId }) });
+        const response = await handleCommand(commandRequest);
+        const body = await response.json();
+        if (!response.ok) throw new SwarmAgentError("command_rejected", body?.error || "validated swarm-agent action was rejected", response.status);
+        appendJsonl(paths.audit, { schemaVersion: "apb.audit.v1", id: uid("audit"), ts: now(), actor, action: "swarm-agent-action-executed", sessionId, actionId: action.id, actionType: action.type, correlationId, result: body });
+        return body;
+      });
+      return json({ ...result.session, execution: result.execution });
+    }
+    const swarmAgentSessionMatch = url.pathname.match(/^\/api\/swarm-agent\/sessions\/([^/]+)$/);
+    if (swarmAgentSessionMatch && req.method === "GET") return json(swarmAgent.detail(decodeURIComponent(swarmAgentSessionMatch[1])));
     const assistanceMessageMatch = url.pathname.match(/^\/api\/plan-assistance\/([^/]+)\/messages$/);
     if (assistanceMessageMatch && req.method === "POST") return json(await planAssistance.message(decodeURIComponent(assistanceMessageMatch[1]), await readJsonBody(req)));
     const assistanceMatch = url.pathname.match(/^\/api\/plan-assistance\/([^/]+)$/);
@@ -750,6 +770,7 @@ async function route(req: Request): Promise<Response> {
     return staticFile(url.pathname);
   } catch (err: any) {
     if (err instanceof PlanAssistanceError) return json({ schemaVersion: err.schemaVersion, error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) } }, err.status);
+    if (err instanceof SwarmAgentError) return json({ schemaVersion: "apb.swarm-agent-error.v1", error: { code: err.code, message: err.message } }, err.status);
     return json({ error: err?.message || String(err), ...(err instanceof ProjectPlanError && err.details ? { details: err.details } : {}) }, err instanceof ProjectPlanError ? err.status : 500);
   }
 }

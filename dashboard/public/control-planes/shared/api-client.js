@@ -528,6 +528,31 @@ export class ControlPlaneClient {
     });
   }
 
+  async createSwarmAgentSession() {
+    return this.fetchJson("/api/swarm-agent/sessions", {
+      method: "POST",
+      body: JSON.stringify({ schemaVersion: "apb.swarm-agent.v1", actor: this.actor })
+    });
+  }
+
+  async getSwarmAgentSession(id) {
+    return this.fetchJson(`/api/swarm-agent/sessions/${encodeURIComponent(id)}`);
+  }
+
+  async sendSwarmAgentMessage(id, expectedVersion, message) {
+    return this.fetchJson(`/api/swarm-agent/sessions/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ schemaVersion: "apb.swarm-agent.v1", expectedVersion, actor: this.actor, message })
+    });
+  }
+
+  async executeSwarmAgentAction(id, expectedVersion, actionId) {
+    return this.fetchJson(`/api/swarm-agent/sessions/${encodeURIComponent(id)}/actions/execute`, {
+      method: "POST",
+      body: JSON.stringify({ schemaVersion: "apb.swarm-agent.v1", expectedVersion, actor: this.actor, actionId })
+    });
+  }
+
   // --- Strict Plan Authority Mutations ---
 
   async dispatchPlanCommand(type, payload, expectedVersion) {
